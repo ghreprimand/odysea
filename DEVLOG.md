@@ -7,6 +7,19 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Input-parity navigation shell
+
+The graphical shell now pairs pointer controls with keyboard shortcuts for
+back, forward, up, refresh, location entry, filtering, hidden-file visibility,
+sorting, tab creation and closure, pane activation, selection, entry
+activation, and filesystem-operation requests. Selection supports single,
+toggle, range, select-all, cursor-only movement, and rubber-band paths. The
+pane workspace preserves independent tab and navigation state while the
+transfer-oriented dual-pane layout remains a later milestone.
+
+Verified with diagnostic-free QML linting, warning-clean release and sanitizer
+builds, both CTest suites, and headless release and sanitizer smoke launches.
+
 ## 2026-07-27 -- Asynchronous shell model and navigation state
 
 The Qt adapter now schedules directory reads away from the GUI thread and
@@ -19,6 +32,8 @@ remain pending.
 
 The adapter keeps filesystem behavior in the toolkit-agnostic core. Qt owns
 only scheduling and presentation state.
+
+Verified with warning-clean Clang and GCC sanitizer builds.
 
 ## 2026-07-27 -- Checkout-independent header analysis
 

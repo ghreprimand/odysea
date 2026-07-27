@@ -6,8 +6,9 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QQmlContext>
+#include <QStringList>
 #include <QUrl>
+#include <QVariant>
 
 #include "directory_list_model.hpp"
 
@@ -23,7 +24,7 @@ int main(int argc, char* argv[]) {
     model.setPath(start);
 
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("directoryModel", &model);
+    engine.setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)}});
     engine.loadFromModule("OdySea", "Main");
 
     if (engine.rootObjects().isEmpty()) {

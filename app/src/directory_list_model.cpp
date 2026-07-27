@@ -459,7 +459,8 @@ void DirectoryListModel::startScan() {
 
     auto* const watcher = new QFutureWatcher<ScanResult>(this);
     connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
-        applyScanResult(watcher->result());
+        auto future = watcher->future();
+        applyScanResult(future.takeResult());
         watcher->deleteLater();
     });
 
@@ -593,6 +594,10 @@ void DirectoryListModel::requestOperation(const QString& operation) {
     const QStringList paths = selectedPaths();
     if (paths.isEmpty()) {
         setStatusMessage(tr("Select at least one item first."));
+        return;
+    }
+    if (operation == QStringLiteral("rename") && paths.size() != 1) {
+        setStatusMessage(tr("Rename requires exactly one selected item."));
         return;
     }
     emit filesystemOperationRequested(operation, paths);
