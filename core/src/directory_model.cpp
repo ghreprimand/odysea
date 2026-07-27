@@ -9,9 +9,8 @@ namespace fs = std::filesystem;
 namespace {
 
 std::string to_lower(std::string value) {
-    std::ranges::transform(value, value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
+    std::ranges::transform(value, value.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return value;
 }
 

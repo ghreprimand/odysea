@@ -49,8 +49,8 @@ int main() {
     check(!ec, "read_directory should succeed on a valid directory");
 
     // Hidden entries filtered by default.
-    const bool has_hidden = std::ranges::any_of(
-        entries, [](const auto& e) { return e.name == ".hidden"; });
+    const bool has_hidden =
+        std::ranges::any_of(entries, [](const auto& e) { return e.name == ".hidden"; });
     check(!has_hidden, "dotfiles should be filtered when show_hidden is false");
     check(entries.size() == 3, "expected subdir + 2 visible files");
 

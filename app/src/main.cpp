@@ -3,11 +3,11 @@
 // Entry point for the Qt Quick application shell. Registers the directory model
 // with QML and loads the main scene. The optional first argument is the initial
 // directory to display (defaults to the user's home directory).
+#include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QUrl>
-#include <QDir>
 
 #include "directory_list_model.hpp"
 

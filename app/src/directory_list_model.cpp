@@ -12,8 +12,7 @@ int DirectoryListModel::rowCount(const QModelIndex& parent) const {
 }
 
 QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || index.row() < 0
-        || index.row() >= static_cast<int>(entries_.size())) {
+    if (!index.isValid() || index.row() < 0 || index.row() >= static_cast<int>(entries_.size())) {
         return {};
     }
     const odysea::core::Entry& entry = entries_[static_cast<std::size_t>(index.row())];
@@ -33,7 +32,9 @@ QHash<int, QByteArray> DirectoryListModel::roleNames() const {
     return {{NameRole, "name"}, {IsDirRole, "isDir"}, {SizeRole, "size"}};
 }
 
-QString DirectoryListModel::path() const { return path_; }
+QString DirectoryListModel::path() const {
+    return path_;
+}
 
 void DirectoryListModel::setPath(const QString& path) {
     if (path_ == path) {

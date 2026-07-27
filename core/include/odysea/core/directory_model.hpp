@@ -38,7 +38,6 @@ struct ListOptions {
 /// entries are skipped rather than aborting the whole listing; a failure to open
 /// the directory itself is reported through `error`.
 [[nodiscard]] std::vector<Entry> read_directory(const std::filesystem::path& path,
-                                                 const ListOptions& options,
-                                                 std::error_code& error);
+                                                const ListOptions& options, std::error_code& error);
 
 } // namespace odysea::core

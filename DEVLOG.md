@@ -7,6 +7,15 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Deterministic C++ formatting baseline
+
+The complete tracked C++ corpus now matches the repository's `clang-format`
+policy. This removes inherited formatting drift from the initial scaffold so
+future formatting checks report only newly introduced changes.
+
+Verified with `clang-format` 22 in dry-run error mode, the public repository
+guard, and both release and ASan/UBSan test presets.
+
 ## 2026-07-27 -- Public development record and repository safeguards
 
 The repository now carries a public development log and explicit publishing

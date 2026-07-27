@@ -15,7 +15,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QString path READ path WRITE setPath NOTIFY pathChanged)
 
-public:
+  public:
     enum Roles { NameRole = Qt::UserRole + 1, IsDirRole, SizeRole };
 
     explicit DirectoryListModel(QObject* parent = nullptr);
@@ -27,10 +27,10 @@ public:
     [[nodiscard]] QString path() const;
     void setPath(const QString& path);
 
-signals:
+  signals:
     void pathChanged();
 
-private:
+  private:
     void reload();
 
     QString path_;
