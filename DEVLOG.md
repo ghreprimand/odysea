@@ -56,6 +56,34 @@ future formatting checks report only newly introduced changes.
 
 Verified with `clang-format` 22 in dry-run error mode, the public repository
 guard, and both release and ASan/UBSan test presets.
+## 2026-07-27 -- Cancellable off-thread directory scanning
+
+Navigation no longer has to wait for a directory to finish reading.
+`DirectoryScanner` runs listings on a worker thread and delivers entries as
+incremental batches, so a view can show its first screenful while the rest is
+still arriving. Every request returns a token immediately, and the newest
+request wins: starting a scan cancels the one in flight and supersedes anything
+queued behind it, which is what keeps rapid navigation cheap. Cancellation is
+checked per entry, so an abandoned directory stops costing work almost at once.
+
+Every request receives exactly one completion summary reporting the token, the
+number of entries delivered, any error, and whether it was cancelled, including
+requests replaced before they ever started. Callbacks are invoked on the worker
+thread and never while a lock is held; consumers with thread affinity marshal
+batches themselves. Destroying a scanner cancels the scan in flight, joins the
+worker, and suppresses further callbacks.
+
+Batches arrive in filesystem discovery order, so the listing comparator is now
+public alongside `sort_entries` and `make_entry`. A consumer merging batches
+orders them exactly the way a complete listing is ordered, and the synchronous
+`read_directory` path reuses the same helpers.
+
+Verified with the release and sanitizer presets: warning-clean builds, six CTest
+suites passing in both configurations, the scanning and watching suites repeated
+to shake out timing flakiness, a headless application smoke launch, and
+formatting checked on the changed sources. Known gap: no shell view consumes the
+scanner yet, so the roadmap entry for off-thread scanning stays open.
+
 ## 2026-07-27 -- Incremental directory watching
 
 `DirectoryWatcher` wraps Linux inotify so a view refreshes the entries that

@@ -5,6 +5,7 @@
 # presentation layer.
 add_library(odysea_core
     src/directory_model.cpp
+    src/directory_scanner.cpp
     src/directory_watcher.cpp
     src/file_operations.cpp
     src/trash.cpp)

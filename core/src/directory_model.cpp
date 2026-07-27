@@ -27,14 +27,32 @@ EntryKind classify(const fs::directory_entry& entry, std::error_code& ec) {
     return EntryKind::Other;
 }
 
-bool ordered_before(const Entry& a, const Entry& b) {
-    if (a.is_directory() != b.is_directory()) {
-        return a.is_directory();
-    }
-    return to_lower(a.name) < to_lower(b.name);
+} // namespace
+
+bool is_hidden_name(std::string_view name) {
+    return !name.empty() && name.front() == '.';
 }
 
-} // namespace
+Entry make_entry(const fs::directory_entry& element) {
+    std::error_code ec;
+    Entry entry;
+    entry.name = element.path().filename().string();
+    entry.path = element.path();
+    entry.kind = classify(element, ec);
+    entry.size = (entry.kind == EntryKind::File) ? element.file_size(ec) : 0;
+    return entry;
+}
+
+bool entry_orders_before(const Entry& first, const Entry& second) {
+    if (first.is_directory() != second.is_directory()) {
+        return first.is_directory();
+    }
+    return to_lower(first.name) < to_lower(second.name);
+}
+
+void sort_entries(std::vector<Entry>& entries) {
+    std::ranges::sort(entries, entry_orders_before);
+}
 
 std::vector<Entry> read_directory(const fs::path& path, const ListOptions& options,
                                   std::error_code& error) {
@@ -47,20 +65,13 @@ std::vector<Entry> read_directory(const fs::path& path, const ListOptions& optio
 
     for (const fs::directory_entry& dirent : it) {
         const std::string name = dirent.path().filename().string();
-        if (!options.show_hidden && !name.empty() && name.front() == '.') {
+        if (!options.show_hidden && is_hidden_name(name)) {
             continue;
         }
-
-        std::error_code entry_ec;
-        Entry entry;
-        entry.name = name;
-        entry.path = dirent.path();
-        entry.kind = classify(dirent, entry_ec);
-        entry.size = (entry.kind == EntryKind::File) ? dirent.file_size(entry_ec) : 0;
-        entries.push_back(std::move(entry));
+        entries.push_back(make_entry(dirent));
     }
 
-    std::ranges::sort(entries, ordered_before);
+    sort_entries(entries);
     return entries;
 }
 
