@@ -7,6 +7,25 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Executable formatting, analysis, and publishing gates
+
+Formatting and static analysis are now executable CTest gates rather than
+documentation-only requirements. The formatting check pins `clang-format` 22
+and scans every tracked C++ source and header. The analysis check pins
+`clang-tidy` 22, uses the active compilation database, and applies the
+repository's warning-as-error policy to each tracked translation unit. It runs
+with the Clang release database; the GCC sanitizer preset retains its separate
+ASan/UBSan runtime gate.
+
+The publishing guard now verifies public no-reply commit attribution, rejects
+`Co-Authored-By` trailers and high-signal internal workflow narration, scans for
+private-network references, and checks its own content for private-key and token
+signatures. All three repository-dependent gates report a CTest skip when a
+source archive has no Git metadata.
+
+Verified with the public repository, formatting, and static-analysis scripts,
+plus release and ASan/UBSan builds and their complete CTest suites.
+
 ## 2026-07-27 -- Deterministic C++ formatting baseline
 
 The complete tracked C++ corpus now matches the repository's `clang-format`

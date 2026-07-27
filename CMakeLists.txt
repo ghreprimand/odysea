@@ -43,6 +43,19 @@ enable_testing()
 add_test(
     NAME public_repository_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_public_repo.sh)
+add_test(
+    NAME formatting_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_format.sh)
+add_test(
+    NAME static_analysis
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
+
+set_tests_properties(
+    public_repository_guard formatting_guard static_analysis
+    PROPERTIES SKIP_RETURN_CODE 77)
+if(ODYSEA_ASAN)
+    set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)
+endif()
 
 add_subdirectory(core)
 add_subdirectory(app)

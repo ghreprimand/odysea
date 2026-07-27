@@ -4,6 +4,7 @@
 
 - CMake 3.28+ and Ninja
 - A C++20 compiler (Clang or GCC)
+- `clang-format` 22 and `clang-tidy` 22
 - Qt 6.6+ with Qt Quick (`Core`, `Gui`, `Qml`, `Quick`)
 
 ## Build and test
@@ -21,6 +22,10 @@ ctest --preset asan                # core tests run under ASan/UBSan
 
 # Public tracked/staged-content safety guard:
 ./tools/check_public_repo.sh
+
+# Formatting and static-analysis gates:
+./tools/check_format.sh
+./tools/check_clang_tidy.sh build/release
 ```
 
 ## Project layout
@@ -47,7 +52,10 @@ These are not optional; they are how the project stays safe in C++:
 
 ## Style
 
-- `clang-format` (config in `.clang-format`) and the `.clang-tidy` policy apply.
+- `clang-format` 22 (config in `.clang-format`) and `clang-tidy` 22 (policy in
+  `.clang-tidy`) are the verified tool versions. Static analysis runs from the
+  Clang release compilation database; the GCC sanitizer preset provides the
+  separate ASan/UBSan runtime gate.
 - Warnings are errors (`-Werror`); keep the build clean.
 - Prefer small, reviewable commits with descriptive messages.
 
@@ -69,8 +77,10 @@ release artifact as published material.
 - Inspect staged changes before every commit. `.gitignore` is a backstop, not a
   security boundary; stop and investigate any ambiguous content.
 - Keep `public_repository_guard` green. It rejects tracked secret-file names,
-  private-key and common token signatures, personal home paths, and at-signs in
-  tracked text. Public clone links use HTTPS so email-like syntax is unnecessary.
+  private-key and common token signatures, personal home paths, private-network
+  references, internal workflow narration, unsafe commit attribution,
+  `Co-Authored-By` trailers, and at-signs in tracked text. Public clone links use
+  HTTPS so email-like syntax is unnecessary.
 
 ## Engineering record
 
