@@ -56,6 +56,34 @@ future formatting checks report only newly introduced changes.
 
 Verified with `clang-format` 22 in dry-run error mode, the public repository
 guard, and both release and ASan/UBSan test presets.
+## 2026-07-27 -- Delete to the freedesktop.org trash
+
+Deleting from OdySea moves an entry into the desktop trash rather than
+destroying it. `move_to_trash` writes a `.trashinfo` record holding the
+percent-encoded original path and a local deletion timestamp, then renames the
+entry into the trash `files` directory. The record is created exclusively
+before the entry moves, so two concurrent deletions of the same file name
+cannot claim the same slot; a taken name becomes `report_1.txt`. A failed move
+removes the record it claimed.
+
+Trash location follows the specification. Entries on the same filesystem as the
+home trash go to `XDG_DATA_HOME/Trash`, defaulting to `HOME/.local/share/Trash`.
+Entries elsewhere go to a top-level trash on their own filesystem: a sticky
+`.Trash/<uid>` when the administrator provided one, otherwise `.Trash-<uid>`.
+Keeping the trash on the same filesystem keeps the delete a rename instead of a
+silent copy of a large tree.
+
+Supporting pieces: a move-only RAII descriptor type so POSIX handles close
+exactly once, and a percent-encoder covering the specification's unreserved set.
+Tests redirect the data-home variable into a temporary tree, so they never touch
+a real desktop trash.
+
+Verified with the release and sanitizer presets: warning-clean builds, all four
+CTest suites passing in both configurations, and formatting checked on the
+changed sources. Known gaps: restore-from-trash, trash emptying, and the
+optional directory-size cache are not implemented, and no shell action is wired
+to deletion yet, so the roadmap entry for filesystem operations stays open.
+
 ## 2026-07-27 -- Core copy, move, and rename primitives
 
 The core gained toolkit-agnostic filesystem mutations: `copy_into`,

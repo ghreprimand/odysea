@@ -5,7 +5,8 @@
 # presentation layer.
 add_library(odysea_core
     src/directory_model.cpp
-    src/file_operations.cpp)
+    src/file_operations.cpp
+    src/trash.cpp)
 
 target_include_directories(odysea_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
