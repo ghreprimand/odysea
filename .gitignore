@@ -1,0 +1,23 @@
+# Local agent state and guidance (never published to the public repo)
+.archon/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+
+# Local-only audit findings and generated reports
+/audit/
+/reports/
+/AUDIT*.md
+
+# Build output
+/build/
+compile_commands.json
+
+# Local/private configuration
+.env
+.env.*
+
+# Editor / OS cruft
+*.user
+.cache/
+.DS_Store

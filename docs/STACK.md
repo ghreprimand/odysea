@@ -1,0 +1,67 @@
+# Technology Stack
+
+This document records the technology decisions and the reasoning behind them.
+
+## Language: modern C++ (C++20)
+
+OdySea is written in C++20. C++ is the native language of the desktop
+file-manager and GPU-rendering ecosystems (Qt, Vulkan, Skia), gives direct
+access to graphics APIs, and compiles to efficient native code with no runtime
+garbage collector — predictable latency for a UI that must stay smooth while
+scanning large directories.
+
+Memory safety is treated as an explicit engineering discipline rather than an
+afterthought; see [Memory safety](#memory-safety) below.
+
+- Standard: C++20
+- Toolchain: CMake 3.28+, Ninja, Clang (release) / GCC (sanitizer build)
+
+## GUI: Qt Quick (Qt 6.6+)
+
+The graphical shell is built with Qt Quick:
+
+- **GPU-rendered scene graph.** Qt Quick renders on the GPU by default through
+  Qt's Rendering Hardware Interface, which targets OpenGL, Vulkan, or a software
+  fallback and degrades gracefully across driver stacks.
+- **Cross-distro robustness.** Defaulting to widely available OpenGL (with a
+  software fallback and an environment-variable override) avoids the class of
+  "no usable GPU backend" failures that a Vulkan-only renderer can hit on
+  unusual driver setups.
+- **Declarative UI with escape hatches.** QML expresses the interface concisely,
+  while shader effects and custom RHI passes remain available for the heavier
+  visuals.
+- **Native fit.** Qt is the toolkit of the KDE ecosystem, so the app integrates
+  naturally on Plasma while remaining independent of any specific environment.
+
+The core (`core/`) has no Qt dependency; Qt is confined to the `app/` layer.
+
+## Memory safety
+
+C++ places memory management in the developer's hands. OdySea addresses this with
+layered guardrails, wired in from the first commit:
+
+- **Modern C++ discipline.** RAII, standard containers, and smart pointers
+  (`std::unique_ptr`/`std::shared_ptr`) instead of raw owning pointers and
+  manual `new`/`delete`. Qt's parent-child object ownership handles GUI object
+  lifetimes.
+- **Warnings as errors.** `-Wall -Wextra -Wpedantic -Werror` plus conversion and
+  shadowing warnings — the compiler is the first line of defense.
+- **AddressSanitizer + UBSan.** The `asan` CMake preset builds with
+  `-fsanitize=address,undefined`; the headless core tests run under it, so
+  use-after-free, buffer overflow, and leaks surface with an exact stack trace.
+- **Static analysis.** A `.clang-tidy` policy enforces a subset of the C++ Core
+  Guidelines (owning-memory and no-malloc checks are errors).
+
+### Toolchain note
+
+On this build environment the release preset uses `clang++`, while the `asan`
+preset uses `g++`, because the installed Clang's compiler-rt sanitizer runtime
+is not present but GCC's `libasan` is. Both compile the same C++20 code; the
+sanitizer build simply selects the compiler whose runtime is available.
+
+## Platform
+
+Linux and Wayland are the primary target, with multi-monitor awareness; X11
+works through the toolkit's compatibility layer. Qt is cross-platform, so other
+operating systems are not foreclosed, but the deep desktop integration a file
+manager needs is inherently platform-specific and is scoped to Linux first.

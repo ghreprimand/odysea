@@ -1,0 +1,16 @@
+# OdySea static-analysis policy. Focus: memory safety and modern C++ hygiene.
+# Enforces a subset of the C++ Core Guidelines plus clang's own analyzer.
+Checks: >
+  bugprone-*,
+  cppcoreguidelines-*,
+  clang-analyzer-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers
+
+WarningsAsErrors: 'bugprone-*,cppcoreguidelines-owning-memory,cppcoreguidelines-no-malloc,clang-analyzer-*'
+HeaderFilterRegex: '.*/odysea/.*'
