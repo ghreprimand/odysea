@@ -60,7 +60,7 @@ overhead. See [docs/DESIGN.md](docs/DESIGN.md).
 Requires CMake 3.28+, a C++20 compiler, and Qt 6.6+ (Qt Quick).
 
 ```sh
-git clone git@github.com:ghreprimand/odysea.git
+git clone https://github.com/ghreprimand/odysea.git
 cd odysea
 cmake --preset release
 cmake --build build/release
@@ -79,6 +79,7 @@ cmake --preset asan && cmake --build build/asan && ctest --preset asan
 - [Design overview](docs/DESIGN.md)
 - [Technology stack](docs/STACK.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Development log](DEVLOG.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

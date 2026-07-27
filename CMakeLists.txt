@@ -40,6 +40,10 @@ endif()
 
 enable_testing()
 
+add_test(
+    NAME public_repository_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_public_repo.sh)
+
 add_subdirectory(core)
 add_subdirectory(app)
 add_subdirectory(tests)

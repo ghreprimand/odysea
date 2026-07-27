@@ -18,6 +18,9 @@ ctest --preset release
 cmake --preset asan
 cmake --build build/asan
 ctest --preset asan                # core tests run under ASan/UBSan
+
+# Public tracked/staged-content safety guard:
+./tools/check_public_repo.sh
 ```
 
 ## Project layout
@@ -47,3 +50,32 @@ These are not optional; they are how the project stays safe in C++:
 - `clang-format` (config in `.clang-format`) and the `.clang-tidy` policy apply.
 - Warnings are errors (`-Werror`); keep the build clean.
 - Prefer small, reviewable commits with descriptive messages.
+
+## Public repository safety
+
+This repository is public. Treat every tracked file, commit message, branch, and
+release artifact as published material.
+
+- Never commit secrets, credentials, tokens, private keys, private hostnames or
+  URLs, personal data, machine-local configuration, private notes, or diagnostic
+  captures.
+- Use synthetic, neutral values in examples and tests. Do not use real email
+  addresses, user/host pairs, home-directory paths, or private infrastructure.
+- Keep `.env*`, credentials, key material, local logs, reports, `.archon/`, and
+  machine-local contributor instructions untracked.
+- Inspect staged changes before every commit. `.gitignore` is a backstop, not a
+  security boundary; stop and investigate any ambiguous content.
+- Keep `public_repository_guard` green. It rejects tracked secret-file names,
+  private-key and common token signatures, personal home paths, and at-signs in
+  tracked text. Public clone links use HTTPS so email-like syntax is unnecessary.
+
+## Engineering record
+
+`DEVLOG.md`, documentation, comments, and commit messages form a public
+engineering record. Describe the behavior, implementation, decisions,
+verification, and known gaps in the project's voice. Do not narrate work
+assignments or use internal workflow terminology in tracked text.
+
+Update `DEVLOG.md` with each accepted development milestone, in the same change
+as the code or documentation it records. Commit subjects and bodies stay
+factual and scoped. Do not add `Co-Authored-By` trailers.

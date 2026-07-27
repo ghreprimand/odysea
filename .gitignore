@@ -1,4 +1,4 @@
-# Local agent state and guidance (never published to the public repo)
+# Local contributor state and guidance (never published to the public repo)
 .archon/
 AGENTS.md
 CLAUDE.md
@@ -16,8 +16,49 @@ compile_commands.json
 # Local/private configuration
 .env
 .env.*
+*.local
+*.secret
+*.secrets
+/.credentials/
+/.secrets/
+credentials.*
+secrets.*
+
+# Credentials and private key material
+.netrc
+.npmrc
+.pypirc
+/.aws/
+/.gnupg/
+/.ssh/
+id_dsa*
+id_ecdsa*
+id_ed25519*
+id_rsa*
+*.age
+*.enc
+*.gpg
+*.key
+*.kdbx
+*.p12
+*.pem
+*.pfx
+*.ppk
+
+# Local logs, crash artifacts, and diagnostic captures
+/logs/
+*.dmp
+*.dump
+*.log
+*.core
+/core.[0-9]*
+/vgcore.*
 
 # Editor / OS cruft
 *.user
 .cache/
+.idea/
+.vscode/
+*.swp
+*.swo
 .DS_Store
