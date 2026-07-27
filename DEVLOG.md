@@ -13,7 +13,7 @@ The repository now carries a public development log and explicit publishing
 boundaries. Contributor guidance requires staged-change inspection, synthetic
 fixtures, impersonal engineering prose, and exclusion of secrets, personal
 data, private infrastructure, machine-local configuration, diagnostic captures,
-and internal workflow artifacts.
+internal workflow artifacts, and personal commit metadata.
 
 Ignore rules cover common environment files, credentials, private keys, local
 logs, crash captures, editor state, build output, reports, and local contributor

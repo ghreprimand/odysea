@@ -63,6 +63,9 @@ release artifact as published material.
   addresses, user/host pairs, home-directory paths, or private infrastructure.
 - Keep `.env*`, credentials, key material, local logs, reports, `.archon/`, and
   machine-local contributor instructions untracked.
+- Configure a repository-local Git author name and no-reply address intended for
+  public attribution. Never publish a personal email address through commit
+  metadata.
 - Inspect staged changes before every commit. `.gitignore` is a backstop, not a
   security boundary; stop and investigate any ambiguous content.
 - Keep `public_repository_guard` green. It rejects tracked secret-file names,
