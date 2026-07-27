@@ -56,6 +56,30 @@ future formatting checks report only newly introduced changes.
 
 Verified with `clang-format` 22 in dry-run error mode, the public repository
 guard, and both release and ASan/UBSan test presets.
+## 2026-07-27 -- Core copy, move, and rename primitives
+
+The core gained toolkit-agnostic filesystem mutations: `copy_into`,
+`move_into`, `rename_entry`, and the `resolve_destination` helper that previews
+a final name before anything changes on disk. Nothing throws; every failure
+returns a `std::error_code` so the presentation layer decides how to surface it.
+
+Collisions are governed by an explicit policy: fail, overwrite, or auto-rename
+to the next free `name (2)` variant. Overwrite replaces the destination rather
+than merging into it, so a copied directory never inherits stale children.
+Directory copies recurse and preserve symlinks as symlinks. Copying or moving a
+directory into itself or into one of its own descendants is rejected, and moves
+fall back to copy-then-remove when source and destination sit on different
+filesystems.
+
+A shared headless test harness now provides assertion helpers and a
+self-cleaning temporary tree built entirely from synthetic paths. Each core test
+file builds as its own CTest executable.
+
+Verified with the release and sanitizer presets: warning-clean builds under
+`-Werror`, all three CTest suites passing in both configurations, and formatting
+checked on the changed sources. Known gap: delete-to-trash, directory watching,
+and off-thread scanning are still open, so the roadmap entry for filesystem
+operations remains unchecked.
 
 ## 2026-07-27 -- Public development record and repository safeguards
 

@@ -4,7 +4,8 @@
 # display server so the core logic can be verified headless and reused by any
 # presentation layer.
 add_library(odysea_core
-    src/directory_model.cpp)
+    src/directory_model.cpp
+    src/file_operations.cpp)
 
 target_include_directories(odysea_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
