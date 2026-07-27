@@ -1,12 +1,16 @@
-// Qt bridge: exposes odysea::core directory listings to QML as a list model.
+// Qt bridge: exposes odysea::core directory listings and shell state to QML.
 //
-// This is the boundary between the pure-C++ core and the Qt presentation layer.
-// The core stays framework-free; this adapter translates it into a QObject the
-// scene graph can bind to.
+// Filesystem behavior stays in the framework-free core. This adapter schedules
+// core scans away from the GUI thread and translates their results into Qt
+// model roles and navigation state.
 #pragma once
 
 #include <QAbstractListModel>
+#include <QSet>
 #include <QString>
+#include <QStringList>
+
+#include <cstdint>
 #include <vector>
 
 #include "odysea/core/directory_model.hpp"
@@ -14,9 +18,27 @@
 class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QString path READ path WRITE setPath NOTIFY pathChanged)
+    Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged)
+    Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
+    Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
+    Q_PROPERTY(int sortMode READ sortMode WRITE setSortMode NOTIFY sortModeChanged)
+    Q_PROPERTY(int currentIndex READ currentIndex NOTIFY currentIndexChanged)
+    Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectedCountChanged)
+    Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY navigationChanged)
+    Q_PROPERTY(bool canGoForward READ canGoForward NOTIFY navigationChanged)
+    Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY navigationChanged)
+    Q_PROPERTY(int tabCount READ tabCount NOTIFY tabsChanged)
+    Q_PROPERTY(int activeTab READ activeTab NOTIFY tabsChanged)
+    Q_PROPERTY(int paneCount READ paneCount NOTIFY panesChanged)
+    Q_PROPERTY(int activePane READ activePane NOTIFY panesChanged)
+    Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
 
   public:
-    enum Roles { NameRole = Qt::UserRole + 1, IsDirRole, SizeRole };
+    enum Roles { NameRole = Qt::UserRole + 1, IsDirRole, SizeRole, PathRole, SelectedRole };
+
+    enum SortMode { SortByName = 0, SortBySize, SortByType };
+    Q_ENUM(SortMode)
 
     explicit DirectoryListModel(QObject* parent = nullptr);
 
@@ -27,12 +49,126 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QString path() const;
     void setPath(const QString& path);
 
+    [[nodiscard]] bool busy() const noexcept;
+    [[nodiscard]] QString errorString() const;
+    [[nodiscard]] bool showHidden() const noexcept;
+    void setShowHidden(bool showHidden);
+    [[nodiscard]] QString filterText() const;
+    void setFilterText(const QString& filterText);
+    [[nodiscard]] int sortMode() const noexcept;
+    void setSortMode(int sortMode);
+
+    [[nodiscard]] int currentIndex() const noexcept;
+    [[nodiscard]] int selectedCount() const noexcept;
+    [[nodiscard]] bool canGoBack() const;
+    [[nodiscard]] bool canGoForward() const;
+    [[nodiscard]] bool canGoUp() const;
+
+    [[nodiscard]] int tabCount() const noexcept;
+    [[nodiscard]] int activeTab() const noexcept;
+    [[nodiscard]] int paneCount() const noexcept;
+    [[nodiscard]] int activePane() const noexcept;
+    [[nodiscard]] QString statusMessage() const;
+
+    Q_INVOKABLE void refresh();
+    Q_INVOKABLE void goBack();
+    Q_INVOKABLE void goForward();
+    Q_INVOKABLE void goUp();
+    Q_INVOKABLE void activate(int row);
+
+    Q_INVOKABLE void selectRow(int row, int modifiers);
+    Q_INVOKABLE void moveCursor(int delta, bool extendSelection, bool preserveSelection);
+    Q_INVOKABLE void moveCursorTo(int row, bool extendSelection, bool preserveSelection);
+    Q_INVOKABLE void toggleCurrent();
+    Q_INVOKABLE void selectAll();
+    Q_INVOKABLE void clearSelection();
+    Q_INVOKABLE void beginRubberBand(bool additive);
+    Q_INVOKABLE void updateRubberBand(int firstRow, int lastRow);
+    Q_INVOKABLE void endRubberBand();
+
+    Q_INVOKABLE QString tabLabel(int tabIndex) const;
+    Q_INVOKABLE void addTab();
+    Q_INVOKABLE void closeTab(int tabIndex);
+    Q_INVOKABLE void activateTab(int tabIndex);
+    Q_INVOKABLE void setDualPaneEnabled(bool enabled);
+    Q_INVOKABLE void activatePane(int paneIndex);
+
+    Q_INVOKABLE void requestCopy();
+    Q_INVOKABLE void requestMove();
+    Q_INVOKABLE void requestRename();
+    Q_INVOKABLE void requestTrash();
+
   signals:
     void pathChanged();
+    void busyChanged();
+    void errorStringChanged();
+    void showHiddenChanged();
+    void filterTextChanged();
+    void sortModeChanged();
+    void currentIndexChanged();
+    void selectedCountChanged();
+    void navigationChanged();
+    void tabsChanged();
+    void panesChanged();
+    void statusMessageChanged();
+    void openRequested(const QString& path);
+    void filesystemOperationRequested(const QString& operation, const QStringList& paths);
 
   private:
-    void reload();
+    struct ScanResult {
+        std::uint64_t generation = 0;
+        std::vector<odysea::core::Entry> entries;
+        std::string errorMessage;
+    };
+
+    struct TabState {
+        QString path;
+        QStringList backHistory;
+        QStringList forwardHistory;
+    };
+
+    struct PaneState {
+        std::vector<TabState> tabs{TabState{}};
+        int activeTab = 0;
+    };
+
+    [[nodiscard]] TabState& currentTab();
+    [[nodiscard]] const TabState& currentTab() const;
+    [[nodiscard]] PaneState& currentPane();
+    [[nodiscard]] const PaneState& currentPane() const;
+    [[nodiscard]] QString normalizedPath(const QString& path) const;
+    [[nodiscard]] QStringList selectedPaths() const;
+
+    void navigateTo(const QString& path, bool recordHistory);
+    void setCurrentPath(const QString& path);
+    void startScan();
+    void applyScanResult(ScanResult result);
+    void applyPresentationSettings();
+    void setBusy(bool busy);
+    void setErrorString(const QString& errorString);
+    void setStatusMessage(const QString& statusMessage);
+    void setCurrentIndex(int row);
+    void replaceSelection(QSet<int> selection);
+    void selectRangeTo(int row);
+    void notifySelectionRoles();
+    void requestOperation(const QString& operation);
 
     QString path_;
+    QString errorString_;
+    QString filterText_;
+    QString statusMessage_;
+    std::vector<odysea::core::Entry> scannedEntries_;
     std::vector<odysea::core::Entry> entries_;
+    QSet<int> selectedRows_;
+    QSet<int> rubberBandBase_;
+    std::vector<PaneState> panes_{PaneState{}, PaneState{}};
+    std::uint64_t scanGeneration_ = 0;
+    int sortMode_ = SortByName;
+    int currentIndex_ = -1;
+    int selectionAnchor_ = -1;
+    int activePane_ = 0;
+    int paneCount_ = 1;
+    bool busy_ = false;
+    bool showHidden_ = false;
+    bool rubberBandActive_ = false;
 };

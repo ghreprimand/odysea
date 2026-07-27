@@ -7,6 +7,19 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Asynchronous shell model and navigation state
+
+The Qt adapter now schedules directory reads away from the GUI thread and
+discards stale scan results after newer navigation requests. It exposes loading
+and error state, per-tab navigation history, two-pane workspace state,
+presentation sorting and filtering, hidden-file control, and a multi-selection
+model to the Qt Quick shell. Copy, move, rename, trash, and file-open requests
+cross explicit adapter seams while their core and platform implementations
+remain pending.
+
+The adapter keeps filesystem behavior in the toolkit-agnostic core. Qt owns
+only scheduling and presentation state.
+
 ## 2026-07-27 -- Checkout-independent header analysis
 
 Static analysis now anchors its header filter to the detected source root
