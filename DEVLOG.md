@@ -56,6 +56,31 @@ future formatting checks report only newly introduced changes.
 
 Verified with `clang-format` 22 in dry-run error mode, the public repository
 guard, and both release and ASan/UBSan test presets.
+## 2026-07-27 -- Incremental directory watching
+
+`DirectoryWatcher` wraps Linux inotify so a view refreshes the entries that
+actually changed instead of rescanning on a timer. Each `wait` drains the whole
+kernel queue, so a burst of filesystem activity becomes one batch and one
+refresh. Changes report their kind, the watched directory, the entry name, and
+whether the entry is itself a directory.
+
+Renames carry the kernel cookie, so the departing and arriving halves of a move
+can be matched into a single rename rather than a delete followed by a create.
+A queue overflow is surfaced explicitly as a change that instructs the caller to
+rescan, because silently dropping events would leave a stale view. Deleting or
+moving a watched directory reports the watch as removed and the watcher forgets
+it.
+
+The watcher is move-only and single-owner, with one deliberate exception:
+`interrupt` may be called from any thread to release a blocked wait, which is
+how a watching worker shuts down promptly. The raw descriptor is exposed for
+callers that prefer to drive their own event loop.
+
+Verified with the release and sanitizer presets: warning-clean builds, five
+CTest suites passing in both configurations, and formatting checked on the
+changed sources. Known gaps: watches are not recursive, and a directory that
+becomes watchable later is not retried.
+
 ## 2026-07-27 -- Delete to the freedesktop.org trash
 
 Deleting from OdySea moves an entry into the desktop trash rather than

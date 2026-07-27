@@ -38,6 +38,9 @@ if(ODYSEA_ASAN)
         -fsanitize=address,undefined)
 endif()
 
+# Core scanning runs off the UI thread.
+find_package(Threads REQUIRED)
+
 enable_testing()
 
 add_test(
