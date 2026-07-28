@@ -117,6 +117,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void selectRow(int row, Qt::KeyboardModifiers modifiers);
     Q_INVOKABLE void moveCursor(int delta, bool extendSelection, bool preserveSelection);
     Q_INVOKABLE void moveCursorTo(int row, bool extendSelection, bool preserveSelection);
+    Q_INVOKABLE bool selectByPrefix(const QString& prefix, bool cycle);
     Q_INVOKABLE void toggleCurrent();
     Q_INVOKABLE void selectAll();
     Q_INVOKABLE void clearSelection();

@@ -38,6 +38,14 @@ TestCase {
         property int activatedRow: -1
         property int moveCursorCalls: 0
         property int moveCursorDelta: 0
+        property int moveCursorToCalls: 0
+        property int movedToRow: -1
+        property bool movedWithExtension: false
+        property bool movedPreservingSelection: false
+        property int selectionAnchor: 0
+        property int prefixSearchCalls: 0
+        property string searchedPrefix: ""
+        property bool searchedWithCycling: false
         property int toggleCurrentCalls: 0
         property int clearSelectionCalls: 0
         property int beginRubberBandCalls: 0
@@ -84,6 +92,7 @@ TestCase {
         }
         function clearSelection() {
             clearSelectionCalls += 1;
+            clearSelectedRows();
         }
         function closeTab(tab) {
         }
@@ -99,9 +108,29 @@ TestCase {
         function moveCursor(delta, extendSelection, preserveSelection) {
             moveCursorCalls += 1;
             moveCursorDelta = delta;
-            currentIndex = Math.max(0, Math.min(count - 1, currentIndex + delta));
+            moveCursorTo(Math.max(0, Math.min(count - 1, currentIndex + delta)), extendSelection, preserveSelection);
         }
         function moveCursorTo(row, extendSelection, preserveSelection) {
+            if (row < 0 || row >= count) {
+                return;
+            }
+            moveCursorToCalls += 1;
+            movedToRow = row;
+            movedWithExtension = extendSelection;
+            movedPreservingSelection = preserveSelection;
+            if (extendSelection) {
+                clearSelectedRows();
+                const first = Math.min(selectionAnchor, row);
+                const last = Math.max(selectionAnchor, row);
+                for (let selectedRow = first; selectedRow <= last; ++selectedRow) {
+                    setProperty(selectedRow, "selected", true);
+                }
+                selectedCount = last - first + 1;
+            } else if (!preserveSelection) {
+                selectOnly(row);
+                selectionAnchor = row;
+            }
+            currentIndex = row;
         }
         function refresh() {
         }
@@ -147,6 +176,10 @@ TestCase {
         }
         function selectAll() {
             selectAllCalls += 1;
+            for (let row = 0; row < count; ++row) {
+                setProperty(row, "selected", true);
+            }
+            selectedCount = count;
         }
         function setDualPaneEnabled(enabled) {
         }
@@ -155,6 +188,13 @@ TestCase {
         }
         function toggleCurrent() {
             toggleCurrentCalls += 1;
+            if (currentIndex < 0 || currentIndex >= count) {
+                return;
+            }
+            const selectedNow = !get(currentIndex).selected;
+            setProperty(currentIndex, "selected", selectedNow);
+            selectedCount += selectedNow ? 1 : -1;
+            selectionAnchor = currentIndex;
         }
         function updateRubberBandSelection(rows, currentRow) {
             updateRubberBandCalls += 1;
@@ -166,9 +206,52 @@ TestCase {
             selectRowCalls += 1;
             selectedRow = row;
             selectedModifiers = modifiers;
+            if ((modifiers & Qt.ShiftModifier) !== 0) {
+                moveCursorTo(row, true, false);
+                return;
+            }
+            if ((modifiers & Qt.ControlModifier) !== 0) {
+                const selectedNow = !get(row).selected;
+                setProperty(row, "selected", selectedNow);
+                selectedCount += selectedNow ? 1 : -1;
+                selectionAnchor = row;
+                currentIndex = row;
+                return;
+            }
+            selectOnly(row);
+            selectionAnchor = row;
             currentIndex = row;
-            selectedCount = 1;
+        }
+
+        function clearSelectedRows() {
+            for (let row = 0; row < count; ++row) {
+                setProperty(row, "selected", false);
+            }
+            selectedCount = 0;
+        }
+
+        function selectByPrefix(prefix, cycle) {
+            prefixSearchCalls += 1;
+            searchedPrefix = prefix;
+            searchedWithCycling = cycle;
+            if (prefix.length === 0 || count === 0) {
+                return false;
+            }
+            const first = cycle ? (currentIndex + 1 + count) % count : Math.max(0, currentIndex);
+            for (let offset = 0; offset < count; ++offset) {
+                const row = (first + offset) % count;
+                if (get(row).name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())) {
+                    moveCursorTo(row, false, false);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function selectOnly(row) {
+            clearSelectedRows();
             setProperty(row, "selected", true);
+            selectedCount = 1;
         }
 
         function resetTelemetry() {
@@ -179,6 +262,13 @@ TestCase {
             activatedRow = -1;
             moveCursorCalls = 0;
             moveCursorDelta = 0;
+            moveCursorToCalls = 0;
+            movedToRow = -1;
+            movedWithExtension = false;
+            movedPreservingSelection = false;
+            prefixSearchCalls = 0;
+            searchedPrefix = "";
+            searchedWithCycling = false;
             toggleCurrentCalls = 0;
             clearSelectionCalls = 0;
             beginRubberBandCalls = 0;
@@ -228,6 +318,7 @@ TestCase {
         fakeModel.activeTab = 0;
         fakeModel.operationErrorString = "";
         shellWindow.gridMode = false;
+        shellWindow.clearTypeAhead();
         populateRows(4);
         fakeModel.resetTelemetry();
     }
@@ -256,9 +347,38 @@ TestCase {
         }
         fakeModel.currentIndex = count > 0 ? 0 : -1;
         fakeModel.selectedCount = 0;
+        fakeModel.selectionAnchor = count > 0 ? 0 : -1;
 
         tryCompare(list, "count", count);
         tryCompare(child("directoryGrid"), "count", count);
+        list.positionViewAtBeginning();
+        list.interactive = true;
+        waitForRendering(shellWindow.contentItem);
+    }
+
+    function populateNamedRows(names) {
+        let list = child("directoryList");
+        list.interactive = false;
+        list.cancelFlick();
+        list.contentY = 0;
+        fakeModel.clear();
+        for (let index = 0; index < names.length; ++index) {
+            fakeModel.append({
+                "name": names[index],
+                "isDir": false,
+                "size": 12 + index,
+                "selected": false,
+                "recoveryEntry": false,
+                "entryPath": "/sample/" + names[index],
+                "thumbnailSource": "",
+                "thumbnailLoading": false
+            });
+        }
+        fakeModel.currentIndex = names.length > 0 ? 0 : -1;
+        fakeModel.selectedCount = 0;
+        fakeModel.selectionAnchor = names.length > 0 ? 0 : -1;
+        tryCompare(list, "count", names.length);
+        tryCompare(child("directoryGrid"), "count", names.length);
         list.positionViewAtBeginning();
         list.interactive = true;
         waitForRendering(shellWindow.contentItem);
@@ -302,6 +422,16 @@ TestCase {
     function clickCell(index, button, modifiers) {
         let cell = cellAt(index);
         mouseClick(cell, cell.width / 2, cell.height / 2, button, modifiers);
+    }
+
+    function selectedRows() {
+        const rows = [];
+        for (let row = 0; row < fakeModel.count; ++row) {
+            if (fakeModel.get(row).selected) {
+                rows.push(row);
+            }
+        }
+        return rows;
     }
 
     function realizedGridCellCount(rowCount) {
@@ -464,12 +594,116 @@ TestCase {
         compare(fakeModel.clearSelectionCalls, 1);
     }
 
+    function test_listNavigationUpdatesFocusSelectionAndReveal() {
+        populateRows(60);
+        fakeModel.selectRow(5, Qt.NoModifier);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+
+        keyClick(Qt.Key_Down, Qt.ShiftModifier);
+        compare(fakeModel.currentIndex, 6);
+        compare(selectedRows().join(","), "5,6");
+
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
+        compare(fakeModel.currentIndex, 7);
+        compare(selectedRows().join(","), "5,6");
+
+        const pageRows = Math.max(1, Math.floor(list.height / shellWindow.rowHeight));
+        keyClick(Qt.Key_PageDown);
+        const pageTarget = Math.min(fakeModel.count - 1, 7 + pageRows);
+        compare(fakeModel.currentIndex, pageTarget);
+        compare(selectedRows().join(","), String(pageTarget));
+        verify(list.contentY > 0);
+        keyClick(Qt.Key_PageUp, Qt.ControlModifier);
+        compare(fakeModel.currentIndex, 7);
+        compare(selectedRows().join(","), String(pageTarget));
+
+        keyClick(Qt.Key_Home);
+        compare(fakeModel.currentIndex, 0);
+        compare(selectedRows().join(","), "0");
+        keyClick(Qt.Key_End, Qt.ControlModifier);
+        compare(fakeModel.currentIndex, fakeModel.count - 1);
+        compare(selectedRows().join(","), "0");
+        tryVerify(function () {
+            return list.contentY > 0;
+        });
+
+        keyClick(Qt.Key_Return);
+        compare(fakeModel.activatedRow, fakeModel.count - 1);
+    }
+
+    function test_typeAheadCyclesEditsWrapsTimesOutAndReveals() {
+        populateNamedRows(["alpha.txt", "beta.txt", "bravo.txt", "berry.txt"]);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_B);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        compare(fakeModel.currentIndex, 1);
+        compare(selectedRows().join(","), "1");
+
+        keyClick(Qt.Key_B);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        compare(fakeModel.currentIndex, 2);
+        keyClick(Qt.Key_R);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "br");
+        compare(fakeModel.currentIndex, 2);
+        keyClick(Qt.Key_Backspace);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        keyClick(Qt.Key_Escape);
+        compare(shellWindow.typeAheadBuffer, "");
+
+        fakeModel.selectRow(3, Qt.NoModifier);
+        keyClick(Qt.Key_B);
+        compare(fakeModel.currentIndex, 1);
+        wait(shellWindow.typeAheadTimeoutMs + 100);
+        compare(shellWindow.typeAheadBuffer, "");
+
+        const names = [];
+        for (let index = 0; index < 79; ++index) {
+            names.push("sample-" + index + ".txt");
+        }
+        names.push("zebra.txt");
+        populateNamedRows(names);
+        list = child("directoryList");
+        list.forceActiveFocus();
+        keyClick(Qt.Key_Z);
+        compare(fakeModel.currentIndex, 79);
+        compare(selectedRows().join(","), "79");
+        tryVerify(function () {
+            return list.contentY > 0;
+        });
+
+        keyClick(Qt.Key_Escape);
+        const currentBeforeEditing = fakeModel.currentIndex;
+        const filter = child("filterField");
+        filter.text = "";
+        filter.forceActiveFocus();
+        keyClick(Qt.Key_A);
+        compare(shellWindow.typeAheadBuffer, "");
+        compare(fakeModel.currentIndex, currentBeforeEditing);
+        compare(filter.text.toLocaleLowerCase(), "a");
+
+        fakeModel.requestRename();
+        const renameDialog = child("renameDialog");
+        tryCompare(renameDialog, "opened", true);
+        const renameField = child("renameField");
+        renameField.text = "";
+        renameField.forceActiveFocus();
+        keyClick(Qt.Key_B);
+        compare(shellWindow.typeAheadBuffer, "");
+        compare(fakeModel.currentIndex, currentBeforeEditing);
+        compare(renameField.text.toLocaleLowerCase(), "b");
+        renameDialog.close();
+    }
+
     function test_gridDelegatesAreVirtualizedAndRequestThumbnails() {
         populateRows(200);
         fakeModel.resetTelemetry();
         let list = child("directoryList");
         list.forceActiveFocus();
-        keyClick(Qt.Key_2, Qt.ControlModifier);
+        keyClick(Qt.Key_2, Qt.ControlModifier | Qt.ShiftModifier);
         let grid = child("directoryGrid");
         tryCompare(grid, "visible", true);
         verify(grid.count > 0);
@@ -553,7 +787,7 @@ TestCase {
     function test_gridKeyboardNavigationAfterShortcutSwitch() {
         let list = child("directoryList");
         list.forceActiveFocus();
-        keyClick(Qt.Key_2, Qt.ControlModifier);
+        keyClick(Qt.Key_2, Qt.ControlModifier | Qt.ShiftModifier);
         let grid = child("directoryGrid");
         tryCompare(grid, "visible", true);
         verify(grid.count > 0);
@@ -562,8 +796,104 @@ TestCase {
         });
         fakeModel.resetTelemetry();
         keyClick(Qt.Key_Right);
-        tryCompare(fakeModel, "moveCursorCalls", 1);
-        compare(fakeModel.moveCursorDelta, 1);
+        tryCompare(fakeModel, "moveCursorToCalls", 1);
+        compare(fakeModel.movedToRow, 1);
+        compare(fakeModel.currentIndex, 1);
+        compare(selectedRows().join(","), "1");
+    }
+
+    function test_gridNavigationUsesColumnsAndPreservesSelection() {
+        populateRows(60);
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        const columns = Math.max(1, Math.floor(grid.width / 144));
+        verify(columns > 1);
+
+        fakeModel.selectRow(columns + 1, Qt.NoModifier);
+        keyClick(Qt.Key_Up);
+        compare(fakeModel.currentIndex, 1);
+        compare(selectedRows().join(","), "1");
+        keyClick(Qt.Key_Down);
+        compare(fakeModel.currentIndex, columns + 1);
+        keyClick(Qt.Key_Left);
+        compare(fakeModel.currentIndex, columns);
+        keyClick(Qt.Key_Right);
+        compare(fakeModel.currentIndex, columns + 1);
+
+        fakeModel.selectRow(columns - 1, Qt.NoModifier);
+        keyClick(Qt.Key_Right);
+        compare(fakeModel.currentIndex, columns - 1);
+
+        const lastGridRow = Math.floor((fakeModel.count - 1) / columns);
+        const highColumnInPreviousRow = (lastGridRow - 1) * columns + columns - 1;
+        fakeModel.selectRow(highColumnInPreviousRow, Qt.NoModifier);
+        keyClick(Qt.Key_Down);
+        compare(fakeModel.currentIndex, highColumnInPreviousRow);
+
+        fakeModel.selectRow(1, Qt.NoModifier);
+        keyClick(Qt.Key_Down, Qt.ShiftModifier);
+        compare(fakeModel.currentIndex, columns + 1);
+        compare(fakeModel.selectedCount, columns + 1);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
+        compare(fakeModel.currentIndex, columns * 2 + 1);
+        compare(fakeModel.selectedCount, columns + 1);
+
+        const pageRows = Math.max(1, Math.floor(grid.height / 154));
+        const beforePage = fakeModel.currentIndex;
+        keyClick(Qt.Key_PageDown);
+        const pageTarget = Math.min(fakeModel.count - 1, beforePage + pageRows * columns);
+        compare(fakeModel.currentIndex, pageTarget);
+        compare(selectedRows().join(","), String(pageTarget));
+        keyClick(Qt.Key_PageUp, Qt.ControlModifier);
+        compare(fakeModel.currentIndex, beforePage);
+        compare(selectedRows().join(","), String(pageTarget));
+
+        keyClick(Qt.Key_End);
+        compare(fakeModel.currentIndex, fakeModel.count - 1);
+        compare(selectedRows().join(","), String(fakeModel.count - 1));
+        tryVerify(function () {
+            return grid.contentY > 0;
+        });
+        keyClick(Qt.Key_Return);
+        compare(fakeModel.activatedRow, fakeModel.count - 1);
+    }
+
+    function test_tabAndViewShortcutsDoNotConflictAndButtonsKeepFocusUsable() {
+        fakeModel.tabCount = 3;
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_2, Qt.ControlModifier);
+        compare(fakeModel.activeTab, 1);
+        compare(shellWindow.gridMode, false);
+
+        keyClick(Qt.Key_2, Qt.ControlModifier | Qt.ShiftModifier);
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        let listButton = child("listViewButton");
+        let gridButton = child("gridViewButton");
+        verify(listButton.enabled);
+        verify(gridButton.enabled);
+        compare(listButton.checkable, true);
+        compare(gridButton.checkable, true);
+        compare(listButton.checked, false);
+        compare(gridButton.checked, true);
+
+        mouseClick(listButton);
+        tryCompare(list, "visible", true);
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+        verify(listButton.enabled);
+        verify(gridButton.enabled);
+        compare(listButton.checked, true);
+        compare(gridButton.checked, false);
     }
 
     function test_viewSwitchingKeyboardAndMousePreservesSelection() {
@@ -575,7 +905,7 @@ TestCase {
         tryCompare(list, "contentY", 204);
         clickRow(10, Qt.LeftButton, Qt.NoModifier);
         list.forceActiveFocus();
-        keyClick(Qt.Key_2, Qt.ControlModifier);
+        keyClick(Qt.Key_2, Qt.ControlModifier | Qt.ShiftModifier);
         let grid = child("directoryGrid");
         tryCompare(grid, "visible", true);
         verify(grid.count > 0);
@@ -597,6 +927,19 @@ TestCase {
         compare(fakeModel.currentIndex, 10);
         compare(fakeModel.selectedRow, 10);
         compare(grid.contentY, 154);
+
+        const columns = Math.max(1, Math.floor(grid.width / 144));
+        keyClick(Qt.Key_Down, Qt.ShiftModifier);
+        compare(fakeModel.currentIndex, 10 + columns);
+        compare(fakeModel.selectedCount, columns + 1);
+
+        mouseClick(child("listViewButton"));
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+        keyClick(Qt.Key_Down, Qt.ShiftModifier);
+        compare(fakeModel.currentIndex, 11 + columns);
+        compare(fakeModel.selectedCount, columns + 2);
     }
 
     function test_moveDialogKeyboardAndMouseParity() {

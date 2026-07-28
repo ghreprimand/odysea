@@ -7,6 +7,7 @@ FocusScope {
     id: pane
 
     required property var shellModel
+    required property var navigationController
     required property color backgroundColor
     required property color panelColor
     required property color borderColor
@@ -20,6 +21,14 @@ FocusScope {
     readonly property int cellHeight: 154
 
     focus: visible
+
+    function forceViewFocus() {
+        directoryGrid.forceActiveFocus();
+    }
+
+    function revealCurrent() {
+        directoryGrid.revealCurrent();
+    }
 
     component GridBandArea: MouseArea {
         id: bandPointer
@@ -121,18 +130,58 @@ FocusScope {
         currentIndex: pane.shellModel.currentIndex
         highlightMoveDuration: 60
 
+        function columnCount() {
+            return Math.max(1, Math.floor(directoryGrid.width / pane.cellWidth));
+        }
+
+        function moveHorizontal(direction, extend, preserve) {
+            const current = Math.max(0, pane.shellModel.currentIndex);
+            const columns = directoryGrid.columnCount();
+            const column = current % columns;
+            const candidate = current + direction;
+            if ((direction < 0 && column > 0) || (direction > 0 && column + 1 < columns && candidate < directoryGrid.count)) {
+                pane.shellModel.moveCursorTo(candidate, extend, preserve);
+            }
+        }
+
+        function moveVertical(direction, rows, extend, preserve) {
+            const columns = directoryGrid.columnCount();
+            let target = Math.max(0, pane.shellModel.currentIndex);
+            for (let step = 0; step < rows; ++step) {
+                const candidate = target + direction * columns;
+                if (candidate < 0 || candidate >= directoryGrid.count) {
+                    break;
+                }
+                target = candidate;
+            }
+            pane.shellModel.moveCursorTo(target, extend, preserve);
+        }
+
+        function revealCurrent() {
+            if (pane.shellModel.currentIndex >= 0) {
+                directoryGrid.positionViewAtIndex(pane.shellModel.currentIndex, GridView.Contain);
+            }
+        }
+
         Keys.onPressed: event => {
+            if (pane.navigationController.handleTypeAhead(event, directoryGrid)) {
+                event.accepted = true;
+                return;
+            }
             const extend = (event.modifiers & Qt.ShiftModifier) !== 0;
             const preserve = (event.modifiers & Qt.ControlModifier) !== 0;
-            const columns = Math.max(1, Math.floor(directoryGrid.width / pane.cellWidth));
             if (event.key === Qt.Key_Left) {
-                pane.shellModel.moveCursor(-1, extend, preserve);
+                directoryGrid.moveHorizontal(-1, extend, preserve);
             } else if (event.key === Qt.Key_Right) {
-                pane.shellModel.moveCursor(1, extend, preserve);
+                directoryGrid.moveHorizontal(1, extend, preserve);
             } else if (event.key === Qt.Key_Up) {
-                pane.shellModel.moveCursor(-columns, extend, preserve);
+                directoryGrid.moveVertical(-1, 1, extend, preserve);
             } else if (event.key === Qt.Key_Down) {
-                pane.shellModel.moveCursor(columns, extend, preserve);
+                directoryGrid.moveVertical(1, 1, extend, preserve);
+            } else if (event.key === Qt.Key_PageUp) {
+                directoryGrid.moveVertical(-1, Math.max(1, Math.floor(directoryGrid.height / pane.cellHeight)), extend, preserve);
+            } else if (event.key === Qt.Key_PageDown) {
+                directoryGrid.moveVertical(1, Math.max(1, Math.floor(directoryGrid.height / pane.cellHeight)), extend, preserve);
             } else if (event.key === Qt.Key_Home) {
                 pane.shellModel.moveCursorTo(0, extend, preserve);
             } else if (event.key === Qt.Key_End) {
@@ -146,8 +195,9 @@ FocusScope {
             } else {
                 return;
             }
+            pane.navigationController.clearTypeAhead();
             event.accepted = true;
-            directoryGrid.positionViewAtIndex(pane.shellModel.currentIndex, GridView.Contain);
+            directoryGrid.revealCurrent();
         }
 
         delegate: Item {
@@ -261,8 +311,10 @@ FocusScope {
                 hoverEnabled: true
 
                 onClicked: mouse => {
+                    pane.navigationController.clearTypeAhead();
                     directoryGrid.forceActiveFocus();
                     pane.shellModel.selectRow(entryCell.index, mouse.modifiers);
+                    directoryGrid.revealCurrent();
                     if (mouse.button === Qt.RightButton) {
                         entryMenu.popup();
                     }

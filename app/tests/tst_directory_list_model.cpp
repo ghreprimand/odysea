@@ -130,6 +130,7 @@ class DirectoryListModelTest : public QObject {
     void uniqueInodeFallbackPreservesRename();
     void selectionSurvivesSortFilterAndRefresh();
     void explicitGeometricSelectionUsesRowSet();
+    void cursorMovementAndPrefixSearchPreserveSelectionContracts();
     void operationsReachCoreAndReportFailures();
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
@@ -485,6 +486,53 @@ void DirectoryListModelTest::explicitGeometricSelectionUsesRowSet() {
     model.updateRubberBandSelection({}, -1);
     model.endRubberBand();
     QCOMPARE(model.selectedCount(), 0);
+}
+
+void DirectoryListModelTest::cursorMovementAndPrefixSearchPreserveSelectionContracts() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (const std::string_view name :
+         {"alpha.txt", "Alpine.md", "beta.txt", "bravo.txt", "zulu.txt"}) {
+        writeFile(root / name);
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.rowCount(), 5);
+
+    model.selectRow(rowForName(model, QStringLiteral("beta.txt")), Qt::NoModifier);
+    QVERIFY(model.selectByPrefix(QStringLiteral("AL"), false));
+    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
+    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
+
+    QVERIFY(model.selectByPrefix(QStringLiteral("al"), true));
+    QCOMPARE(currentName(model), QStringLiteral("Alpine.md"));
+    QVERIFY(model.selectByPrefix(QStringLiteral("al"), true));
+    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
+
+    QVERIFY(!model.selectByPrefix(QStringLiteral("missing"), true));
+    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
+    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
+
+    QVERIFY(model.selectByPrefix(QStringLiteral("br"), false));
+    QCOMPARE(currentName(model), QStringLiteral("bravo.txt"));
+    model.moveCursorTo(rowForName(model, QStringLiteral("zulu.txt")), false, true);
+    QCOMPARE(currentName(model), QStringLiteral("zulu.txt"));
+    QCOMPARE(selectedName(model), QStringLiteral("bravo.txt"));
+    model.moveCursorTo(rowForName(model, QStringLiteral("beta.txt")), true, false);
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("beta.txt"), QStringLiteral("bravo.txt")}));
+
+    model.moveCursorTo(rowForName(model, QStringLiteral("alpha.txt")), false, false);
+    model.moveCursor(1, false, true);
+    QCOMPARE(currentName(model), QStringLiteral("Alpine.md"));
+    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
+    model.moveCursorTo(rowForName(model, QStringLiteral("beta.txt")), true, false);
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("alpha.txt"), QStringLiteral("Alpine.md"),
+                          QStringLiteral("beta.txt")}));
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {

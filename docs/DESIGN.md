@@ -44,6 +44,18 @@ terminal file manager. Achieving both at once is a deliberate design target.
   and Home/End keys navigate; standard shortcuts cover rename, trash, copy,
   move, and selection. An optional modal (vim-style) mode is available but is
   **off by default**.
+- **Navigation geometry.** List arrows move by one row. Grid arrows preserve
+  row and column boundaries rather than wrapping across cell edges, while
+  PageUp/PageDown move by the visible rows of the active view. Shift extends
+  from the stable selection anchor; Control moves focus without replacing the
+  selection. Switching views preserves that model state and reveals the
+  current entry.
+- **Type-ahead.** Printable input in a directory view performs a
+  case-insensitive prefix search with wraparound and repeated-character
+  cycling. The buffer supports Backspace and Escape and expires after a short
+  inactivity interval. Text fields and dialogs retain ownership of their input.
+  Numbered tab shortcuts use `Ctrl+1` through `Ctrl+9`; list and grid switching
+  use `Ctrl+Shift+1` and `Ctrl+Shift+2`.
 - **Mouse.** Fully first-class and complete, matching modern desktop
   expectations: single-click select, double-click open, ctrl/shift and
   rubber-band (drag-rectangle) multi-select, internal and drag-out

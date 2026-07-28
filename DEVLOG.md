@@ -7,6 +7,42 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Add spatial navigation and bounded type-ahead
+
+List navigation now moves by rows, while grid navigation respects the rendered
+column geometry and does not wrap Left or Right across cell boundaries.
+Home/End and viewport-sized PageUp/PageDown movement work in both views.
+Shift extends from the shared stable selection anchor, Control moves focus
+without replacing selection, Return activates the current entry, and every
+movement reveals its result. Switching views keeps current entry, selection,
+anchor, and independent scroll positions coherent.
+
+Printable input in either directory view starts a case-insensitive prefix
+search. The search wraps, repeated single characters cycle among matches,
+Backspace edits the buffer, Escape clears it, and inactivity expires it after a
+bounded interval. A match becomes the current single selection and scrolls into
+view. Text fields and modal dialogs keep their printable input instead of
+leaking it into directory search.
+
+`Ctrl+1` through `Ctrl+9` now activate numbered tabs. View switching moved to
+`Ctrl+Shift+1` and `Ctrl+Shift+2`, matching always-enabled, checkable List and
+Grid buttons. Pointer switching returns focus to the active view so arrow keys
+work immediately instead of leaving focus on a disabled toolbar control.
+
+Adapter tests cover case-insensitive search, wraparound, cycling, failure
+stability, focus-only movement, range anchors, and exact selection state.
+Rendered-shell tests cover list and grid geometry, PageUp/PageDown,
+Home/End, activation, automatic reveal, cross-view anchors, shortcut
+separation, button focus, timeout and buffer editing, and text-control and
+dialog input ownership.
+
+Verified with all eighteen release tests and all seventeen enabled ASan/UBSan
+tests, including warning-clean builds, static analysis, C++ and QML formatting,
+zero-warning QML linting, public-repository and file-length guards, and
+offscreen release and sanitizer smoke launches. The adapter and rendered-shell
+tests also passed fifteen consecutive release runs and five consecutive
+sanitizer runs.
+
 ## 2026-07-28 -- Add a virtualized thumbnail grid
 
 The shell now offers list and grid presentations over the same incremental

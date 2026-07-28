@@ -20,7 +20,9 @@ ApplicationWindow {
     readonly property color secondaryTextColor: "#a99f91"
     readonly property color accentColor: "#ffb454"
     readonly property color selectionColor: "#49321f"
+    readonly property int typeAheadTimeoutMs: 900
     property bool gridMode: false
+    property string typeAheadBuffer: ""
 
     width: 1100
     height: 720
@@ -120,6 +122,22 @@ ApplicationWindow {
 
         readonly property int selectionGutterWidth: 28
 
+        function focusCurrentView() {
+            if (root.gridMode) {
+                directoryGrid.forceViewFocus();
+            } else {
+                directoryList.forceActiveFocus();
+            }
+        }
+
+        function revealCurrent() {
+            if (root.gridMode) {
+                directoryGrid.revealCurrent();
+            } else {
+                directoryList.revealCurrent();
+            }
+        }
+
         Rectangle {
             anchors.fill: parent
             color: root.backgroundColor
@@ -141,13 +159,27 @@ ApplicationWindow {
             currentIndex: root.shellModel.currentIndex
             highlightMoveDuration: 60
 
+            function revealCurrent() {
+                if (root.shellModel.currentIndex >= 0) {
+                    directoryList.positionViewAtIndex(root.shellModel.currentIndex, ListView.Contain);
+                }
+            }
+
             Keys.onPressed: event => {
+                if (root.handleTypeAhead(event, directoryList)) {
+                    event.accepted = true;
+                    return;
+                }
                 const extend = (event.modifiers & Qt.ShiftModifier) !== 0;
                 const preserve = (event.modifiers & Qt.ControlModifier) !== 0;
                 if (event.key === Qt.Key_Up) {
                     root.shellModel.moveCursor(-1, extend, preserve);
                 } else if (event.key === Qt.Key_Down) {
                     root.shellModel.moveCursor(1, extend, preserve);
+                } else if (event.key === Qt.Key_PageUp) {
+                    root.shellModel.moveCursor(-Math.max(1, Math.floor(directoryList.height / root.rowHeight)), extend, preserve);
+                } else if (event.key === Qt.Key_PageDown) {
+                    root.shellModel.moveCursor(Math.max(1, Math.floor(directoryList.height / root.rowHeight)), extend, preserve);
                 } else if (event.key === Qt.Key_Home) {
                     root.shellModel.moveCursorTo(0, extend, preserve);
                 } else if (event.key === Qt.Key_End) {
@@ -161,8 +193,9 @@ ApplicationWindow {
                 } else {
                     return;
                 }
+                root.clearTypeAhead();
                 event.accepted = true;
-                directoryList.positionViewAtIndex(root.shellModel.currentIndex, ListView.Contain);
+                directoryList.revealCurrent();
             }
 
             delegate: Item {
@@ -232,8 +265,10 @@ ApplicationWindow {
                     hoverEnabled: true
 
                     onClicked: mouse => {
+                        root.clearTypeAhead();
                         directoryList.forceActiveFocus();
                         root.shellModel.selectRow(entryRow.index, mouse.modifiers);
+                        directoryList.revealCurrent();
                         if (mouse.button === Qt.RightButton) {
                             entryMenu.popup();
                         }
@@ -331,6 +366,7 @@ ApplicationWindow {
             anchors.fill: parent
             visible: root.gridMode
             shellModel: root.shellModel
+            navigationController: root
             backgroundColor: root.backgroundColor
             panelColor: root.panelColor
             borderColor: root.borderColor
@@ -363,6 +399,88 @@ ApplicationWindow {
         root.shellModel.activateTab(nextTab);
     }
 
+    function activeDirectoryPane() {
+        return root.shellModel.activePane === 0 ? firstPaneLoader.item : secondPaneLoader.item;
+    }
+
+    function clearTypeAhead() {
+        typeAheadBuffer = "";
+        typeAheadTimer.stop();
+    }
+
+    function focusCurrentView() {
+        Qt.callLater(function () {
+            const pane = root.activeDirectoryPane();
+            if (pane !== null) {
+                pane.focusCurrentView();
+                pane.revealCurrent();
+            }
+        });
+    }
+
+    function printableKeyText(event) {
+        if ((event.key === Qt.Key_Space && typeAheadBuffer.length === 0) || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) !== 0 || event.text.length === 0) {
+            return "";
+        }
+        const codePoint = event.text.codePointAt(0);
+        return codePoint >= 0x20 && codePoint !== 0x7f ? event.text : "";
+    }
+
+    function handleTypeAhead(event, view) {
+        if (event.key === Qt.Key_Backspace) {
+            if (typeAheadBuffer.length === 0) {
+                return false;
+            }
+            typeAheadBuffer = typeAheadBuffer.slice(0, -1);
+            if (typeAheadBuffer.length > 0) {
+                root.shellModel.selectByPrefix(typeAheadBuffer, false);
+                typeAheadTimer.restart();
+                view.revealCurrent();
+            } else {
+                typeAheadTimer.stop();
+            }
+            return true;
+        }
+        if (event.key === Qt.Key_Escape && typeAheadBuffer.length > 0) {
+            root.clearTypeAhead();
+            return true;
+        }
+
+        const text = root.printableKeyText(event);
+        if (text.length === 0) {
+            return false;
+        }
+        const previous = typeAheadBuffer;
+        const repeatedSingleCharacter = previous.length === 1 && previous.toLocaleLowerCase() === text.toLocaleLowerCase();
+        const cycle = previous.length === 0 || repeatedSingleCharacter;
+        typeAheadBuffer = repeatedSingleCharacter ? text : previous + text;
+        root.shellModel.selectByPrefix(typeAheadBuffer, cycle);
+        typeAheadTimer.restart();
+        view.revealCurrent();
+        return true;
+    }
+
+    function switchView(useGrid) {
+        gridMode = useGrid;
+        root.clearTypeAhead();
+        root.focusCurrentView();
+    }
+
+    function activateTabIndex(index) {
+        if (index < root.shellModel.tabCount) {
+            root.shellModel.activateTab(index);
+            root.clearTypeAhead();
+            root.focusCurrentView();
+        }
+    }
+
+    Timer {
+        id: typeAheadTimer
+
+        interval: root.typeAheadTimeoutMs
+        onTriggered: root.typeAheadBuffer = ""
+    }
+
     Shortcut {
         sequence: "Alt+Left"
         enabled: root.shellModel.canGoBack
@@ -388,11 +506,56 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Ctrl+1"
-        onActivated: root.gridMode = false
+        enabled: root.shellModel.tabCount > 0
+        onActivated: root.activateTabIndex(0)
     }
     Shortcut {
         sequence: "Ctrl+2"
-        onActivated: root.gridMode = true
+        enabled: root.shellModel.tabCount > 1
+        onActivated: root.activateTabIndex(1)
+    }
+    Shortcut {
+        sequence: "Ctrl+3"
+        enabled: root.shellModel.tabCount > 2
+        onActivated: root.activateTabIndex(2)
+    }
+    Shortcut {
+        sequence: "Ctrl+4"
+        enabled: root.shellModel.tabCount > 3
+        onActivated: root.activateTabIndex(3)
+    }
+    Shortcut {
+        sequence: "Ctrl+5"
+        enabled: root.shellModel.tabCount > 4
+        onActivated: root.activateTabIndex(4)
+    }
+    Shortcut {
+        sequence: "Ctrl+6"
+        enabled: root.shellModel.tabCount > 5
+        onActivated: root.activateTabIndex(5)
+    }
+    Shortcut {
+        sequence: "Ctrl+7"
+        enabled: root.shellModel.tabCount > 6
+        onActivated: root.activateTabIndex(6)
+    }
+    Shortcut {
+        sequence: "Ctrl+8"
+        enabled: root.shellModel.tabCount > 7
+        onActivated: root.activateTabIndex(7)
+    }
+    Shortcut {
+        sequence: "Ctrl+9"
+        enabled: root.shellModel.tabCount > 8
+        onActivated: root.activateTabIndex(8)
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+1"
+        onActivated: root.switchView(false)
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+2"
+        onActivated: root.switchView(true)
     }
     Shortcut {
         sequence: "Ctrl+Shift+S"
@@ -541,18 +704,20 @@ ApplicationWindow {
                 ShellButton {
                     objectName: "listViewButton"
                     text: qsTr("List")
-                    enabled: root.gridMode
+                    checkable: true
+                    checked: !root.gridMode
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("List view (Ctrl+1)")
-                    onClicked: root.gridMode = false
+                    ToolTip.text: qsTr("List view (Ctrl+Shift+1)")
+                    onClicked: root.switchView(false)
                 }
                 ShellButton {
                     objectName: "gridViewButton"
                     text: qsTr("Grid")
-                    enabled: !root.gridMode
+                    checkable: true
+                    checked: root.gridMode
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Grid view (Ctrl+2)")
-                    onClicked: root.gridMode = true
+                    ToolTip.text: qsTr("Grid view (Ctrl+Shift+2)")
+                    onClicked: root.switchView(true)
                 }
             }
         }
@@ -635,6 +800,7 @@ ApplicationWindow {
 
                 TextField {
                     id: filterField
+                    objectName: "filterField"
                     Layout.preferredWidth: 260
                     placeholderText: qsTr("Filter this folder (Ctrl+F)")
                     color: root.primaryTextColor
@@ -718,6 +884,8 @@ ApplicationWindow {
         spacing: 8
 
         Loader {
+            id: firstPaneLoader
+
             Layout.fillWidth: true
             Layout.fillHeight: true
             active: root.shellModel.activePane === 0
@@ -768,6 +936,8 @@ ApplicationWindow {
         }
 
         Loader {
+            id: secondPaneLoader
+
             visible: root.shellModel.paneCount === 2
             Layout.fillWidth: true
             Layout.fillHeight: true

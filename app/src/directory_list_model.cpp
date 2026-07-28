@@ -262,6 +262,26 @@ void DirectoryListModel::moveCursorTo(int row, bool extendSelection, bool preser
     setCurrentIndex(row);
 }
 
+bool DirectoryListModel::selectByPrefix(const QString& prefix, bool cycle) {
+    const int count = rowCount();
+    if (prefix.isEmpty() || count <= 0) {
+        return false;
+    }
+
+    const int current = currentIndex_ >= 0 && currentIndex_ < count ? currentIndex_ : 0;
+    const int first = cycle ? (current + 1) % count : current;
+    for (int offset = 0; offset < count; ++offset) {
+        const int row = (first + offset) % count;
+        const QString name =
+            QString::fromStdString(entries_.at(static_cast<std::size_t>(row)).name);
+        if (name.startsWith(prefix, Qt::CaseInsensitive)) {
+            moveCursorTo(row, false, false);
+            return true;
+        }
+    }
+    return false;
+}
+
 void DirectoryListModel::toggleCurrent() {
     if (currentIndex_ < 0 || currentIndex_ >= rowCount()) {
         return;
