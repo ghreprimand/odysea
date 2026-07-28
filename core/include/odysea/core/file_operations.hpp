@@ -1,0 +1,172 @@
+// OdySea core: filesystem mutation primitives.
+//
+// Toolkit-agnostic. No Qt, no GUI types. Copy, move, and rename are expressed
+// as explicit requests that never throw: every failure is reported through an
+// outcome so the presentation layer can decide how to surface it.
+//
+// Replacing an existing entry cannot always be done in one step, so these
+// operations prepare the replacement under a working name in the destination
+// directory and move the existing entry aside while the swap happens. Working
+// names are removed once the operation settles. In the rare case where recovery
+// from a failed step itself fails, the data is left under its working name
+// rather than removed: an entry under an unexpected name can be recovered, a
+// deleted one cannot. Use classify_working_entry to recognize such an entry
+// rather than matching its spelling.
+#pragma once
+
+#include <filesystem>
+#include <string_view>
+#include <system_error>
+
+namespace odysea::core {
+
+/// How an operation behaves when the destination name is already taken.
+enum class ConflictPolicy {
+    /// Change nothing and report std::errc::file_exists.
+    Fail,
+    /// Replace the existing destination. Replacement, never a merge: a
+    /// destination directory is removed rather than written into.
+    Overwrite,
+    /// Pick the next free "name (2)" style variant next to the original.
+    AutoRename,
+};
+
+/// Parameters shared by the mutation operations.
+struct OperationOptions {
+    ConflictPolicy conflict = ConflictPolicy::Fail;
+};
+
+/// The result of a single mutation.
+///
+/// On success `destination` holds the final path, which differs from the
+/// requested path when ConflictPolicy::AutoRename resolved a collision. On
+/// failure `destination` is empty and `error` describes the cause.
+struct OperationOutcome {
+    std::filesystem::path destination;
+    std::error_code error;
+
+    [[nodiscard]] bool succeeded() const noexcept { return !error; }
+};
+
+/// What an entry created by these operations for their own use holds.
+///
+/// A working entry that outlives the operation that created it may hold the
+/// only remaining copy of the caller's data, whichever role it has. Neither
+/// role licenses deletion. An operation removes its own working entries while
+/// it still knows what they hold; anything found afterwards was left by a
+/// failure or an interruption, and what it holds is no longer known from its
+/// name alone.
+enum class WorkingEntryRole {
+    /// Not an entry these operations created.
+    None,
+    /// A replacement being assembled.
+    ///
+    /// While the operation runs this is a second copy, and the operation
+    /// discards it itself when it is no longer needed. One found afterwards
+    /// may still be the only copy of its data: a move relocates the source
+    /// under this role, and a failure that could not be undone leaves it here
+    /// rather than removing it.
+    Prepared,
+    /// A destination moved aside to make room for its replacement.
+    ///
+    /// Left behind only when a failure could not be undone, in which case it
+    /// may hold the only remaining copy of what used to occupy the
+    /// destination.
+    Replaced,
+};
+
+/// Classify a single directory entry name.
+///
+/// Presentation layers use this to recognize the entries these operations
+/// create, so a listing can distinguish them from entries the user made rather
+/// than showing an unexplained name.
+///
+/// Recognizing an entry is not permission to remove it, and a listing that
+/// omits these entries should offer a way to see them: an entry that outlived
+/// its operation may be the only copy of something the user did not agree to
+/// lose. The naming scheme is deliberately not part of the interface: names
+/// have a bounded length independent of the entry being operated on, so an
+/// operation on a name of the maximum length the filesystem allows is not
+/// itself limited.
+///
+/// `name` is a single path component, not a whole path.
+[[nodiscard]] WorkingEntryRole classify_working_entry(std::string_view name) noexcept;
+
+/// Whether `name` is any working entry these operations created.
+[[nodiscard]] bool is_working_entry(std::string_view name) noexcept;
+
+/// Resolve the path a new entry named `name` would occupy in `directory`.
+///
+/// Applies the conflict policy without touching the filesystem beyond
+/// existence checks. Exposed because callers frequently need to preview the
+/// final name before committing to an operation.
+///
+/// ConflictPolicy::AutoRename numbers the name, and shortens it where the
+/// number would not otherwise fit within the longest name the filesystem
+/// accepts for a single entry. The extension is kept whenever the numbered
+/// name can hold it, and a name that is valid UTF-8 is only ever shortened
+/// between characters. The resolved name is reported in `destination`, so a
+/// caller that needs to show the final name reads it from there rather than
+/// predicting it.
+[[nodiscard]] OperationOutcome resolve_destination(const std::filesystem::path& directory,
+                                                   std::string_view name,
+                                                   const OperationOptions& options);
+
+/// Copy `source` into `destination_directory`, keeping the source file name.
+///
+/// Directories are copied recursively and symlinks are copied as symlinks
+/// rather than followed. Copying a directory into itself or into one of its own
+/// descendants is rejected with std::errc::invalid_argument.
+///
+/// When the resolved destination is the source itself the copy is a no-op that
+/// reports success, so an entry can never be destroyed by being copied over
+/// itself.
+///
+/// Otherwise the copy is assembled beside the destination and installed once it
+/// is complete. An existing destination is moved aside rather than removed, and
+/// is discarded only after the replacement is in place, so no failure at any
+/// point costs either the source or the destination. A failed copy leaves no
+/// partial entry behind.
+[[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
+                                         const std::filesystem::path& destination_directory,
+                                         const OperationOptions& options);
+
+/// Move `source` into `destination_directory`, keeping the source file name.
+///
+/// Uses a rename when both paths share a filesystem and falls back to a
+/// recursive copy followed by removal of the source across filesystems. Moving
+/// a directory into itself or into one of its own descendants is rejected with
+/// std::errc::invalid_argument.
+///
+/// When the resolved destination is the source itself the move is a no-op that
+/// reports success. Moving into a free name, and replacing one non-directory
+/// with another, are left to the rename, which does either in a single atomic
+/// step.
+///
+/// Every other case — a replacement a rename cannot perform, or a move across
+/// filesystems — assembles the moved entry beside the destination and swaps it
+/// into place. The existing destination is moved aside rather than removed and
+/// is discarded only after the replacement is in place, so a failure at any
+/// point leaves both the source and the destination intact.
+[[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
+                                         const std::filesystem::path& destination_directory,
+                                         const OperationOptions& options);
+
+/// Rename `source` in place to `new_name`.
+///
+/// `new_name` must be a bare file name: empty names, names containing a path
+/// separator, and the "." and ".." specials are rejected with
+/// std::errc::invalid_argument.
+///
+/// Renaming an entry to a name that already resolves to that same entry is a
+/// no-op that reports success, whether it matches by spelling or by identity.
+///
+/// A free name, and one non-directory replacing another, are handled by a
+/// single atomic rename. Replacing a directory moves the existing destination
+/// aside and discards it only after the replacement is in place, so a failure
+/// leaves both entries intact.
+[[nodiscard]] OperationOutcome rename_entry(const std::filesystem::path& source,
+                                            std::string_view new_name,
+                                            const OperationOptions& options);
+
+} // namespace odysea::core
