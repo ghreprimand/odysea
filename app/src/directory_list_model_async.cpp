@@ -26,17 +26,25 @@ void DirectoryListModel::startScan() {
     if (path_.isEmpty()) {
         scanner_.cancel();
         watchService_.replace({}, ++watchToken_);
+        scannedPath_.clear();
         scannedEntries_.clear();
+        scanBaselineEntries_.clear();
         scanEntries_.clear();
         applyPresentationSettings(true);
         setBusy(false);
         return;
     }
 
+    if (scannedPath_ != path_) {
+        scannedPath_ = path_;
+        scannedEntries_.clear();
+        applyPresentationSettings();
+    }
+    scanBaselineEntries_ = scannedEntries_;
+
     setBusy(true);
     setErrorString({});
     scanEntries_.clear();
-    scanReceivedBatch_ = false;
 
     odysea::core::DirectoryScanner::Request request;
     request.directory = path_.toStdString();
@@ -85,10 +93,19 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token,
     if (token != activeScanToken_) {
         return;
     }
-    scanReceivedBatch_ = true;
-    scanEntries_.insert(scanEntries_.end(), std::make_move_iterator(entries.begin()),
-                        std::make_move_iterator(entries.end()));
-    scannedEntries_ = scanEntries_;
+    for (odysea::core::Entry& entry : entries) {
+        const QString key = entryKey(entry);
+        const auto existing =
+            std::ranges::find_if(scannedEntries_, [this, &key](const auto& candidate) {
+                return entryKey(candidate) == key;
+            });
+        if (existing == scannedEntries_.end()) {
+            scannedEntries_.push_back(entry);
+        } else {
+            *existing = entry;
+        }
+        scanEntries_.push_back(std::move(entry));
+    }
     applyPresentationSettings();
 }
 
@@ -97,10 +114,37 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
         return;
     }
 
-    if (!scanReceivedBatch_) {
-        scanEntries_.clear();
+    QHash<QString, int> baselineIdentityCounts;
+    QHash<QString, int> completedIdentityCounts;
+    QHash<QString, QString> completedIdentityKeys;
+    QSet<QString> completedKeys;
+    for (const odysea::core::Entry& entry : scanBaselineEntries_) {
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++baselineIdentityCounts[identity];
+        }
     }
+    for (const odysea::core::Entry& entry : scanEntries_) {
+        const QString key = entryKey(entry);
+        completedKeys.insert(key);
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++completedIdentityCounts[identity];
+            completedIdentityKeys[identity] = key;
+        }
+    }
+    for (const odysea::core::Entry& entry : scanBaselineEntries_) {
+        const QString oldKey = entryKey(entry);
+        const QString identity = entryIdentity(entry);
+        if (!completedKeys.contains(oldKey) && !identity.isEmpty() &&
+            baselineIdentityCounts.value(identity) == 1 &&
+            completedIdentityCounts.value(identity) == 1) {
+            remapEntryKey(oldKey, completedIdentityKeys.value(identity));
+        }
+    }
+
     scannedEntries_ = std::move(scanEntries_);
+    scanBaselineEntries_.clear();
     setErrorString(summary.error ? QString::fromStdString(summary.error.message()) : QString{});
     applyPresentationSettings(true);
     setBusy(false);
@@ -153,12 +197,7 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         const QString oldKey = entryKey(oldEntry);
         const QString newKey = entryKey(newEntry);
         remappedOldKeys.insert(oldKey);
-        if (selectedEntryKeys_.remove(oldKey)) {
-            selectedEntryKeys_.insert(newKey);
-        }
-        if (currentEntryKey_ == oldKey) {
-            currentEntryKey_ = newKey;
-        }
+        remapEntryKey(oldKey, newKey);
     };
 
     for (const DirectoryEntryRename& rename : update.renamedEntries) {
@@ -210,6 +249,10 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
                 if (currentEntryKey_ == key) {
                     currentEntryKey_.clear();
                 }
+                if (selectionAnchorKey_ == key) {
+                    selectionAnchorKey_.clear();
+                }
+                rubberBandBaseKeys_.remove(key);
             }
             return true;
         });

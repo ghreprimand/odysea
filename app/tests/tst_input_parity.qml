@@ -43,8 +43,8 @@ TestCase {
         property int beginRubberBandCalls: 0
         property bool rubberBandAdditive: false
         property int updateRubberBandCalls: 0
-        property int firstRubberBandRow: -1
-        property int lastRubberBandRow: -1
+        property var rubberBandRows: []
+        property int rubberBandCurrentRow: -1
         property int endRubberBandCalls: 0
         property int activateTabCalls: 0
         property int activatedTab: -1
@@ -148,10 +148,10 @@ TestCase {
         function toggleCurrent() {
             toggleCurrentCalls += 1;
         }
-        function updateRubberBand(firstRow, lastRow) {
+        function updateRubberBandSelection(rows, currentRow) {
             updateRubberBandCalls += 1;
-            firstRubberBandRow = firstRow;
-            lastRubberBandRow = lastRow;
+            rubberBandRows = rows.slice();
+            rubberBandCurrentRow = currentRow;
         }
 
         function selectRow(row, modifiers) {
@@ -176,8 +176,8 @@ TestCase {
             beginRubberBandCalls = 0;
             rubberBandAdditive = false;
             updateRubberBandCalls = 0;
-            firstRubberBandRow = -1;
-            lastRubberBandRow = -1;
+            rubberBandRows = [];
+            rubberBandCurrentRow = -1;
             endRubberBandCalls = 0;
             activateTabCalls = 0;
             activatedTab = -1;
@@ -276,7 +276,7 @@ TestCase {
         mouseClick(row, row.width / 2, row.height / 2, button, modifiers);
     }
 
-    function verifyBandDrag(area) {
+    function verifyBandDrag(area, expectRows) {
         tryVerify(function () {
             return area.width > 4 && area.height > 80;
         });
@@ -284,8 +284,13 @@ TestCase {
         tryCompare(fakeModel, "beginRubberBandCalls", 1);
         verify(fakeModel.updateRubberBandCalls > 0);
         compare(fakeModel.endRubberBandCalls, 1);
-        verify(fakeModel.firstRubberBandRow >= 0);
-        verify(fakeModel.lastRubberBandRow >= fakeModel.firstRubberBandRow);
+        if (expectRows) {
+            verify(fakeModel.rubberBandRows.length > 0);
+            verify(fakeModel.rubberBandCurrentRow >= 0);
+        } else {
+            compare(fakeModel.rubberBandRows.length, 0);
+            compare(fakeModel.rubberBandCurrentRow, -1);
+        }
     }
 
     function prepareScrollableRows(contentY) {
@@ -305,7 +310,7 @@ TestCase {
     }
 
     function test_blankAreaRubberBand() {
-        verifyBandDrag(child("rubberBandBlankArea"));
+        verifyBandDrag(child("rubberBandBlankArea"), false);
     }
 
     function test_ctrlClickReachesSelectionModel() {
@@ -354,7 +359,7 @@ TestCase {
         fakeModel.resetTelemetry();
         let blankArea = child("rubberBandBlankArea");
         tryCompare(blankArea, "height", 0);
-        verifyBandDrag(child("rubberBandGutter"));
+        verifyBandDrag(child("rubberBandGutter"), true);
     }
 
     function test_bandAnchorSurvivesContentMovement() {
@@ -370,8 +375,9 @@ TestCase {
 
         tryCompare(fakeModel, "beginRubberBandCalls", 1);
         verify(fakeModel.updateRubberBandCalls > 0);
-        compare(fakeModel.firstRubberBandRow, Math.floor(400 / 34));
-        compare(fakeModel.lastRubberBandRow, Math.floor(518 / 34));
+        compare(fakeModel.rubberBandRows[0], Math.floor(400 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(517 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(517 / 34));
         compare(fakeModel.endRubberBandCalls, 1);
     }
 
@@ -383,8 +389,9 @@ TestCase {
 
         tryCompare(fakeModel, "beginRubberBandCalls", 1);
         verify(fakeModel.updateRubberBandCalls > 2);
-        compare(fakeModel.firstRubberBandRow, Math.floor(330 / 34));
-        compare(fakeModel.lastRubberBandRow, Math.floor(470 / 34));
+        compare(fakeModel.rubberBandRows[0], Math.floor(330 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(469 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(469 / 34));
         compare(fakeModel.endRubberBandCalls, 1);
         compare(list.contentY, 300);
     }
@@ -397,8 +404,9 @@ TestCase {
 
         tryCompare(fakeModel, "beginRubberBandCalls", 1);
         verify(fakeModel.updateRubberBandCalls > 2);
-        compare(fakeModel.firstRubberBandRow, Math.floor(500 / 34));
-        compare(fakeModel.lastRubberBandRow, Math.floor(360 / 34));
+        compare(fakeModel.rubberBandRows[0], Math.floor(360 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(499 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(360 / 34));
         compare(fakeModel.endRubberBandCalls, 1);
         compare(list.contentY, 300);
     }

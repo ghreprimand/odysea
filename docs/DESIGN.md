@@ -53,6 +53,10 @@ terminal file manager. Achieving both at once is a deliberate design target.
   mouse-only. When a feature adds an interaction, it is wired for both paths.
 - **Views.** Planned view models include a single-pane list/grid, a dual-pane
   layout for transfers, and miller/columns navigation for deep trees.
+- **Geometric selection.** Each view computes the explicit set of model rows
+  intersected by its rubber-band rectangle. The shared selection model applies
+  that set by stable entry key, so list and grid geometry do not leak into
+  selection state.
 - **Terminal bridge.** Opening a terminal at the current directory, and running a
   command against the current selection, are core interactions.
 
@@ -70,8 +74,9 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   theming, and thumbnail decoding and presentation. A thin adapter
   (`DirectoryListModel`, a `QAbstractListModel`) is the single boundary that
   exposes the core to QML. It marshals scanner and watcher callbacks onto the UI
-  thread and schedules mutations away from it; the core itself never includes a
-  Qt header.
+  thread, schedules mutations away from it, and reconciles presentation changes
+  through incremental row, data, and layout signals keyed by directory-entry
+  identity; the core itself never includes a Qt header.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 
@@ -91,6 +96,9 @@ effects, or a custom RHI/Vulkan pass) for the visual identity.
 
 - Directory I/O and metadata resolution run off the UI thread; the interface
   renders whatever is available and fills in asynchronously.
+- Refresh batches retain previously published entries until the completed scan
+  identifies removals. Inserts, removals, metadata changes, and sorting publish
+  granular model signals instead of invalidating the entire view.
 - Large directories use a virtualized view (`ListView`/`GridView` only realize
   visible delegates), so entry count does not gate frame time.
 - Thumbnails are generated lazily, cached, and cancellable when navigation moves

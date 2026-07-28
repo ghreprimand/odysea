@@ -7,9 +7,11 @@
 
 #include <QAbstractListModel>
 #include <QFutureWatcher>
+#include <QHash>
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
 
 #include <atomic>
 #include <cstdint>
@@ -104,7 +106,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void selectAll();
     Q_INVOKABLE void clearSelection();
     Q_INVOKABLE void beginRubberBand(bool additive);
-    Q_INVOKABLE void updateRubberBand(int firstRow, int lastRow);
+    Q_INVOKABLE void updateRubberBandSelection(const QVariantList& rows, int currentRow);
     Q_INVOKABLE void endRubberBand();
 
     Q_INVOKABLE QString tabLabel(int tabIndex) const;
@@ -163,6 +165,7 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QStringList selectedPaths() const;
     [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
     [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
+    [[nodiscard]] int rowForEntryKey(const QString& key) const;
     [[nodiscard]] odysea::core::OperationOptions operationOptions(int conflictMode) const;
 
     void navigateTo(const QString& path, bool recordHistory);
@@ -179,7 +182,9 @@ class DirectoryListModel : public QAbstractListModel {
     void setOperationBusy(bool busy);
     void setOperationErrorString(const QString& errorString);
     void setCurrentIndex(int row);
+    void remapEntryKey(const QString& oldKey, const QString& newKey);
     void replaceSelection(QSet<int> selection);
+    void replaceSelectionKeys(QSet<QString> keys);
     void rebuildSelectionRows();
     void selectRangeTo(int row);
     void notifySelectionRoles();
@@ -196,12 +201,15 @@ class DirectoryListModel : public QAbstractListModel {
     QString statusMessage_;
     QString operationErrorString_;
     QString currentEntryKey_;
+    QString scannedPath_;
     std::vector<odysea::core::Entry> scannedEntries_;
+    std::vector<odysea::core::Entry> scanBaselineEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
     QSet<int> selectedRows_;
     QSet<QString> selectedEntryKeys_;
-    QSet<int> rubberBandBase_;
+    QHash<QString, QString> pendingEntryKeyRemaps_;
+    QSet<QString> rubberBandBaseKeys_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
     odysea::core::DirectoryScanner scanner_;
     DirectoryWatchService watchService_;
@@ -211,13 +219,12 @@ class DirectoryListModel : public QAbstractListModel {
     std::uint64_t watchToken_ = 0;
     int sortMode_ = SortByName;
     int currentIndex_ = -1;
-    int selectionAnchor_ = -1;
+    QString selectionAnchorKey_;
     int activePane_ = 0;
     int paneCount_ = 1;
     bool busy_ = false;
     bool operationBusy_ = false;
     bool showHidden_ = false;
     bool rubberBandActive_ = false;
-    bool scanReceivedBatch_ = false;
     bool watchRefreshPending_ = false;
 };

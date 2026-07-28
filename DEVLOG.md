@@ -138,6 +138,44 @@ reinterpreting this field. The header states that boundary.
 Verified with the headless listing suite, which pins a symbolic link and its
 target to deliberately different times and requires each entry to report its
 own; resolving the link instead fails that check.
+
+## 2026-07-28 -- Stabilize incremental presentation and geometric selection
+
+Scanner batches, completed scans, watcher changes, sorting, filtering, and
+hidden-file changes now reconcile the application model without resetting it.
+Refresh batches update entries already observed and append newly observed
+entries while retaining the previous listing until the completed scan can
+identify removals. Presentation reconciliation groups row insertions and
+removals, emits role-specific data changes, and uses layout signals with
+persistent-index remapping when ordering changes.
+
+Directory-entry paths provide distinct presentation keys, including for hard
+links. Explicit rename pairs preserve the same presented item across a path
+change, and device and inode identity provides a fallback only when unique on
+both sides. Selection, the current entry, range anchors, navigation history,
+sort and filter settings, hidden-entry visibility, and stale-scan rejection
+remain stable across incremental updates.
+
+Rubber-band selection now accepts an explicit set of intersected model rows plus
+the row nearest the pointer. The list view derives that set from the selection
+rectangle in content coordinates. The selection model stores additive bases and
+range anchors by stable entry key, leaving it independent of list geometry and
+ready for a grid to supply two-dimensional intersections. Row clicks,
+double-clicks, context menus, scrolling, keyboard selection, and pointer-drag
+arbitration retain their existing behavior.
+
+Adapter tests distinguish insert, remove, data, and layout signals, reject model
+resets, preserve a persistent index across rename, cover partial scans,
+navigation history, hidden entries, stable range anchors, and explicit
+non-contiguous selection sets. Rendered-shell tests cover downward and upward
+geometric bands, content movement during a drag, empty-space bands, and
+independence from row clicks and scrolling.
+
+Verified with warning-clean release and ASan/UBSan builds and test suites,
+formatting and static analysis, QML formatting and zero-warning linting, the
+public-repository and tracked-file length guards, and offscreen release and
+sanitizer smoke launches.
+
 ## 2026-07-28 -- Establish deterministic QML quality gates
 
 The declarative shell now has a repository-owned `qmlformat` baseline using Qt

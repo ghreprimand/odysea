@@ -64,11 +64,20 @@ ApplicationWindow {
         cursorShape: Qt.CrossCursor
         preventStealing: true
 
-        function rowAtContent(contentY) {
-            if (listView.count === 0) {
-                return -1;
+        function rowsIntersectingBand(firstContentY, secondContentY) {
+            const rows = [];
+            const contentTop = Math.min(firstContentY, secondContentY);
+            const contentBottom = Math.max(firstContentY, secondContentY);
+            const entriesBottom = listView.count * selectionRowHeight;
+            if (listView.count === 0 || contentBottom <= 0 || contentTop >= entriesBottom) {
+                return rows;
             }
-            return Math.max(0, Math.min(listView.count - 1, Math.floor(contentY / selectionRowHeight)));
+            const firstRow = Math.max(0, Math.floor(contentTop / selectionRowHeight));
+            const lastRow = Math.min(listView.count - 1, Math.ceil(contentBottom / selectionRowHeight) - 1);
+            for (let row = firstRow; row <= lastRow; ++row) {
+                rows.push(row);
+            }
+            return rows;
         }
 
         onPressed: mouse => {
@@ -89,7 +98,9 @@ ApplicationWindow {
             selectionRectangle.y = Math.min(originContentY, pointerContentY) - listView.contentY;
             selectionRectangle.width = Math.abs(mouse.x - originX);
             selectionRectangle.height = Math.abs(pointerContentY - originContentY);
-            selectionModel.updateRubberBand(rowAtContent(originContentY), rowAtContent(pointerContentY));
+            const rows = rowsIntersectingBand(originContentY, pointerContentY);
+            const currentRow = rows.length === 0 ? -1 : (pointerContentY >= originContentY ? rows[rows.length - 1] : rows[0]);
+            selectionModel.updateRubberBandSelection(rows, currentRow);
         }
 
         onReleased: {

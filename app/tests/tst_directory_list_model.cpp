@@ -4,6 +4,8 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QPersistentModelIndex>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThreadPool>
@@ -44,6 +46,16 @@ QString selectedName(const DirectoryListModel& model) {
         }
     }
     return {};
+}
+
+QStringList selectedNames(const DirectoryListModel& model) {
+    QStringList names;
+    for (int row = 0; row < model.rowCount(); ++row) {
+        if (model.data(model.index(row), DirectoryListModel::SelectedRole).toBool()) {
+            names.push_back(model.data(model.index(row), DirectoryListModel::NameRole).toString());
+        }
+    }
+    return names;
 }
 
 QString currentName(const DirectoryListModel& model) {
@@ -111,10 +123,13 @@ class DirectoryListModelTest : public QObject {
   private slots:
     void rapidNavigationCancelsStaleBatches();
     void incrementalScannerPublishesBatches();
+    void watchAndPresentationUpdatesUseGranularSignals();
+    void navigationHistorySurvivesIncrementalUpdates();
     void watcherBurstPreservesRenamedSelection();
     void hardLinksRemainDistinctAcrossRefreshAndRename();
     void uniqueInodeFallbackPreservesRename();
     void selectionSurvivesSortFilterAndRefresh();
+    void explicitGeometricSelectionUsesRowSet();
     void operationsReachCoreAndReportFailures();
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
@@ -156,7 +171,8 @@ void DirectoryListModelTest::incrementalScannerPublishesBatches() {
 
     DirectoryListModel model;
     bool sawIncrementalBatch = false;
-    connect(&model, &QAbstractItemModel::modelReset, &model, [&] {
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, [&] {
         if (model.busy() && model.rowCount() > 0 && model.rowCount() < entryCount) {
             sawIncrementalBatch = true;
         }
@@ -166,6 +182,136 @@ void DirectoryListModelTest::incrementalScannerPublishesBatches() {
     QTRY_VERIFY_WITH_TIMEOUT(sawIncrementalBatch, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.rowCount(), entryCount);
+    QCOMPARE(resetSpy.count(), 0);
+}
+
+void DirectoryListModelTest::watchAndPresentationUpdatesUseGranularSignals() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "alpha.txt", "a");
+    writeFile(root / "charlie.txt", "ccc");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy insertedSpy(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removedSpy(&model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy layoutSpy(&model, &QAbstractItemModel::layoutChanged);
+
+    const int alphaRow = rowForName(model, QStringLiteral("alpha.txt"));
+    QVERIFY(alphaRow >= 0);
+    model.selectRow(alphaRow, Qt::NoModifier);
+    const QPersistentModelIndex persistentAlpha = model.index(alphaRow);
+
+    writeFile(root / "bravo.txt", "bb");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "bravo.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(insertedSpy.count(), 1);
+    QVERIFY(layoutSpy.count() >= 1);
+    QVERIFY(rowForName(model, QStringLiteral("bravo.txt")) >= 0);
+
+    writeFile(root / "bravo.txt", "larger metadata");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "bravo.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QVERIFY(changedSpy.count() >= 1);
+
+    fs::rename(root / "alpha.txt", root / "delta.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {"alpha.txt"},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "delta.txt"))},
+        .renamedEntries = {DirectoryEntryRename{.oldName = "alpha.txt", .newName = "delta.txt"}},
+        .error = {},
+        .rescanRequired = false});
+    QVERIFY(persistentAlpha.isValid());
+    QCOMPARE(persistentAlpha.data(DirectoryListModel::NameRole).toString(),
+             QStringLiteral("delta.txt"));
+    QCOMPARE(selectedName(model), QStringLiteral("delta.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("delta.txt"));
+
+    fs::remove(root / "charlie.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"charlie.txt"},
+                                                .updatedEntries = {},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+    QCOMPARE(removedSpy.count(), 1);
+
+    model.setFilterText(QStringLiteral("bravo"));
+    QCOMPARE(model.rowCount(), 1);
+    model.setFilterText({});
+    QCOMPARE(model.rowCount(), 2);
+
+    writeFile(root / ".hidden.txt");
+    const qsizetype insertionsBeforeHidden = insertedSpy.count();
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / ".hidden.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(rowForName(model, QStringLiteral(".hidden.txt")), -1);
+    QCOMPARE(insertedSpy.count(), insertionsBeforeHidden);
+    model.setShowHidden(true);
+    QVERIFY(rowForName(model, QStringLiteral(".hidden.txt")) >= 0);
+    QCOMPARE(insertedSpy.count(), insertionsBeforeHidden + 1);
+
+    model.setSortMode(DirectoryListModel::SortBySize);
+    QVERIFY(layoutSpy.count() >= 2);
+    QCOMPARE(resetSpy.count(), 0);
+}
+
+void DirectoryListModelTest::navigationHistorySurvivesIncrementalUpdates() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path first = root / "first";
+    const fs::path second = root / "second";
+    fs::create_directories(first);
+    fs::create_directories(second);
+    writeFile(first / "one.txt");
+    writeFile(second / "two.txt");
+
+    DirectoryListModel model;
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    model.setPath(QString::fromStdString(first.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.setPath(QString::fromStdString(second.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QVERIFY(model.canGoBack());
+
+    writeFile(second / "three.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("three.txt")) >= 0, 5000);
+    QVERIFY(model.canGoBack());
+
+    model.goBack();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.path(), QString::fromStdString(first.string()));
+    QVERIFY(model.canGoForward());
+    QCOMPARE(rowForName(model, QStringLiteral("one.txt")) >= 0, true);
+    QCOMPARE(resetSpy.count(), 0);
 }
 
 void DirectoryListModelTest::watcherBurstPreservesRenamedSelection() {
@@ -260,6 +406,13 @@ void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("after.txt"));
     QCOMPARE(currentName(model), QStringLiteral("after.txt"));
+
+    fs::rename(root / "after.txt", root / "final.txt");
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("final.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("final.txt"));
 }
 
 void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {
@@ -289,6 +442,49 @@ void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("small.txt"));
+}
+
+void DirectoryListModelTest::explicitGeometricSelectionUsesRowSet() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int row = 0; row < 5; ++row) {
+        writeFile(root / ("entry-" + std::to_string(row) + ".txt"),
+                  std::string(static_cast<std::size_t>(5 - row), 'x'));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+
+    model.beginRubberBand(false);
+    model.updateRubberBandSelection(QVariantList{0, 2, 4, 4, -1, 99}, 2);
+    model.endRubberBand();
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-0.txt"), QStringLiteral("entry-2.txt"),
+                          QStringLiteral("entry-4.txt")}));
+    QCOMPARE(model.currentIndex(), 2);
+
+    model.selectRow(0, Qt::NoModifier);
+    model.selectRow(4, Qt::ShiftModifier);
+    model.setSortMode(DirectoryListModel::SortBySize);
+    model.selectRow(rowForName(model, QStringLiteral("entry-1.txt")), Qt::ShiftModifier);
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-0.txt")}));
+
+    model.setSortMode(DirectoryListModel::SortByName);
+    model.selectRow(1, Qt::NoModifier);
+    model.beginRubberBand(true);
+    model.updateRubberBandSelection(QVariantList{3}, 3);
+    model.endRubberBand();
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-3.txt")}));
+    QCOMPARE(model.currentIndex(), 3);
+
+    model.beginRubberBand(false);
+    model.updateRubberBandSelection({}, -1);
+    model.endRubberBand();
+    QCOMPARE(model.selectedCount(), 0);
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {
