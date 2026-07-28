@@ -6,6 +6,7 @@
 - A C++20 compiler (Clang or GCC)
 - `clang-format` 22 and `clang-tidy` 22
 - Qt 6.6+ with Qt Quick (`Core`, `Gui`, `Qml`, `Quick`)
+- `qmlformat` and `qmllint` 6.10 for the QML quality gates
 
 ## Build and test
 
@@ -25,6 +26,7 @@ ctest --preset asan                # core tests run under ASan/UBSan
 
 # Formatting and static-analysis gates:
 ./tools/check_format.sh
+./tools/check_qml.sh all
 ./tools/check_clang_tidy.sh build/release
 
 # Tracked-file length ceiling:
@@ -59,6 +61,8 @@ These are not optional; they are how the project stays safe in C++:
   `.clang-tidy`) are the verified tool versions. Static analysis runs from the
   Clang release compilation database; the GCC sanitizer preset provides the
   separate ASan/UBSan runtime gate.
+- `qmlformat` and `qmllint` 6.10 enforce the declarative shell baseline. The
+  tracked `.qmlformat.ini` is canonical, and lint warnings fail the gate.
 - Warnings are errors (`-Werror`); keep the build clean.
 - No tracked source or text file may exceed 2,000 physical lines. Split files
   along clear ownership or responsibility boundaries before reaching the

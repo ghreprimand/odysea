@@ -35,6 +35,14 @@ The graphical shell is built with Qt Quick:
 
 The core (`core/`) has no Qt dependency; Qt is confined to the `app/` layer.
 
+### QML quality gates
+
+The QML surface uses `qmlformat` and `qmllint` 6.10 as verified development
+tools. Repository-owned formatter settings define four-space indentation, Unix
+newlines, explicit semicolons, and stable source ordering. Verification compares
+every tracked QML file with formatter output and rejects all lint warnings.
+These checks run through CTest in both release and sanitizer configurations.
+
 ## Memory safety
 
 C++ places memory management in the developer's hands. OdySea addresses this with
