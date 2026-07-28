@@ -28,6 +28,7 @@ ctest --preset asan                # core tests run under ASan/UBSan
 ./tools/check_format.sh
 ./tools/check_qml.sh format
 ./tools/check_qml.sh lint build/release/app   # built shell-module import root
+./tools/check_qml_module.sh build/release/app/OdySea
 ./tools/check_clang_tidy.sh build/release
 
 # Tracked-file length ceiling:
@@ -39,7 +40,9 @@ ctest --preset asan                # core tests run under ASan/UBSan
 - `core/` — toolkit-agnostic C++20 filesystem model. **No Qt or GUI types here.**
   It must remain unit-testable without a display server.
 - `app/` — the Qt Quick shell (`main.cpp`, the `DirectoryListModel` adapter, and
-  the `OdySea` QML module in `qml/`). This is the only place Qt is used.
+  the `OdySea` QML module in `qml/`). This is the only place Qt is used. Every
+  scene belongs to the module's file list; adding a `.qml` file without listing
+  it there fails the module manifest gate.
 - `tests/` — headless core tests (a dependency-free assertion harness).
 - `docs/` — design, stack, and roadmap documentation.
 
@@ -74,6 +77,14 @@ These are not optional; they are how the project stays safe in C++:
 - The declarative shell is a linkable QML module. Application code and tests
   load scenes through `OdySea`, never by relative source-directory import, so a
   scene missing from the module fails both instead of only the application.
+- `qml_module_guard` compares the tracked scene corpus under `app/qml` against
+  the manifest the build produced. Adding a scene without listing it in
+  `QML_FILES`, or leaving an entry behind after a rename, fails the gate.
+  Scene file names start with a capital letter, because the file stem is the
+  type name the application instantiates. `qml_module_guard_self_test` holds
+  the gate to that with throwaway repositories and manifests covering an
+  omitted scene, a renamed entry, a renamed file, a stale entry, an absent
+  manifest, an empty corpus, and a scene that cannot be a type.
 - Warnings are errors (`-Werror`); keep the build clean.
 - No tracked source or text file may exceed 2,000 physical lines. Split files
   along clear ownership or responsibility boundaries before reaching the

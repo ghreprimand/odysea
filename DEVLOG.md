@@ -45,6 +45,31 @@ sanitizer runs.
 
 ---
 
+## 2026-07-28 -- Hold the QML module to the tracked scene corpus
+
+A scene can be well formed, formatted, and lint-clean while remaining
+unreachable, because reachability depends on the module's file list rather than
+on the file itself. Nothing in the compiler or the QML tooling notices that.
+
+The module manifest gate closes that. It derives one side of the comparison
+from the tracked scenes under `app/qml` and the other from the manifest the
+build produced, then requires the two to agree in both directions. A scene left
+out of the module fails the gate, and so does a manifest entry that no longer
+names a tracked scene, which is what a rename leaves behind. Scene file names
+must begin with a capital letter, since the file stem is the type name the
+application instantiates.
+
+The gate's own self-test builds throwaway repositories and manifests covering
+an omitted scene, a renamed entry, a renamed file, a stale entry, an absent
+manifest, an empty corpus, and a scene that cannot become a type. Seven of the
+eight scenarios require rejection and one requires acceptance, so neither a
+gate that always passes nor one that always fails can satisfy it.
+
+Verified with release and sanitizer builds, the full test suites, the QML
+gates, and an offscreen application launch.
+
+---
+
 ## 2026-07-28 -- Load the shell through a linkable QML module
 
 The declarative shell is now a linkable static QML module rather than a module

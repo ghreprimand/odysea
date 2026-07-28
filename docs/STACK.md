@@ -47,6 +47,14 @@ newlines, explicit semicolons, and stable source ordering. Verification compares
 every tracked QML file with formatter output and rejects all lint warnings.
 These checks run through CTest in both release and sanitizer configurations.
 
+The shell itself is a linkable QML module. The application and the
+rendered-shell tests both link it and load scenes through the `OdySea` module
+rather than by relative source path, so a scene the module does not export
+fails the tests instead of only failing at startup. A further gate compares the
+tracked scene corpus against the manifest the build produced, in both
+directions, so an omission or a leftover entry is caught without running the
+application.
+
 ## Memory safety
 
 C++ places memory management in the developer's hands. OdySea addresses this with
