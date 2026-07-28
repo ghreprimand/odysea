@@ -2,6 +2,9 @@
 
 #include "file_operations_internal.hpp"
 
+#include <atomic>
+#include <cstddef>
+#include <random>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -11,6 +14,30 @@ namespace odysea::core {
 namespace fs = std::filesystem;
 
 namespace {
+
+/// Leading marker shared by every entry these operations create for their own
+/// use. Begins with a dot so the entries stay out of a default listing.
+constexpr std::string_view working_marker = ".odysea-";
+
+/// Fixed-width role markers. Same width for both so the shape of a working
+/// name does not depend on its role.
+constexpr std::string_view prepared_marker = "new";
+constexpr std::string_view replaced_marker = "old";
+
+/// Length of the per-process part of a working name.
+constexpr std::size_t working_tag_digits = 12;
+
+/// Upper bound on the length of a working name: marker, role, two separators,
+/// the per-process tag, and a serial number that cannot exceed the twenty
+/// digits of a 64-bit value.
+constexpr std::size_t working_name_bound =
+    working_marker.size() + prepared_marker.size() + 2 + working_tag_digits + 20;
+
+static_assert(working_name_bound < 255, "a working name must fit in a single filesystem component");
+
+std::string_view role_marker(WorkingEntryRole role) {
+    return role == WorkingEntryRole::Replaced ? replaced_marker : prepared_marker;
+}
 
 std::error_code make_error(std::errc code) {
     return std::make_error_code(code);
@@ -121,20 +148,64 @@ bool replacement_needs_staging(const fs::path& source, const fs::path& destinati
     return is_directory_entry(source) || is_directory_entry(destination);
 }
 
-/// Reserve an unused name beside `destination`, starting with `prefix`.
+/// A value that differs between processes working in the same directory.
 ///
-/// Used for both the staging entry an operation prepares and the backup an
-/// existing destination is held under. Both live in the destination directory,
-/// so installing one is a rename within a single directory and cannot cross a
+/// Drawn once. Two processes that both reserve a working name in one directory
+/// pick from disjoint name spaces, so neither has to retry because of the
+/// other.
+std::string process_tag() {
+    static const std::string tag = [] {
+        std::random_device source;
+        std::uniform_int_distribution<unsigned> digits(0, 15);
+        std::string value;
+        value.reserve(working_tag_digits);
+        for (unsigned index = 0; index < working_tag_digits; ++index) {
+            value.push_back("0123456789abcdef"[digits(source)]);
+        }
+        return value;
+    }();
+    return tag;
+}
+
+/// Build the working name for one reservation attempt.
+///
+/// Deliberately independent of the name being operated on. A file name may be
+/// as long as the filesystem allows for a single component — 255 bytes on the
+/// common Linux filesystems — so any name derived from it by adding a prefix
+/// would be too long to create, and the operation would fail on exactly the
+/// entries that are hardest to recover by hand. This name has a fixed shape and
+/// a bounded length instead: a marker identifying the operation that owns it, a
+/// role, a per-process tag, and a serial number.
+std::string working_name(WorkingEntryRole role, unsigned long long serial) {
+    std::string name;
+    name.reserve(working_name_bound);
+    name += working_marker;
+    name += role_marker(role);
+    name += '-';
+    name += process_tag();
+    name += '-';
+    name += std::to_string(serial);
+    return name;
+}
+
+/// Reserve an unused working name in `directory`.
+///
+/// Working entries always live in the directory holding the destination, so
+/// installing one is a rename within a single directory and can never cross a
 /// filesystem boundary.
-fs::path reserve_sibling_path(const fs::path& destination, std::string_view prefix,
+///
+/// The serial advances globally rather than per call, so a candidate that is
+/// already taken — by another thread, another process, or an entry left behind
+/// by an earlier interrupted run — is never retried by a caller that would pick
+/// the same name again.
+fs::path reserve_working_path(const fs::path& directory, WorkingEntryRole role,
                               std::error_code& error) {
-    const fs::path directory = destination.parent_path();
-    const std::string base = std::string(prefix) + destination.filename().string();
+    static std::atomic<unsigned long long> serial{0};
 
     constexpr unsigned max_attempts = 10000;
     for (unsigned attempt = 0; attempt < max_attempts; ++attempt) {
-        fs::path candidate = directory / (base + "." + std::to_string(attempt));
+        fs::path candidate =
+            directory / working_name(role, serial.fetch_add(1, std::memory_order_relaxed));
         if (!path_present(candidate)) {
             error.clear();
             return candidate;
@@ -246,7 +317,8 @@ std::error_code install_over(const fs::path& prepared, const fs::path& destinati
     }
 
     std::error_code reserve_ec;
-    const fs::path backup = reserve_sibling_path(destination, detail::backup_prefix, reserve_ec);
+    const fs::path backup =
+        reserve_working_path(destination.parent_path(), WorkingEntryRole::Replaced, reserve_ec);
     if (reserve_ec) {
         return reserve_ec;
     }
@@ -274,6 +346,54 @@ constexpr fs::copy_options recursive_copy =
     fs::copy_options::recursive | fs::copy_options::copy_symlinks;
 
 } // namespace
+
+WorkingEntryRole classify_working_entry(std::string_view name) noexcept {
+    if (!name.starts_with(working_marker)) {
+        return WorkingEntryRole::None;
+    }
+    std::string_view rest = name.substr(working_marker.size());
+
+    WorkingEntryRole role = WorkingEntryRole::None;
+    if (rest.starts_with(prepared_marker)) {
+        role = WorkingEntryRole::Prepared;
+        rest = rest.substr(prepared_marker.size());
+    } else if (rest.starts_with(replaced_marker)) {
+        role = WorkingEntryRole::Replaced;
+        rest = rest.substr(replaced_marker.size());
+    } else {
+        return WorkingEntryRole::None;
+    }
+
+    // "-<tag>-<serial>", with a fixed-width tag and at least one serial digit.
+    if (rest.size() < working_tag_digits + 3 || rest.front() != '-') {
+        return WorkingEntryRole::None;
+    }
+    rest = rest.substr(1);
+
+    const std::string_view tag = rest.substr(0, working_tag_digits);
+    for (const char digit : tag) {
+        const bool hexadecimal = (digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f');
+        if (!hexadecimal) {
+            return WorkingEntryRole::None;
+        }
+    }
+
+    rest = rest.substr(working_tag_digits);
+    if (rest.size() < 2 || rest.front() != '-') {
+        return WorkingEntryRole::None;
+    }
+    rest = rest.substr(1);
+    for (const char digit : rest) {
+        if (digit < '0' || digit > '9') {
+            return WorkingEntryRole::None;
+        }
+    }
+    return role;
+}
+
+bool is_working_entry(std::string_view name) noexcept {
+    return classify_working_entry(name) != WorkingEntryRole::None;
+}
 
 OperationOutcome resolve_destination(const fs::path& directory, std::string_view name,
                                      const OperationOptions& options) {
@@ -333,7 +453,8 @@ OperationOutcome copy_into_using(const fs::path& source, const fs::path& destina
     // fails part-way therefore leaves nothing behind: neither a partial entry
     // at a free destination nor a damaged one at an occupied destination.
     std::error_code staging_ec;
-    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
+    const fs::path staging = reserve_working_path(outcome.destination.parent_path(),
+                                                  WorkingEntryRole::Prepared, staging_ec);
     if (staging_ec) {
         return failure(staging_ec);
     }
@@ -386,7 +507,8 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
     // complete, so a failure along the way costs neither the source nor the
     // destination.
     std::error_code staging_ec;
-    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
+    const fs::path staging = reserve_working_path(outcome.destination.parent_path(),
+                                                  WorkingEntryRole::Prepared, staging_ec);
     if (staging_ec) {
         return failure(staging_ec);
     }
@@ -464,7 +586,8 @@ OperationOutcome rename_entry_using(const fs::path& source, std::string_view new
     // the recovery uniform: whatever fails, the source goes back under its
     // original name and the destination goes back under its own.
     std::error_code staging_ec;
-    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
+    const fs::path staging = reserve_working_path(outcome.destination.parent_path(),
+                                                  WorkingEntryRole::Prepared, staging_ec);
     if (staging_ec) {
         return failure(staging_ec);
     }

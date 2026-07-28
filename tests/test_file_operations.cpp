@@ -5,6 +5,7 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -32,11 +33,13 @@ namespace {
     return info.st_ino;
 }
 
-/// The first entry in `directory` whose name starts with `prefix`, or an empty
-/// path when there is none. Both working-entry prefixes are internal to the
-/// core, so the tests name them literally rather than depending on the
-/// constants they assert about.
-fs::path working_entry(const fs::path& directory, std::string_view prefix) {
+/// The first entry in `directory` the core recognizes as its own with the given
+/// role, or an empty path when there is none.
+///
+/// Found through the public classifier rather than by matching a spelling, so
+/// the tests exercise the same interface a presentation layer would use and do
+/// not depend on how the names are built.
+fs::path working_entry(const fs::path& directory, WorkingEntryRole role) {
     std::error_code ec;
     fs::directory_iterator element(directory, ec);
     if (ec) {
@@ -44,7 +47,7 @@ fs::path working_entry(const fs::path& directory, std::string_view prefix) {
     }
     const fs::directory_iterator end;
     for (; element != end; ++element) {
-        if (element->path().filename().string().starts_with(prefix)) {
+        if (classify_working_entry(element->path().filename().string()) == role) {
             return element->path();
         }
     }
@@ -52,11 +55,11 @@ fs::path working_entry(const fs::path& directory, std::string_view prefix) {
 }
 
 bool holds_staging_entry(const fs::path& directory) {
-    return !working_entry(directory, ".odysea-staging-").empty();
+    return !working_entry(directory, WorkingEntryRole::Prepared).empty();
 }
 
 bool holds_backup_entry(const fs::path& directory) {
-    return !working_entry(directory, ".odysea-replaced-").empty();
+    return !working_entry(directory, WorkingEntryRole::Replaced).empty();
 }
 
 /// No trace of an interrupted operation is left in the destination directory.
@@ -520,7 +523,7 @@ void test_a_failed_restore_retains_the_replaced_destination() {
     check(odysea::test::read_text(source / "kept.txt") == "kept",
           "the source is still put back when the destination cannot be restored");
 
-    const fs::path retained = working_entry(target_dir, ".odysea-replaced-");
+    const fs::path retained = working_entry(target_dir, WorkingEntryRole::Replaced);
     check(!retained.empty(), "the replaced destination is retained rather than removed");
     check(!retained.empty() && odysea::test::read_text(retained / "irreplaceable.txt") == "old",
           "the retained destination keeps its contents");
@@ -544,11 +547,201 @@ void test_a_failed_unwind_retains_the_source() {
     check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
           "the destination is restored even when the source cannot be put back");
 
-    const fs::path retained = working_entry(target_dir, ".odysea-staging-");
+    const fs::path retained = working_entry(target_dir, WorkingEntryRole::Prepared);
     check(!retained.empty(), "a source that cannot be put back is retained rather than removed");
     check(!retained.empty() && odysea::test::read_text(retained / "kept.txt") == "kept",
           "the retained source keeps its contents");
     check(!holds_backup_entry(target_dir), "the restored destination leaves no backup behind");
+}
+
+/// The longest single name the filesystem holding `directory` accepts.
+///
+/// Queried rather than assumed so the tests exercise the real limit wherever
+/// they run, with the common 255-byte limit as the fallback.
+std::size_t longest_name(const fs::path& directory) {
+    const long limit = ::pathconf(directory.c_str(), _PC_NAME_MAX);
+    if (limit <= 0) {
+        return 255;
+    }
+    return static_cast<std::size_t>(limit);
+}
+
+/// A name of exactly the maximum length, ending in `suffix`.
+std::string maximal_name(const fs::path& directory, std::string_view suffix) {
+    const std::size_t limit = longest_name(directory);
+    std::string name(limit - suffix.size(), 'n');
+    name += suffix;
+    return name;
+}
+
+void test_maximal_names_transfer_into_a_free_destination() {
+    const odysea::test::TemporaryTree tree("max_name_free");
+    const fs::path source_dir = tree.directory("source");
+    const fs::path target_dir = tree.directory("target");
+    const std::string name = maximal_name(target_dir, ".txt");
+    check(name.size() == longest_name(target_dir), "the fixture name is exactly at the limit");
+
+    const fs::path copied = tree.file("source/" + name, "contents");
+    const OperationOutcome copy_outcome = copy_into(copied, target_dir, {});
+    check(copy_outcome.succeeded(), "a name at the length limit can be copied");
+    check(odysea::test::read_text(target_dir / name) == "contents",
+          "a copy of a maximal name arrives with its contents");
+    check(holds_no_working_entry(target_dir), "a maximal-name copy leaves no working entry");
+
+    const std::string moved_name = maximal_name(target_dir, ".dat");
+    const fs::path moved = tree.file("source/" + moved_name, "moved");
+    const OperationOutcome move_outcome = move_into(moved, target_dir, {});
+    check(move_outcome.succeeded(), "a name at the length limit can be moved");
+    check(odysea::test::read_text(target_dir / moved_name) == "moved",
+          "a move of a maximal name arrives with its contents");
+    check(!fs::exists(moved), "a maximal-name move removes the source");
+
+    const std::string renamed_name = maximal_name(source_dir, ".bin");
+    const fs::path to_rename = tree.file("source/short.txt", "renamed");
+    const OperationOutcome rename_outcome = rename_entry(to_rename, renamed_name, {});
+    check(rename_outcome.succeeded(), "an entry can be renamed to a name at the length limit");
+    check(odysea::test::read_text(source_dir / renamed_name) == "renamed",
+          "a rename to a maximal name keeps the contents");
+    check(holds_no_working_entry(source_dir), "a maximal-name rename leaves no working entry");
+}
+
+void test_maximal_names_replace_an_existing_destination() {
+    const odysea::test::TemporaryTree tree("max_name_overwrite");
+    const fs::path target_dir = tree.directory("target");
+    const std::string name = maximal_name(target_dir, ".txt");
+
+    const fs::path copied = tree.file("source/" + name, "new");
+    tree.file("target/" + name, "old");
+    const OperationOutcome copy_outcome =
+        copy_into(copied, target_dir, {.conflict = ConflictPolicy::Overwrite});
+    check(copy_outcome.succeeded(), "a maximal name can be copied over an existing entry");
+    check(odysea::test::read_text(target_dir / name) == "new",
+          "the replacement contents are installed under a maximal name");
+    check(holds_no_working_entry(target_dir), "a maximal-name overwrite leaves no working entry");
+
+    const OperationOutcome move_outcome =
+        move_into(copied, target_dir, {.conflict = ConflictPolicy::Overwrite});
+    check(move_outcome.succeeded(), "a maximal name can be moved over an existing entry");
+    check(odysea::test::read_text(target_dir / name) == "new",
+          "the moved contents are installed under a maximal name");
+    check(!fs::exists(copied), "the source is gone after a maximal-name move");
+
+    // Directories on both sides take the staged route, which is where the
+    // working names are created.
+    const std::string directory_name = maximal_name(target_dir, ".d");
+    tree.file("source/" + directory_name + "/kept.txt", "kept");
+    tree.file("target/" + directory_name + "/stale.txt", "stale");
+    const OperationOutcome directory_outcome =
+        copy_into(tree.root() / "source" / directory_name, target_dir,
+                  {.conflict = ConflictPolicy::Overwrite});
+    check(directory_outcome.succeeded(),
+          "a maximal-name directory can be copied over an existing one");
+    check(odysea::test::read_text(target_dir / directory_name / "kept.txt") == "kept",
+          "the replacement tree is installed under a maximal name");
+    check(!fs::exists(target_dir / directory_name / "stale.txt"),
+          "the replaced tree is gone rather than merged into");
+    check(holds_no_working_entry(target_dir),
+          "a maximal-name directory overwrite leaves no working entry");
+}
+
+void test_a_maximal_name_rename_replaces_a_directory() {
+    const odysea::test::TemporaryTree tree("max_name_rename");
+    const fs::path root = tree.root();
+    const std::string name = maximal_name(root, ".d");
+    tree.file("project/kept.txt", "kept");
+    tree.file(name + "/stale.txt", "stale");
+
+    const OperationOutcome outcome =
+        rename_entry(root / "project", name, {.conflict = ConflictPolicy::Overwrite});
+    check(outcome.succeeded(), "a directory can be renamed over one with a maximal name");
+    check(odysea::test::read_text(root / name / "kept.txt") == "kept",
+          "the renamed tree is installed under a maximal name");
+    check(!fs::exists(root / name / "stale.txt"), "the replaced tree is gone");
+    check(holds_no_working_entry(root), "a maximal-name rename leaves no working entry");
+}
+
+void test_a_failed_maximal_name_install_loses_nothing() {
+    const odysea::test::TemporaryTree tree("max_name_install_failure");
+    const fs::path target_dir = tree.directory("target");
+    const std::string name = maximal_name(target_dir, ".d");
+    tree.file("source/" + name + "/kept.txt", "kept");
+    tree.file("target/" + name + "/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        tree.root() / "source" / name, target_dir, {.conflict = ConflictPolicy::Overwrite},
+        failing_step({detail::RenameKind::Install}));
+    check(!outcome.succeeded(), "a maximal-name move whose install fails reports the failure");
+    check(odysea::test::read_text(target_dir / name / "irreplaceable.txt") == "old",
+          "a failed maximal-name install leaves the destination in place");
+    check(odysea::test::read_text(tree.root() / "source" / name / "kept.txt") == "kept",
+          "a failed maximal-name install puts the source back");
+    check(holds_no_working_entry(target_dir),
+          "a failed maximal-name install leaves no working entry behind");
+}
+
+/// Create entries occupying the working names the core would reserve next.
+///
+/// Derived from a name the core actually produced — its trailing serial is
+/// advanced — rather than from any spelling this test knows in advance, so the
+/// reservation retry path is driven without duplicating the naming scheme.
+std::vector<fs::path> squat_upcoming_names(const fs::path& observed, unsigned count) {
+    const fs::path directory = observed.parent_path();
+    const std::string name = observed.filename().string();
+    const std::size_t split = name.rfind('-');
+    const std::string stem = name.substr(0, split + 1);
+    const unsigned long long serial = std::stoull(name.substr(split + 1));
+
+    std::vector<fs::path> created;
+    for (unsigned step = 1; step <= count; ++step) {
+        fs::path squatter = directory / (stem + std::to_string(serial + step));
+        std::ofstream stream(squatter, std::ios::binary | std::ios::trunc);
+        stream << "squatter";
+        created.push_back(std::move(squatter));
+    }
+    return created;
+}
+
+void test_reservation_skips_names_that_are_already_taken() {
+    const odysea::test::TemporaryTree tree("squatted_names");
+    const fs::path target_dir = tree.directory("target");
+
+    // One staged operation, purely to observe a working name this process
+    // produced. Its install is failed so nothing is disturbed.
+    tree.file("probe/kept.txt", "kept");
+    tree.file("target/probe/old.txt", "old");
+    fs::path observed;
+    const OperationOutcome probe = detail::move_into_using(
+        tree.root() / "probe", target_dir, {.conflict = ConflictPolicy::Overwrite},
+        [&observed](detail::RenameKind kind, const fs::path& from, const fs::path& to,
+                    std::error_code& error) {
+            if (kind == detail::RenameKind::Relocate) {
+                observed = to;
+            }
+            failing_step({detail::RenameKind::Install})(kind, from, to, error);
+        });
+    check(!probe.succeeded(), "the observing operation fails as arranged");
+    check(!observed.empty() &&
+              classify_working_entry(observed.filename().string()) == WorkingEntryRole::Prepared,
+          "the observed name is one the core recognizes as its own");
+
+    const std::vector<fs::path> squatters = squat_upcoming_names(observed, 8);
+    check(squatters.size() == 8, "the fixture occupies the next working names");
+
+    tree.file("source/project/kept.txt", "kept");
+    tree.file("target/project/stale.txt", "stale");
+    const OperationOutcome outcome = copy_into(tree.root() / "source/project", target_dir,
+                                               {.conflict = ConflictPolicy::Overwrite});
+    check(outcome.succeeded(), "an operation succeeds when the next working names are taken");
+    check(odysea::test::read_text(target_dir / "project/kept.txt") == "kept",
+          "the replacement is installed despite the taken names");
+
+    bool squatters_intact = true;
+    for (const fs::path& squatter : squatters) {
+        if (!fs::exists(squatter) || odysea::test::read_text(squatter) != "squatter") {
+            squatters_intact = false;
+        }
+    }
+    check(squatters_intact, "entries that were already in the way are left untouched");
 }
 
 void test_copy_file() {
@@ -720,6 +913,11 @@ int main() {
     test_a_failed_backup_leaves_both_entries_untouched();
     test_a_failed_restore_retains_the_replaced_destination();
     test_a_failed_unwind_retains_the_source();
+    test_maximal_names_transfer_into_a_free_destination();
+    test_maximal_names_replace_an_existing_destination();
+    test_a_maximal_name_rename_replaces_a_directory();
+    test_a_failed_maximal_name_install_loses_nothing();
+    test_reservation_skips_names_that_are_already_taken();
     test_copy_file();
     test_copy_directory_recursively();
     test_copy_preserves_symlinks();

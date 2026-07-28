@@ -7,6 +7,54 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Bound the working names used to replace an entry
+
+The temporary entries a replacement creates were named after the entry being
+replaced. A file name may be as long as the filesystem allows for a single
+component, so adding a prefix to it produced a name too long to create, and the
+operation failed at the reservation step. The failure fell on exactly the
+entries that are most awkward to recover by hand, and it was not a limit the
+caller could have anticipated: a name the filesystem accepts should be an
+operable name.
+
+Working names now have a fixed shape and a bounded length, independent of what
+is being operated on: a marker identifying the operation that owns them, a
+role, a per-process tag, and a serial number. A static assertion pins the upper
+bound below the single-component limit of the common Linux filesystems. The
+serial advances globally rather than per operation, so a name already taken by
+another thread, another process, or an entry abandoned by an interrupted run is
+skipped rather than retried with the same spelling. The per-process tag keeps
+two processes working in one directory out of each other's name space.
+
+Recognizing these entries is now part of the public interface rather than
+something a caller reproduces by matching spellings. `classify_working_entry`
+reports whether a directory entry belongs to one of these operations and, if it
+does, whether it holds a replacement being assembled or a destination that was
+moved aside and could not be put back. A presentation layer can hide the first
+and explain the second instead of showing an unexplained name. The naming
+scheme itself stays private, so it can change without affecting callers.
+
+Coverage exercises names at the exact limit the filesystem reports, rather than
+an assumed one: copying, moving, and renaming into a free destination; copying
+and moving over an existing one; a directory rename over an existing directory;
+and a failed install at the limit, which leaves the source, the destination,
+and its contents intact with nothing left behind. A further case observes a
+working name the code produced, occupies the names that would be reserved next,
+and confirms the operation still completes while leaving the entries that were
+in the way untouched. Restoring the previous naming scheme fails fifteen of
+these checks.
+
+Known gap: resolving a collision by numbering, as `report (2).txt`, still
+lengthens the name, so that policy cannot resolve a collision on a name already
+at the limit and reports the filesystem's length error. No data is at risk;
+the operation refuses rather than acting.
+
+Verified with clean release and ASan/UBSan builds, warning-free under
+`-Werror`, the full release suite including formatting, static analysis, and
+the public-repository guard, the full sanitizer suite, the mutation tests
+repeated ten times under release and five under sanitizers, and a headless
+application smoke launch.
+
 ## 2026-07-28 -- Replace destinations transactionally
 
 Staging a replacement beside its destination removed one data-loss window but

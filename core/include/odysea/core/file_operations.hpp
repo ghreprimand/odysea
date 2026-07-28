@@ -5,12 +5,13 @@
 // outcome so the presentation layer can decide how to surface it.
 //
 // Replacing an existing entry cannot always be done in one step, so these
-// operations prepare the replacement under a temporary name in the destination
-// directory and move the existing entry aside while the swap happens. Both
-// temporary names start with a dot and are removed once the operation settles.
-// In the rare case where recovery from a failed step itself fails, the data is
-// left under its temporary name rather than removed: an entry under an
-// unexpected name can be recovered, a deleted one cannot.
+// operations prepare the replacement under a working name in the destination
+// directory and move the existing entry aside while the swap happens. Working
+// names are removed once the operation settles. In the rare case where recovery
+// from a failed step itself fails, the data is left under its working name
+// rather than removed: an entry under an unexpected name can be recovered, a
+// deleted one cannot. Use classify_working_entry to recognize such an entry
+// rather than matching its spelling.
 #pragma once
 
 #include <filesystem>
@@ -46,6 +47,34 @@ struct OperationOutcome {
 
     [[nodiscard]] bool succeeded() const noexcept { return !error; }
 };
+
+/// What an entry created by these operations for their own use holds.
+enum class WorkingEntryRole {
+    /// Not an entry these operations created.
+    None,
+    /// A replacement being assembled, or one an interrupted run abandoned. The
+    /// data it holds also exists elsewhere, so it can be removed.
+    Prepared,
+    /// A destination moved aside to make room for its replacement. Left behind
+    /// only when a failure could not be undone, in which case it may hold the
+    /// only remaining copy of what used to occupy the destination.
+    Replaced,
+};
+
+/// Classify a single directory entry name.
+///
+/// Presentation layers use this to recognize the entries these operations
+/// create, so a listing can hide the transient ones and explain a retained one
+/// rather than showing an unexplained name. The naming scheme is deliberately
+/// not part of the interface: names have a bounded length independent of the
+/// entry being operated on, so an operation on a name of the maximum length the
+/// filesystem allows is not itself limited.
+///
+/// `name` is a single path component, not a whole path.
+[[nodiscard]] WorkingEntryRole classify_working_entry(std::string_view name) noexcept;
+
+/// Whether `name` is any working entry these operations created.
+[[nodiscard]] bool is_working_entry(std::string_view name) noexcept;
 
 /// Resolve the path a new entry named `name` would occupy in `directory`.
 ///

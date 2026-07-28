@@ -65,11 +65,4 @@ void rename_with_filesystem(RenameKind kind, const std::filesystem::path& from,
                                                   const OperationOptions& options,
                                                   const RenameStep& rename_step);
 
-/// Name prefix of the entry a copy is assembled under before it is installed.
-inline constexpr std::string_view staging_prefix = ".odysea-staging-";
-
-/// Name prefix of the entry a replaced destination is held under until the
-/// replacement is in place.
-inline constexpr std::string_view backup_prefix = ".odysea-replaced-";
-
 } // namespace odysea::core::detail
