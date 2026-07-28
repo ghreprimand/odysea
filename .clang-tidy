@@ -13,4 +13,3 @@ Checks: >
   -readability-magic-numbers
 
 WarningsAsErrors: 'bugprone-*,cppcoreguidelines-owning-memory,cppcoreguidelines-no-malloc,clang-analyzer-*'
-HeaderFilterRegex: '.*/odysea/.*'

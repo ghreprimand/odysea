@@ -7,6 +7,17 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Checkout-independent header analysis
+
+Static analysis now anchors its header filter to the detected source root
+instead of assuming the checkout directory is named `odysea`. App, core, and
+test headers therefore receive identical analysis in renamed clones, CI
+workspaces, and ordinary contributor checkouts.
+
+Verified with `clang-tidy` 22 in both the primary checkout and a temporary clone
+whose directory name does not contain the project name, plus the release and
+ASan/UBSan CTest suites.
+
 ## 2026-07-27 -- Executable formatting, analysis, and publishing gates
 
 Formatting and static analysis are now executable CTest gates rather than

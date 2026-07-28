@@ -50,9 +50,16 @@ case "$tidy_version" in
         ;;
 esac
 
+escaped_repository_root="$(
+    printf '%s' "$repository_root" |
+        sed 's/[][\\.^$*+?(){}|]/\\&/g'
+)"
+header_filter="^${escaped_repository_root}/(app|core|tests)/"
+
 checked=0
 while IFS= read -r -d '' source_file; do
-    "$tidy_binary" -p "$build_directory" --quiet "$source_file"
+    "$tidy_binary" -p "$build_directory" --quiet \
+        --header-filter="$header_filter" "$source_file"
     checked=$((checked + 1))
 done < <(git ls-files -z -- '*.cpp')
 
