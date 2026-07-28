@@ -50,6 +50,12 @@ add_test(
     NAME formatting_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_format.sh)
 add_test(
+    NAME qml_formatting_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh format)
+add_test(
+    NAME qml_lint_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh lint)
+add_test(
     NAME file_length_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length.sh)
 add_test(
@@ -57,7 +63,8 @@ add_test(
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
 
 set_tests_properties(
-    public_repository_guard formatting_guard file_length_guard static_analysis
+    public_repository_guard formatting_guard qml_formatting_guard qml_lint_guard
+    file_length_guard static_analysis
     PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)
     set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)

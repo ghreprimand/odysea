@@ -7,6 +7,22 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Establish deterministic QML quality gates
+
+The declarative shell now has a repository-owned `qmlformat` baseline using Qt
+6.10 tooling, four-space indentation, Unix newlines, explicit semicolons, and
+stable source ordering. Every existing QML source matches that baseline.
+
+CTest now exposes separate formatting and linting gates for all tracked QML.
+Formatting is checked by comparing source files with canonical formatter output
+without modifying the working tree. Linting runs without machine-local settings
+and treats every warning as a failure. The checks apply equally to application
+components and rendered-shell tests and run in release and sanitizer suites.
+
+Verified with the focused QML gates, warning-clean release and ASan/UBSan
+builds and test suites, the public-repository and tracked-file length guards,
+and offscreen release and sanitizer smoke launches.
+
 ## 2026-07-28 -- Live core integration and recoverable operations
 
 The Qt adapter now owns the cancellable core scanner and consumes incremental
