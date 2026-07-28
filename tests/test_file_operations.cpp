@@ -644,6 +644,211 @@ void test_maximal_names_replace_an_existing_destination() {
           "a maximal-name directory overwrite leaves no working entry");
 }
 
+/// Whether every byte of `name` belongs to a well-formed UTF-8 character.
+bool is_valid_utf8(std::string_view name) {
+    std::size_t index = 0;
+    while (index < name.size()) {
+        const auto lead = static_cast<unsigned char>(name[index]);
+        std::size_t width = 0;
+        if (lead < 0x80) {
+            width = 1;
+        } else if ((lead & 0xE0) == 0xC0) {
+            width = 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            width = 3;
+        } else if ((lead & 0xF8) == 0xF0) {
+            width = 4;
+        } else {
+            return false;
+        }
+        if (index + width > name.size()) {
+            return false;
+        }
+        for (std::size_t offset = 1; offset < width; ++offset) {
+            if ((static_cast<unsigned char>(name[index + offset]) & 0xC0) != 0x80) {
+                return false;
+            }
+        }
+        index += width;
+    }
+    return true;
+}
+
+void test_auto_rename_shortens_a_maximal_name_to_fit_the_number() {
+    const odysea::test::TemporaryTree tree("auto_rename_max");
+    const fs::path target_dir = tree.directory("target");
+    const std::size_t limit = longest_name(target_dir);
+    const std::string name = maximal_name(target_dir, ".txt");
+
+    const fs::path source = tree.file("source/" + name, "new");
+    tree.file("target/" + name, "old");
+
+    const OperationOutcome outcome =
+        copy_into(source, target_dir, {.conflict = ConflictPolicy::AutoRename});
+    check(outcome.succeeded(), "auto-rename resolves a collision on a name at the length limit");
+
+    const std::string resolved = outcome.destination.filename().string();
+    check(resolved.size() <= limit, "the resolved name fits within the filesystem limit");
+    check(resolved != name, "the resolved name differs from the one already taken");
+    check(resolved.ends_with(" (2).txt"), "the number and extension survive the shortening");
+    check(fs::exists(outcome.destination), "the resolved name is the one that was created");
+    check(odysea::test::read_text(outcome.destination) == "new",
+          "the copy under the resolved name holds the source contents");
+    check(odysea::test::read_text(target_dir / name) == "old",
+          "auto-rename leaves the entry it collided with untouched");
+}
+
+void test_auto_rename_shortens_a_maximal_name_for_a_long_extension() {
+    const odysea::test::TemporaryTree tree("auto_rename_long_extension");
+    const fs::path target_dir = tree.directory("target");
+    const std::size_t limit = longest_name(target_dir);
+
+    // Almost the whole name is the extension, so the number cannot fit without
+    // shortening the extension itself.
+    std::string name = "a.";
+    name += std::string(limit - name.size(), 'e');
+    check(name.size() == limit, "the fixture name is exactly at the limit");
+
+    const fs::path source = tree.file("source/" + name, "new");
+    tree.file("target/" + name, "old");
+
+    const OperationOutcome outcome =
+        copy_into(source, target_dir, {.conflict = ConflictPolicy::AutoRename});
+    check(outcome.succeeded(), "auto-rename resolves a collision on a name that is nearly all "
+                               "extension");
+
+    const std::string resolved = outcome.destination.filename().string();
+    check(resolved.size() <= limit, "the resolved long-extension name fits within the limit");
+    check(resolved.starts_with("a (2)."), "the stem and number are kept ahead of the extension");
+    check(fs::exists(outcome.destination), "the resolved long-extension name was created");
+    check(odysea::test::read_text(target_dir / name) == "old",
+          "the entry it collided with is untouched");
+}
+
+void test_auto_rename_resolves_repeated_collisions_at_the_limit() {
+    const odysea::test::TemporaryTree tree("auto_rename_repeated");
+    const fs::path target_dir = tree.directory("target");
+    const std::size_t limit = longest_name(target_dir);
+    const std::string name = maximal_name(target_dir, ".txt");
+
+    const fs::path source = tree.file("source/" + name, "new");
+    tree.file("target/" + name, "old");
+
+    std::vector<std::string> resolved;
+    for (unsigned round = 0; round < 12; ++round) {
+        const OperationOutcome outcome =
+            copy_into(source, target_dir, {.conflict = ConflictPolicy::AutoRename});
+        check(outcome.succeeded(), "each repeated collision at the limit resolves");
+        if (!outcome.succeeded()) {
+            return;
+        }
+        resolved.push_back(outcome.destination.filename().string());
+    }
+
+    bool all_fit = true;
+    bool all_created = true;
+    for (const std::string& variant : resolved) {
+        if (variant.size() > limit) {
+            all_fit = false;
+        }
+        if (!fs::exists(target_dir / variant)) {
+            all_created = false;
+        }
+    }
+    check(all_fit, "every repeated variant fits within the limit");
+    check(all_created, "every repeated variant was created under its reported name");
+
+    std::vector<std::string> unique = resolved;
+    std::sort(unique.begin(), unique.end());
+    unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
+    check(unique.size() == resolved.size(), "repeated collisions resolve to distinct names");
+
+    // The number widens from " (2)" to " (10)", which has to come out of the
+    // shortened stem rather than push the name past the limit.
+    check(resolved.back().ends_with(" (13).txt"), "the numbering keeps counting past nine");
+}
+
+void test_auto_rename_does_not_split_a_utf8_character() {
+    const odysea::test::TemporaryTree tree("auto_rename_utf8");
+    const fs::path target_dir = tree.directory("target");
+    const std::size_t limit = longest_name(target_dir);
+
+    // A name of three-byte characters, padded so it ends exactly at the limit.
+    // Shortening it by the width of " (2)" cannot land on a character boundary,
+    // so a naive byte cut would leave an invalid sequence.
+    const std::string_view character = "\xe6\x96\x87";
+    std::string name;
+    while (name.size() + character.size() + 4 <= limit) {
+        name += character;
+    }
+    name += std::string(limit - name.size(), 'z');
+    check(name.size() == limit, "the fixture name is exactly at the limit");
+    check(is_valid_utf8(name), "the fixture name is valid UTF-8");
+
+    const fs::path source = tree.file("source/" + name, "new");
+    tree.file("target/" + name, "old");
+
+    const OperationOutcome outcome =
+        copy_into(source, target_dir, {.conflict = ConflictPolicy::AutoRename});
+    check(outcome.succeeded(), "auto-rename resolves a collision on a maximal UTF-8 name");
+
+    const std::string resolved = outcome.destination.filename().string();
+    check(resolved.size() <= limit, "the resolved UTF-8 name fits within the limit");
+    check(is_valid_utf8(resolved), "shortening a UTF-8 name does not split a character");
+    check(fs::exists(outcome.destination), "the resolved UTF-8 name was created");
+}
+
+void test_auto_rename_reports_the_name_it_created() {
+    const odysea::test::TemporaryTree tree("auto_rename_reported");
+    const fs::path target_dir = tree.directory("target");
+    const std::string name = maximal_name(target_dir, ".txt");
+    tree.file("target/" + name, "old");
+
+    const OperationOutcome preview =
+        resolve_destination(target_dir, name, {.conflict = ConflictPolicy::AutoRename});
+    check(preview.succeeded(), "previewing a maximal-name collision succeeds");
+    check(!fs::exists(preview.destination), "previewing a name creates nothing");
+
+    const fs::path source = tree.file("source/" + name, "new");
+    const OperationOutcome outcome =
+        move_into(source, target_dir, {.conflict = ConflictPolicy::AutoRename});
+    check(outcome.succeeded(), "a move resolves a maximal-name collision by numbering");
+    check(outcome.destination == preview.destination,
+          "the preview and the operation agree on the resolved name");
+    check(odysea::test::read_text(outcome.destination) == "new",
+          "the reported destination is where the entry actually went");
+    check(!fs::exists(source), "the source is gone after a numbered move");
+}
+
+/// A working entry that outlives its operation can hold the only copy of the
+/// caller's data whichever role it carries, so neither role may be treated as
+/// disposable. Prepared is the role that looks disposable and is not.
+void test_a_retained_prepared_entry_can_hold_the_only_copy() {
+    const odysea::test::TemporaryTree tree("retained_prepared_role");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+        failing_step({detail::RenameKind::Install, detail::RenameKind::Unwind}));
+    check(!outcome.succeeded(), "the arranged move fails");
+    check(!fs::exists(source), "the source is no longer under its original name");
+
+    const fs::path retained = working_entry(target_dir, WorkingEntryRole::Prepared);
+    check(!retained.empty(), "the only copy of the source is retained as a working entry");
+    if (retained.empty()) {
+        return;
+    }
+    check(classify_working_entry(retained.filename().string()) == WorkingEntryRole::Prepared,
+          "the retained sole copy carries the Prepared role");
+    check(is_working_entry(retained.filename().string()),
+          "the retained sole copy is recognized as a working entry");
+    check(odysea::test::read_text(retained / "kept.txt") == "kept",
+          "the retained sole copy still holds the caller's data");
+}
+
 void test_a_maximal_name_rename_replaces_a_directory() {
     const odysea::test::TemporaryTree tree("max_name_rename");
     const fs::path root = tree.root();
@@ -915,6 +1120,12 @@ int main() {
     test_a_failed_unwind_retains_the_source();
     test_maximal_names_transfer_into_a_free_destination();
     test_maximal_names_replace_an_existing_destination();
+    test_auto_rename_shortens_a_maximal_name_to_fit_the_number();
+    test_auto_rename_shortens_a_maximal_name_for_a_long_extension();
+    test_auto_rename_resolves_repeated_collisions_at_the_limit();
+    test_auto_rename_does_not_split_a_utf8_character();
+    test_auto_rename_reports_the_name_it_created();
+    test_a_retained_prepared_entry_can_hold_the_only_copy();
     test_a_maximal_name_rename_replaces_a_directory();
     test_a_failed_maximal_name_install_loses_nothing();
     test_reservation_skips_names_that_are_already_taken();

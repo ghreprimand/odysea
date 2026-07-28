@@ -7,6 +7,58 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Number collisions within the name limit, and correct the working-entry contract
+
+Two corrections to the public contract of the mutation primitives.
+
+Resolving a collision by numbering — `report (2).txt` — lengthened the name, so
+it could not resolve a collision on a name already as long as the filesystem
+allows for a single entry. The operation refused with the filesystem's length
+error. Refusing loses nothing, but a policy whose whole purpose is to find a
+free name should find one, and the caller had no way to satisfy it.
+
+A numbered name is now built to fit. The limit is read from the filesystem
+holding the destination rather than assumed, and where the number would not
+otherwise fit the name is shortened to make room. The extension is kept whole
+whenever the numbered name can hold it together with at least one byte of the
+stem, since the extension is what identifies the file to both the user and the
+system; only where the extension alone would fill the name is it shortened too.
+A name that is valid UTF-8 is shortened between characters, never through one,
+so what remains still displays. A name that is not valid UTF-8 is cut on a byte
+boundary: it did not display as text to begin with, and a different rule would
+only make the result harder to relate to the original. The number widens as it
+counts past nine, and the shortening absorbs that rather than letting the name
+grow. The resolved name is reported in the outcome, and previewing a resolution
+agrees with performing it.
+
+The second correction concerns the entries these operations create for their
+own use. The contract described a replacement being assembled as data that also
+exists elsewhere and is therefore safe to remove. That was wrong. A move
+relocates the source under that same role, so when a failure cannot be undone
+the entry left behind can be the only remaining copy of what the caller asked
+to move. The role is now documented as what it is: while an operation runs the
+entry is its own to manage, but one found afterwards was left by a failure or an
+interruption, and its name no longer says what it holds. The same is true of a
+moved-aside destination. Neither role licenses deletion, and a listing that
+omits these entries should offer a way to see them. A test asserts the case
+directly: after a move whose install and recovery both fail, the source no
+longer exists under its own name, and the entry holding it classifies under the
+role that had been described as disposable.
+
+Coverage for the numbering: a maximal name with an ordinary extension; a
+maximal name that is almost entirely extension; twelve repeated collisions on
+the same maximal name, which must all fit, all be created, and all differ; a
+maximal name built from multi-byte characters, where the result must remain
+valid UTF-8; and agreement between the previewed and the performed name.
+Restoring the previous lengthening behavior fails ten of these checks and then
+aborts.
+
+Verified with clean release and ASan/UBSan builds, warning-free under
+`-Werror`, the full release suite including formatting, static analysis, and
+the public-repository guard, the full sanitizer suite, the mutation tests
+repeated ten times under release and five under sanitizers, and a headless
+application smoke launch.
+
 ## 2026-07-28 -- Bound the working names used to replace an entry
 
 The temporary entries a replacement creates were named after the entry being
@@ -30,8 +82,8 @@ Recognizing these entries is now part of the public interface rather than
 something a caller reproduces by matching spellings. `classify_working_entry`
 reports whether a directory entry belongs to one of these operations and, if it
 does, whether it holds a replacement being assembled or a destination that was
-moved aside and could not be put back. A presentation layer can hide the first
-and explain the second instead of showing an unexplained name. The naming
+moved aside and could not be put back. A presentation layer can tell both apart
+from entries the user made instead of showing an unexplained name. The naming
 scheme itself stays private, so it can change without affecting callers.
 
 Coverage exercises names at the exact limit the filesystem reports, rather than

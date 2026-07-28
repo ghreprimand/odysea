@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -83,12 +84,104 @@ bool same_entry(const fs::path& first, const fs::path& second) {
     return !ec && equivalent;
 }
 
+/// The longest single entry name the filesystem holding `directory` accepts.
+///
+/// A named type so it cannot be transposed with the other numeric parameter of
+/// the name builder below.
+///
+/// Queried rather than assumed, because the limit belongs to the filesystem.
+/// Falls back to the common limit where it cannot be determined, which is
+/// conservative: a name shortened further than it had to be still works.
+struct NameLimit {
+    std::size_t bytes;
+};
+
+NameLimit component_limit(const fs::path& directory) {
+    const long limit = ::pathconf(directory.c_str(), _PC_NAME_MAX);
+    if (limit <= 0) {
+        return NameLimit{.bytes = 255};
+    }
+    return NameLimit{.bytes = static_cast<std::size_t>(limit)};
+}
+
+/// Length of the longest prefix of `text` that is at most `limit` bytes and
+/// does not cut a UTF-8 character in half.
+///
+/// File names are bytes, and nothing requires them to be text. A name that is
+/// valid UTF-8 up to the cut is shortened between characters, so what is left
+/// still displays. A name that is not gets a plain byte prefix: it did not
+/// display as text to begin with, and a different rule would only make the
+/// result harder to relate to the original.
+std::size_t displayable_prefix(std::string_view text, std::size_t limit) {
+    if (limit >= text.size()) {
+        return text.size();
+    }
+
+    std::size_t index = 0;
+    std::size_t boundary = 0;
+    while (index < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[index]);
+        std::size_t width = 0;
+        if (lead < 0x80) {
+            width = 1;
+        } else if ((lead & 0xE0) == 0xC0) {
+            width = 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            width = 3;
+        } else if ((lead & 0xF8) == 0xF0) {
+            width = 4;
+        } else {
+            return limit;
+        }
+
+        if (index + width > text.size()) {
+            return limit;
+        }
+        for (std::size_t offset = 1; offset < width; ++offset) {
+            if ((static_cast<unsigned char>(text[index + offset]) & 0xC0) != 0x80) {
+                return limit;
+            }
+        }
+
+        if (index + width > limit) {
+            return boundary;
+        }
+        index += width;
+        boundary = index;
+    }
+    return boundary;
+}
+
 /// Build the nth alternative for a colliding name: "report (2).txt".
-fs::path numbered_variant(const fs::path& directory, std::string_view name, unsigned attempt) {
+///
+/// The number has to fit within the longest name the filesystem accepts, so a
+/// name already at that length is shortened to make room. The extension is kept
+/// whole whenever the numbered name can hold it along with at least one byte of
+/// the stem, since the extension is what tells both the user and the system
+/// what the file is. Only where the extension alone would fill the name is the
+/// extension shortened as well.
+std::string numbered_name(std::string_view name, unsigned attempt, NameLimit limit) {
     const fs::path bare_name{name};
-    const std::string stem = bare_name.stem().string();
-    const std::string extension = bare_name.extension().string();
-    return directory / (stem + " (" + std::to_string(attempt) + ")" + extension);
+    std::string stem = bare_name.stem().string();
+    std::string extension = bare_name.extension().string();
+    const std::string number = " (" + std::to_string(attempt) + ")";
+
+    if (number.size() >= limit.bytes) {
+        // Not reachable on any filesystem in practice; the arithmetic below
+        // assumes there is room for the number itself.
+        return {};
+    }
+
+    const std::size_t available = limit.bytes - number.size();
+    if (stem.size() + extension.size() > available) {
+        if (extension.size() < available) {
+            stem.resize(displayable_prefix(stem, available - extension.size()));
+        } else {
+            extension.resize(displayable_prefix(extension, available - 1));
+            stem.resize(displayable_prefix(stem, available - extension.size()));
+        }
+    }
+    return stem + number + extension;
 }
 
 /// True when `candidate` is `root` itself or lives underneath it.
@@ -417,9 +510,14 @@ OperationOutcome resolve_destination(const fs::path& directory, std::string_view
     }
 
     // Bounded search so a pathological directory cannot spin forever.
+    const NameLimit limit = component_limit(directory);
     constexpr unsigned max_attempts = 10000;
     for (unsigned attempt = 2; attempt < max_attempts; ++attempt) {
-        fs::path candidate = numbered_variant(directory, name, attempt);
+        const std::string variant = numbered_name(name, attempt, limit);
+        if (variant.empty()) {
+            return failure(std::errc::filename_too_long);
+        }
+        fs::path candidate = directory / variant;
         if (!path_present(candidate)) {
             return success(std::move(candidate));
         }

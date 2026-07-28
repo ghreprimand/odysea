@@ -49,26 +49,45 @@ struct OperationOutcome {
 };
 
 /// What an entry created by these operations for their own use holds.
+///
+/// A working entry that outlives the operation that created it may hold the
+/// only remaining copy of the caller's data, whichever role it has. Neither
+/// role licenses deletion. An operation removes its own working entries while
+/// it still knows what they hold; anything found afterwards was left by a
+/// failure or an interruption, and what it holds is no longer known from its
+/// name alone.
 enum class WorkingEntryRole {
     /// Not an entry these operations created.
     None,
-    /// A replacement being assembled, or one an interrupted run abandoned. The
-    /// data it holds also exists elsewhere, so it can be removed.
+    /// A replacement being assembled.
+    ///
+    /// While the operation runs this is a second copy, and the operation
+    /// discards it itself when it is no longer needed. One found afterwards
+    /// may still be the only copy of its data: a move relocates the source
+    /// under this role, and a failure that could not be undone leaves it here
+    /// rather than removing it.
     Prepared,
-    /// A destination moved aside to make room for its replacement. Left behind
-    /// only when a failure could not be undone, in which case it may hold the
-    /// only remaining copy of what used to occupy the destination.
+    /// A destination moved aside to make room for its replacement.
+    ///
+    /// Left behind only when a failure could not be undone, in which case it
+    /// may hold the only remaining copy of what used to occupy the
+    /// destination.
     Replaced,
 };
 
 /// Classify a single directory entry name.
 ///
 /// Presentation layers use this to recognize the entries these operations
-/// create, so a listing can hide the transient ones and explain a retained one
-/// rather than showing an unexplained name. The naming scheme is deliberately
-/// not part of the interface: names have a bounded length independent of the
-/// entry being operated on, so an operation on a name of the maximum length the
-/// filesystem allows is not itself limited.
+/// create, so a listing can distinguish them from entries the user made rather
+/// than showing an unexplained name.
+///
+/// Recognizing an entry is not permission to remove it, and a listing that
+/// omits these entries should offer a way to see them: an entry that outlived
+/// its operation may be the only copy of something the user did not agree to
+/// lose. The naming scheme is deliberately not part of the interface: names
+/// have a bounded length independent of the entry being operated on, so an
+/// operation on a name of the maximum length the filesystem allows is not
+/// itself limited.
 ///
 /// `name` is a single path component, not a whole path.
 [[nodiscard]] WorkingEntryRole classify_working_entry(std::string_view name) noexcept;
@@ -81,6 +100,14 @@ enum class WorkingEntryRole {
 /// Applies the conflict policy without touching the filesystem beyond
 /// existence checks. Exposed because callers frequently need to preview the
 /// final name before committing to an operation.
+///
+/// ConflictPolicy::AutoRename numbers the name, and shortens it where the
+/// number would not otherwise fit within the longest name the filesystem
+/// accepts for a single entry. The extension is kept whenever the numbered
+/// name can hold it, and a name that is valid UTF-8 is only ever shortened
+/// between characters. The resolved name is reported in `destination`, so a
+/// caller that needs to show the final name reads it from there rather than
+/// predicting it.
 [[nodiscard]] OperationOutcome resolve_destination(const std::filesystem::path& directory,
                                                    std::string_view name,
                                                    const OperationOptions& options);
