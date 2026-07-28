@@ -7,6 +7,33 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Decode and deliver thumbnails through the application adapter
+
+The application layer now supplies the codec and persistent-store interfaces
+behind the core thumbnail service. Image headers are inspected before decoding;
+only PNG, JPEG, and WebP inputs are accepted, and both dimensions and decoded
+byte cost are capped. Output is scaled to the requested standard edge.
+
+Persistent thumbnails use the shared freedesktop cache layout and carry the
+source URI, modification time, and byte length in PNG metadata. Cache reads
+recover that metadata from the decoded image and leave validity decisions to
+the Qt-free core policy.
+
+Worker results cross to the GUI thread through queued, context-bound delivery.
+Every result is checked against the active generation, stable entry path, and
+full thumbnail key before it can update the model. Rows are never retained as
+asynchronous identity. The model publishes loading and opaque image-provider
+roles, keeps hard links distinct, withdraws work when a delegate leaves, and
+removes provider images when an entry disappears or changes.
+
+Adapter tests cover the decode allowlist and pre-decode bounds, PNG metadata
+round trips and stale records, hard-link identity, role removal, cancellation,
+navigation that reuses row zero while an older decode is running, and queued
+delivery across model destruction.
+
+Known gap: the list shell does not request these roles yet. The virtualized grid
+and its view switching remain open.
+
 ## 2026-07-28 -- Formatting covers every C and C++ extension
 
 The formatting gate checked only `.cpp` and `.hpp`, so a tracked `.c`, `.cc`,

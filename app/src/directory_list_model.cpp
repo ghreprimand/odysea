@@ -16,7 +16,8 @@ constexpr int maximumSortMode = DirectoryListModel::SortByType;
 
 bool entriesMatch(const odysea::core::Entry& left, const odysea::core::Entry& right) {
     return left.name == right.name && left.path == right.path && left.kind == right.kind &&
-           left.size == right.size && left.device == right.device && left.inode == right.inode;
+           left.size == right.size && left.device == right.device && left.inode == right.inode &&
+           left.modified_seconds == right.modified_seconds;
 }
 
 } // namespace
@@ -49,15 +50,26 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
     case RecoveryEntryRole:
         return odysea::core::classify_working_entry(entry.name) !=
                odysea::core::WorkingEntryRole::None;
+    case ThumbnailSourceRole: {
+        const QString id = thumbnailIds_.value(entryKey(entry));
+        return id.isEmpty() ? QString{} : QStringLiteral("image://odysea-thumbnail/") + id;
+    }
+    case ThumbnailLoadingRole:
+        return thumbnailLoadingKeys_.contains(entryKey(entry));
     default:
         return {};
     }
 }
 
 QHash<int, QByteArray> DirectoryListModel::roleNames() const {
-    return {{NameRole, "name"},         {IsDirRole, "isDir"},
-            {SizeRole, "size"},         {PathRole, "entryPath"},
-            {SelectedRole, "selected"}, {RecoveryEntryRole, "recoveryEntry"}};
+    return {{NameRole, "name"},
+            {IsDirRole, "isDir"},
+            {SizeRole, "size"},
+            {PathRole, "entryPath"},
+            {SelectedRole, "selected"},
+            {RecoveryEntryRole, "recoveryEntry"},
+            {ThumbnailSourceRole, "thumbnailSource"},
+            {ThumbnailLoadingRole, "thumbnailLoading"}};
 }
 
 QString DirectoryListModel::path() const {
@@ -461,6 +473,7 @@ void DirectoryListModel::setCurrentPath(const QString& path) {
         replaceSelection({});
         setCurrentIndex(-1);
         selectionAnchorKey_.clear();
+        beginThumbnailGeneration();
     }
     path_ = path;
     currentTab().path = path;
@@ -640,10 +653,12 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         currentEntryKey_ = entryKey(entries_.front());
     }
     pendingEntryKeyRemaps_.clear();
+    reconcileThumbnails();
 
     for (const int row : changedRows) {
         emit dataChanged(index(row), index(row),
-                         {NameRole, IsDirRole, SizeRole, PathRole, RecoveryEntryRole});
+                         {NameRole, IsDirRole, SizeRole, PathRole, RecoveryEntryRole,
+                          ThumbnailSourceRole, ThumbnailLoadingRole});
     }
     if (previousSelectedRows != selectedRows_) {
         notifySelectionRoles();
@@ -707,6 +722,7 @@ void DirectoryListModel::remapEntryKey(const QString& oldKey, const QString& new
     if (rubberBandBaseKeys_.remove(oldKey)) {
         rubberBandBaseKeys_.insert(newKey);
     }
+    removeThumbnailState(oldKey);
     pendingEntryKeyRemaps_.insert(oldKey, newKey);
 }
 

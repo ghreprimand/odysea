@@ -15,11 +15,16 @@ qt_add_library(odysea_app_adapter STATIC
     src/directory_list_model.cpp
     src/directory_list_model_async.cpp
     src/directory_list_model_operations.cpp
+    src/directory_list_model_thumbnails.cpp
     src/directory_list_model.hpp
     src/directory_watch_service.cpp
     src/directory_watch_service.hpp
     src/filesystem_operation_job.cpp
-    src/filesystem_operation_job.hpp)
+    src/filesystem_operation_job.hpp
+    src/thumbnail_backend.cpp
+    src/thumbnail_backend.hpp
+    src/thumbnail_image_provider.cpp
+    src/thumbnail_image_provider.hpp)
 
 target_include_directories(odysea_app_adapter
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -34,7 +39,7 @@ qt_add_qml_module(odysea
 target_link_libraries(odysea_app_adapter
     PUBLIC
         odysea::core
-        Qt6::Concurrent Qt6::Core Qt6::Gui
+        Qt6::Concurrent Qt6::Core Qt6::Gui Qt6::Quick
     PRIVATE
         odysea_warnings odysea_sanitizers)
 
@@ -58,6 +63,26 @@ target_link_libraries(odysea_app_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_directory_list_model COMMAND odysea_app_tests)
+
+qt_add_executable(odysea_thumbnail_backend_tests
+    tests/tst_thumbnail_backend.cpp)
+
+target_link_libraries(odysea_thumbnail_backend_tests
+    PRIVATE
+        odysea_app_adapter Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_thumbnail_backend COMMAND odysea_thumbnail_backend_tests)
+
+qt_add_executable(odysea_thumbnail_model_tests
+    tests/tst_thumbnail_model.cpp)
+
+target_link_libraries(odysea_thumbnail_model_tests
+    PRIVATE
+        odysea_app_adapter Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_thumbnail_model COMMAND odysea_thumbnail_model_tests)
 
 add_test(
     NAME shell_input_parity

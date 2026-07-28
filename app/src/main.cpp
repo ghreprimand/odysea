@@ -11,6 +11,7 @@
 #include <QVariant>
 
 #include "directory_list_model.hpp"
+#include "thumbnail_image_provider.hpp"
 
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
@@ -20,10 +21,13 @@ int main(int argc, char* argv[]) {
     const QStringList args = QGuiApplication::arguments();
     const QString start = args.size() > 1 ? args.at(1) : QDir::homePath();
 
-    DirectoryListModel model;
+    QQmlApplicationEngine engine;
+    auto* thumbnailProvider = new ThumbnailImageProvider;
+    engine.addImageProvider(QStringLiteral("odysea-thumbnail"), thumbnailProvider);
+
+    DirectoryListModel model(*thumbnailProvider);
     model.setPath(start);
 
-    QQmlApplicationEngine engine;
     engine.setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)}});
     engine.loadFromModule("OdySea", "Main");
 

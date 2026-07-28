@@ -15,12 +15,17 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <vector>
 
 #include "directory_watch_service.hpp"
 #include "filesystem_operation_job.hpp"
 #include "odysea/core/directory_model.hpp"
 #include "odysea/core/directory_scanner.hpp"
+#include "odysea/core/thumbnail_service.hpp"
+
+class ThumbnailImageProvider;
 
 class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
@@ -51,7 +56,9 @@ class DirectoryListModel : public QAbstractListModel {
         SizeRole,
         PathRole,
         SelectedRole,
-        RecoveryEntryRole
+        RecoveryEntryRole,
+        ThumbnailSourceRole,
+        ThumbnailLoadingRole
     };
 
     enum SortMode { SortByName = 0, SortBySize, SortByType };
@@ -61,6 +68,12 @@ class DirectoryListModel : public QAbstractListModel {
     Q_ENUM(ConflictMode)
 
     explicit DirectoryListModel(QObject* parent = nullptr);
+    explicit DirectoryListModel(ThumbnailImageProvider& thumbnailProvider,
+                                QObject* parent = nullptr);
+    DirectoryListModel(ThumbnailImageProvider& thumbnailProvider,
+                       odysea::core::ThumbnailProducer& thumbnailProducer,
+                       odysea::core::ThumbnailStore& thumbnailStore,
+                       odysea::core::ThumbnailServiceOptions options, QObject* parent = nullptr);
     ~DirectoryListModel() override;
 
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
@@ -98,6 +111,8 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void goForward();
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void activate(int row);
+    Q_INVOKABLE void requestThumbnail(int row);
+    Q_INVOKABLE void releaseThumbnail(const QString& entryPath);
 
     Q_INVOKABLE void selectRow(int row, Qt::KeyboardModifiers modifiers);
     Q_INVOKABLE void moveCursor(int delta, bool extendSelection, bool preserveSelection);
@@ -166,6 +181,8 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
     [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
     [[nodiscard]] int rowForEntryKey(const QString& key) const;
+    [[nodiscard]] std::optional<odysea::core::ThumbnailKey>
+    thumbnailKeyForEntry(const odysea::core::Entry& entry) const;
     [[nodiscard]] odysea::core::OperationOptions operationOptions(int conflictMode) const;
 
     void navigateTo(const QString& path, bool recordHistory);
@@ -194,6 +211,14 @@ class DirectoryListModel : public QAbstractListModel {
     void postScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
     void postScanComplete(odysea::core::ScanSummary summary);
     void postWatchUpdate(DirectoryWatchUpdate update);
+    void initializeThumbnailService(odysea::core::ThumbnailProducer& producer,
+                                    odysea::core::ThumbnailStore& store,
+                                    odysea::core::ThumbnailServiceOptions options);
+    void beginThumbnailGeneration();
+    void reconcileThumbnails();
+    void removeThumbnailState(const QString& key);
+    void postThumbnailResult(odysea::core::ThumbnailResult result);
+    void receiveThumbnailResult(odysea::core::ThumbnailResult result);
 
     QString path_;
     QString errorString_;
@@ -209,14 +234,22 @@ class DirectoryListModel : public QAbstractListModel {
     QSet<int> selectedRows_;
     QSet<QString> selectedEntryKeys_;
     QHash<QString, QString> pendingEntryKeyRemaps_;
+    QHash<QString, odysea::core::ThumbnailKey> requestedThumbnailKeys_;
+    QHash<QString, QString> thumbnailIds_;
+    QSet<QString> thumbnailLoadingKeys_;
     QSet<QString> rubberBandBaseKeys_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
     odysea::core::DirectoryScanner scanner_;
     DirectoryWatchService watchService_;
     QFutureWatcher<FilesystemOperationResult> operationWatcher_;
+    ThumbnailImageProvider* thumbnailProvider_ = nullptr;
+    std::unique_ptr<odysea::core::ThumbnailProducer> ownedThumbnailProducer_;
+    std::unique_ptr<odysea::core::ThumbnailStore> ownedThumbnailStore_;
+    std::unique_ptr<odysea::core::ThumbnailService> thumbnailService_;
     std::atomic<bool> deliverCallbacks_{true};
     std::uint64_t activeScanToken_ = 0;
     std::uint64_t watchToken_ = 0;
+    std::uint64_t thumbnailGeneration_ = 0;
     int sortMode_ = SortByName;
     int currentIndex_ = -1;
     QString selectionAnchorKey_;

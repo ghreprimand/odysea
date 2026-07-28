@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "thumbnail_image_provider.hpp"
+
 DirectoryListModel::DirectoryListModel(QObject* parent)
     : QAbstractListModel(parent),
       watchService_([this](DirectoryWatchUpdate update) { postWatchUpdate(std::move(update)); }) {
@@ -20,6 +22,12 @@ DirectoryListModel::~DirectoryListModel() {
     scanner_.cancel();
     watchService_.stop();
     scanner_.wait_idle();
+    thumbnailService_.reset();
+    for (const QString& id : std::as_const(thumbnailIds_)) {
+        if (thumbnailProvider_ != nullptr) {
+            thumbnailProvider_->remove(id);
+        }
+    }
 }
 
 void DirectoryListModel::startScan() {
