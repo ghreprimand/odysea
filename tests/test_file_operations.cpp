@@ -4,13 +4,17 @@
 #include "file_operations_internal.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
+#include <string_view>
 #include <sys/stat.h>
 #include <system_error>
 #include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 using odysea::test::check;
@@ -26,6 +30,38 @@ namespace {
         return 0;
     }
     return info.st_ino;
+}
+
+/// The first entry in `directory` whose name starts with `prefix`, or an empty
+/// path when there is none. Both working-entry prefixes are internal to the
+/// core, so the tests name them literally rather than depending on the
+/// constants they assert about.
+fs::path working_entry(const fs::path& directory, std::string_view prefix) {
+    std::error_code ec;
+    fs::directory_iterator element(directory, ec);
+    if (ec) {
+        return {};
+    }
+    const fs::directory_iterator end;
+    for (; element != end; ++element) {
+        if (element->path().filename().string().starts_with(prefix)) {
+            return element->path();
+        }
+    }
+    return {};
+}
+
+bool holds_staging_entry(const fs::path& directory) {
+    return !working_entry(directory, ".odysea-staging-").empty();
+}
+
+bool holds_backup_entry(const fs::path& directory) {
+    return !working_entry(directory, ".odysea-replaced-").empty();
+}
+
+/// No trace of an interrupted operation is left in the destination directory.
+bool holds_no_working_entry(const fs::path& directory) {
+    return !holds_staging_entry(directory) && !holds_backup_entry(directory);
 }
 
 void test_copying_a_file_onto_itself_preserves_it() {
@@ -185,44 +221,48 @@ void test_a_failed_directory_copy_leaves_the_destination_intact() {
     check(odysea::test::read_text(target_dir / "project/existing.txt") == "old",
           "the surviving destination keeps its contents");
 
-    bool staging_left_behind = false;
-    for (const fs::directory_entry& element : fs::directory_iterator(target_dir)) {
-        if (element.path().filename().string().starts_with(".odysea-staging-")) {
-            staging_left_behind = true;
-        }
-    }
-    check(!staging_left_behind, "a failed copy removes the staging entry it created");
+    check(holds_no_working_entry(target_dir),
+          "a failed copy removes the working entries it created");
 }
 
-/// A rename step that always reports a filesystem boundary.
+/// A rename step that reports a filesystem boundary when the source entry is
+/// relocated, and behaves normally otherwise.
 ///
 /// Every move that cannot be completed by a single rename takes the same route,
 /// whether the boundary is real or reported here, so the fallback can be driven
-/// deterministically on one filesystem.
-void rename_across_devices(const fs::path& /*from*/, const fs::path& /*to*/,
+/// deterministically on one filesystem. Only relocating the source can cross a
+/// boundary; the remaining steps rename within one directory, so they are left
+/// to the filesystem.
+void rename_across_devices(detail::RenameKind kind, const fs::path& from, const fs::path& to,
                            std::error_code& error) {
-    error = std::make_error_code(std::errc::cross_device_link);
+    if (kind == detail::RenameKind::Relocate) {
+        error = std::make_error_code(std::errc::cross_device_link);
+        return;
+    }
+    detail::rename_with_filesystem(kind, from, to, error);
+}
+
+/// A rename step that fails the given kinds and performs every other kind.
+///
+/// Installing the prepared entry, and putting a moved-aside destination back
+/// afterwards, are the steps a test cannot provoke without privileged control
+/// of the mount. Failing them here makes the recovery paths reachable.
+detail::RenameStep failing_step(std::initializer_list<detail::RenameKind> failing) {
+    const std::vector<detail::RenameKind> kinds(failing);
+    return [kinds](detail::RenameKind kind, const fs::path& from, const fs::path& to,
+                   std::error_code& error) {
+        if (std::find(kinds.begin(), kinds.end(), kind) != kinds.end()) {
+            error = std::make_error_code(std::errc::io_error);
+            return;
+        }
+        detail::rename_with_filesystem(kind, from, to, error);
+    };
 }
 
 /// A named pipe cannot be copied, so a source containing one fails the fallback
 /// copy on every machine, with no dependence on permissions or on the user.
 bool make_fifo(const fs::path& path) {
     return ::mkfifo(path.c_str(), S_IRUSR | S_IWUSR) == 0;
-}
-
-bool holds_staging_entry(const fs::path& directory) {
-    std::error_code ec;
-    fs::directory_iterator element(directory, ec);
-    if (ec) {
-        return false;
-    }
-    const fs::directory_iterator end;
-    for (; element != end; ++element) {
-        if (element->path().filename().string().starts_with(".odysea-staging-")) {
-            return true;
-        }
-    }
-    return false;
 }
 
 /// A directory on a filesystem other than the one holding `neighbour`, or an
@@ -266,8 +306,8 @@ void test_a_cross_device_move_replaces_a_file() {
     check(odysea::test::read_text(destination) == "new",
           "the replacement contents are in place after the fallback copy");
     check(!fs::exists(source), "the source is removed once the copy is installed");
-    check(!holds_staging_entry(target_dir),
-          "a completed cross-filesystem move leaves no staging entry");
+    check(holds_no_working_entry(target_dir),
+          "a completed cross-filesystem move leaves no working entry behind");
 }
 
 void test_a_cross_device_move_replaces_a_directory() {
@@ -285,8 +325,8 @@ void test_a_cross_device_move_replaces_a_directory() {
     check(!fs::exists(target_dir / "project/stale.txt"),
           "the replaced directory is gone rather than merged into");
     check(!fs::exists(source), "the source tree is removed once the copy is installed");
-    check(!holds_staging_entry(target_dir),
-          "a completed cross-filesystem directory move leaves no staging entry");
+    check(holds_no_working_entry(target_dir),
+          "a completed cross-filesystem directory move leaves no working entry behind");
 }
 
 void test_a_failed_cross_device_move_preserves_the_destination_tree() {
@@ -306,7 +346,8 @@ void test_a_failed_cross_device_move_preserves_the_destination_tree() {
     check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
           "the surviving destination keeps its contents");
     check(fs::exists(source / "kept.txt"), "a failed cross-filesystem move leaves the source tree");
-    check(!holds_staging_entry(target_dir), "a failed cross-filesystem move discards its staging");
+    check(holds_no_working_entry(target_dir),
+          "a failed cross-filesystem move leaves no working entry behind");
 }
 
 void test_a_failed_cross_device_move_preserves_a_replaced_file() {
@@ -323,8 +364,8 @@ void test_a_failed_cross_device_move_preserves_a_replaced_file() {
     check(odysea::test::read_text(destination) == "old",
           "the destination file survives a failed cross-filesystem move");
     check(fs::exists(source), "the source survives a failed cross-filesystem move");
-    check(!holds_staging_entry(target_dir),
-          "a failed cross-filesystem file move discards its staging");
+    check(holds_no_working_entry(target_dir),
+          "a failed cross-filesystem file move leaves no working entry behind");
 }
 
 /// The same behaviour over a real filesystem boundary, when the machine has a
@@ -355,8 +396,8 @@ void test_a_move_over_a_real_filesystem_boundary() {
     check(!failed.succeeded(), "a real cross-filesystem move fails when the copy cannot complete");
     check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
           "a failed real cross-filesystem move leaves the destination tree in place");
-    check(!holds_staging_entry(target_dir),
-          "a failed real cross-filesystem move discards its staging");
+    check(holds_no_working_entry(target_dir),
+          "a failed real cross-filesystem move leaves no working entry behind");
 
     fs::remove(scratch / "project/pipe", ec);
     const OperationOutcome moved =
@@ -365,9 +406,149 @@ void test_a_move_over_a_real_filesystem_boundary() {
     check(odysea::test::read_text(target_dir / "project/kept.txt") == "kept",
           "the moved tree is installed across a real filesystem boundary");
     check(!fs::exists(scratch / "project"), "the source is removed after a real move succeeds");
-    check(!holds_staging_entry(target_dir), "a completed real move leaves no staging entry");
+    check(holds_no_working_entry(target_dir),
+          "a completed real move leaves no working entry behind");
 
     fs::remove_all(scratch, ec);
+}
+
+void test_a_failed_install_preserves_a_copied_over_directory() {
+    const odysea::test::TemporaryTree tree("copy_install_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::copy_into_using(
+        tree.root() / "source/project", target_dir, {.conflict = ConflictPolicy::Overwrite},
+        failing_step({detail::RenameKind::Install}));
+    check(!outcome.succeeded(), "a copy whose install fails reports the failure");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "a failed install leaves the replaced directory in place");
+    check(odysea::test::read_text(tree.root() / "source/project/kept.txt") == "kept",
+          "a failed install leaves the copied source untouched");
+    check(holds_no_working_entry(target_dir),
+          "a failed install leaves no working entry behind after a copy");
+}
+
+void test_a_failed_install_preserves_a_copied_over_file() {
+    const odysea::test::TemporaryTree tree("copy_file_install_failure");
+    const fs::path source = tree.file("source/report.txt", "new");
+    const fs::path target_dir = tree.directory("target");
+    const fs::path destination = tree.file("target/report.txt", "old");
+
+    const OperationOutcome outcome =
+        detail::copy_into_using(source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+                                failing_step({detail::RenameKind::Install}));
+    check(!outcome.succeeded(), "a file copy whose install fails reports the failure");
+    check(odysea::test::read_text(destination) == "old",
+          "a failed install leaves the replaced file in place");
+    check(odysea::test::read_text(source) == "new",
+          "a failed install leaves the copied file untouched");
+    check(holds_no_working_entry(target_dir),
+          "a failed file-copy install leaves no working entry behind");
+}
+
+void test_a_failed_install_preserves_a_moved_over_directory() {
+    const odysea::test::TemporaryTree tree("move_install_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome =
+        detail::move_into_using(source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+                                failing_step({detail::RenameKind::Install}));
+    check(!outcome.succeeded(), "a move whose install fails reports the failure");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "a failed install leaves the replaced directory in place");
+    check(odysea::test::read_text(source / "kept.txt") == "kept",
+          "a failed install puts the moved source back under its own name");
+    check(holds_no_working_entry(target_dir),
+          "a failed install leaves no working entry behind after a move");
+}
+
+void test_a_failed_install_preserves_a_renamed_over_directory() {
+    const odysea::test::TemporaryTree tree("rename_install_failure");
+    tree.file("project/kept.txt", "kept");
+    tree.file("archive/irreplaceable.txt", "old");
+    const fs::path source = tree.root() / "project";
+
+    const OperationOutcome outcome =
+        detail::rename_entry_using(source, "archive", {.conflict = ConflictPolicy::Overwrite},
+                                   failing_step({detail::RenameKind::Install}));
+    check(!outcome.succeeded(), "a rename whose install fails reports the failure");
+    check(odysea::test::read_text(tree.root() / "archive/irreplaceable.txt") == "old",
+          "a failed rename install leaves the replaced directory in place");
+    check(odysea::test::read_text(source / "kept.txt") == "kept",
+          "a failed rename install leaves the source under its original name");
+    check(holds_no_working_entry(tree.root()),
+          "a failed rename install leaves no working entry behind");
+}
+
+void test_a_failed_backup_leaves_both_entries_untouched() {
+    const odysea::test::TemporaryTree tree("move_backup_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome =
+        detail::move_into_using(source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+                                failing_step({detail::RenameKind::Backup}));
+    check(!outcome.succeeded(), "a move whose destination cannot be moved aside reports it");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "a destination that could not be moved aside is still where it was");
+    check(odysea::test::read_text(source / "kept.txt") == "kept",
+          "the source is put back when the destination cannot be moved aside");
+    check(holds_no_working_entry(target_dir), "a failed backup leaves no working entry behind");
+}
+
+/// Recovery can fail too. When it does the data stays under the name it was
+/// parked at instead of being cleaned up, because a misplaced entry can be
+/// recovered and a removed one cannot.
+void test_a_failed_restore_retains_the_replaced_destination() {
+    const odysea::test::TemporaryTree tree("move_restore_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+        failing_step({detail::RenameKind::Install, detail::RenameKind::Restore}));
+    check(!outcome.succeeded(), "a move whose install and recovery both fail reports the failure");
+    check(odysea::test::read_text(source / "kept.txt") == "kept",
+          "the source is still put back when the destination cannot be restored");
+
+    const fs::path retained = working_entry(target_dir, ".odysea-replaced-");
+    check(!retained.empty(), "the replaced destination is retained rather than removed");
+    check(!retained.empty() && odysea::test::read_text(retained / "irreplaceable.txt") == "old",
+          "the retained destination keeps its contents");
+    check(!holds_staging_entry(target_dir),
+          "only the unrecoverable destination is left behind, not the staged source");
+}
+
+/// The same guarantee for the other side: a source that cannot be put back is
+/// left under its staging name rather than removed.
+void test_a_failed_unwind_retains_the_source() {
+    const odysea::test::TemporaryTree tree("move_unwind_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite},
+        failing_step({detail::RenameKind::Install, detail::RenameKind::Unwind}));
+    check(!outcome.succeeded(), "a move whose install and source recovery both fail reports it");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "the destination is restored even when the source cannot be put back");
+
+    const fs::path retained = working_entry(target_dir, ".odysea-staging-");
+    check(!retained.empty(), "a source that cannot be put back is retained rather than removed");
+    check(!retained.empty() && odysea::test::read_text(retained / "kept.txt") == "kept",
+          "the retained source keeps its contents");
+    check(!holds_backup_entry(target_dir), "the restored destination leaves no backup behind");
 }
 
 void test_copy_file() {
@@ -532,6 +713,13 @@ int main() {
     test_a_failed_cross_device_move_preserves_the_destination_tree();
     test_a_failed_cross_device_move_preserves_a_replaced_file();
     test_a_move_over_a_real_filesystem_boundary();
+    test_a_failed_install_preserves_a_copied_over_directory();
+    test_a_failed_install_preserves_a_copied_over_file();
+    test_a_failed_install_preserves_a_moved_over_directory();
+    test_a_failed_install_preserves_a_renamed_over_directory();
+    test_a_failed_backup_leaves_both_entries_untouched();
+    test_a_failed_restore_retains_the_replaced_destination();
+    test_a_failed_unwind_retains_the_source();
     test_copy_file();
     test_copy_directory_recursively();
     test_copy_preserves_symlinks();

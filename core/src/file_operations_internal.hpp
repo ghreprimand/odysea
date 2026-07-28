@@ -1,39 +1,75 @@
 // Internal seam for the mutation primitives. Not part of the public API and
 // not installed: only file_operations.cpp and the headless tests include it.
 //
-// Moving an entry between filesystems takes a different route from moving it
-// within one, and that route is where a destination can be lost if it is
-// cleared before the replacement exists. The route is chosen by whether the
-// rename step reports std::errc::cross_device_link, so the step is injectable
-// and the fallback can be exercised without a second mount point.
+// Replacing an existing entry is a sequence of renames rather than a single
+// one: the entry that is going to take the destination is prepared first, the
+// occupant is moved aside, the prepared entry is installed, and the occupant is
+// only discarded once the install has succeeded. Every one of those renames can
+// fail on a real filesystem, and most of the failures cannot be provoked from a
+// test without privileged control of the mount. Routing them through an
+// injectable step makes each failure reachable, so the recovery behaviour can
+// be asserted rather than assumed.
 #pragma once
 
 #include "odysea/core/file_operations.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <system_error>
 
 namespace odysea::core::detail {
 
-/// Relocates `from` to `to`, reporting failure through `error`.
+/// Which step of a replacement a rename is performing.
 ///
-/// Only ever used for the steps that relocate the *source* entry. Installing a
-/// staged replacement is always a rename within one directory, so it cannot
-/// cross a filesystem boundary and never goes through this seam.
-using RenameStep = void (*)(const std::filesystem::path& from, const std::filesystem::path& to,
-                            std::error_code& error);
+/// The distinction exists so a test can fail exactly one step. It also records
+/// the one asymmetry that matters: only Relocate moves an entry that the caller
+/// supplied, so only Relocate can report std::errc::cross_device_link. Every
+/// other step renames within a single directory.
+enum class RenameKind {
+    /// Move the source entry out of where the caller left it.
+    Relocate,
+    /// Move an existing destination aside so the prepared entry can take its
+    /// place.
+    Backup,
+    /// Put the prepared entry at the destination.
+    Install,
+    /// Put a moved-aside destination back after a failed install.
+    Restore,
+    /// Put a relocated source back after a failed install.
+    Unwind,
+};
 
-/// The production step: std::filesystem::rename.
-void rename_with_filesystem(const std::filesystem::path& from, const std::filesystem::path& to,
-                            std::error_code& error);
+/// Relocates `from` to `to`, reporting failure through `error`.
+using RenameStep = std::function<void(RenameKind kind, const std::filesystem::path& from,
+                                      const std::filesystem::path& to, std::error_code& error)>;
+
+/// The production step: std::filesystem::rename, whatever the kind.
+void rename_with_filesystem(RenameKind kind, const std::filesystem::path& from,
+                            const std::filesystem::path& to, std::error_code& error);
+
+/// copy_into with the rename step supplied by the caller.
+[[nodiscard]] OperationOutcome copy_into_using(const std::filesystem::path& source,
+                                               const std::filesystem::path& destination_directory,
+                                               const OperationOptions& options,
+                                               const RenameStep& rename_step);
 
 /// move_into with the rename step supplied by the caller.
-///
-/// Behaviour matches odysea::core::move_into, which forwards to this with
-/// rename_with_filesystem.
 [[nodiscard]] OperationOutcome move_into_using(const std::filesystem::path& source,
                                                const std::filesystem::path& destination_directory,
                                                const OperationOptions& options,
-                                               RenameStep rename_step);
+                                               const RenameStep& rename_step);
+
+/// rename_entry with the rename step supplied by the caller.
+[[nodiscard]] OperationOutcome rename_entry_using(const std::filesystem::path& source,
+                                                  std::string_view new_name,
+                                                  const OperationOptions& options,
+                                                  const RenameStep& rename_step);
+
+/// Name prefix of the entry a copy is assembled under before it is installed.
+inline constexpr std::string_view staging_prefix = ".odysea-staging-";
+
+/// Name prefix of the entry a replaced destination is held under until the
+/// replacement is in place.
+inline constexpr std::string_view backup_prefix = ".odysea-replaced-";
 
 } // namespace odysea::core::detail

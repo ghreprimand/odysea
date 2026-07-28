@@ -7,6 +7,57 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Replace destinations transactionally
+
+Staging a replacement beside its destination removed one data-loss window but
+left another. Copy, move, and rename all still removed an existing directory
+destination immediately before installing the prepared entry, so a failure of
+that final rename destroyed the destination and installed nothing. The window
+was narrow, but the loss was total and silent: the operation reported an error
+while the entry the caller had asked to replace no longer existed.
+
+Replacement now runs as one transaction shared by all three operations. The
+prepared entry is completed first. An occupied destination is then moved aside
+to a sibling under a reserved name rather than removed. The prepared entry is
+installed. Only once the install has succeeded is the moved-aside entry
+discarded. A failed install puts the previous destination straight back, so
+the caller ends up exactly where it started. Nothing is ever removed before its
+replacement is in place.
+
+Recovery can fail too, and when it does the rule is to keep data rather than
+tidy up. A destination that cannot be put back stays under its reserved name;
+a source that cannot be returned to its original name stays under the staging
+name it was parked at. Both are recoverable by hand. Removing either would not
+be. The reserved names are documented in the public header so callers know what
+the temporary entries in a destination directory mean.
+
+Copying now stages unconditionally rather than only when the destination is
+occupied, which also removes the partial entry a failed copy used to leave at a
+free destination. The same-filesystem atomic paths are unchanged: moving into a
+free name, and replacing one non-directory with another, are still a single
+rename, which is a stronger guarantee than any sequence of steps can offer.
+Replacing an entry with itself remains a no-op that reports success.
+
+None of these failures can be provoked from a test without privileged control
+of the mount, so the internal rename seam now distinguishes the steps of a
+replacement — relocating the source, moving the destination aside, installing,
+restoring, and unwinding — and each can be failed independently. That seam
+stays in an internal header that is not installed; the public API is unchanged.
+Coverage drives a failed install for a copied-over directory, a copied-over
+file, a moved-over directory, and a renamed-over directory, and asserts in each
+case that the source, the destination, and the destination's contents survive
+and that no reserved entry is left behind. Further cases cover a destination
+that cannot be moved aside, a destination that cannot be restored, and a source
+that cannot be put back, and assert that the data is retained under its
+temporary name. Restoring the previous implementation fails nine of these
+checks.
+
+Verified with clean release and ASan/UBSan builds, warning-free under
+`-Werror`, the full release suite including formatting, static analysis, and
+the public-repository guard, the full sanitizer suite, the mutation tests
+repeated ten times under release and five under sanitizers, and a headless
+application smoke launch.
+
 ## 2026-07-28 -- Stage cross-filesystem moves before replacing anything
 
 Replacing a destination by move removed it before the rename was attempted.

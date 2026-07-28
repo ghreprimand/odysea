@@ -110,25 +110,27 @@ OperationOutcome prepare_transfer(const fs::path& source, const fs::path& destin
     return resolve_destination(destination_directory, source.filename().string(), options);
 }
 
-/// Whether replacing `destination` with `source` needs the destination removed
-/// first.
+/// Whether replacing `destination` with `source` has to go through the staged
+/// route rather than a single rename.
 ///
-/// A rename replaces one non-directory with another atomically, so removing
-/// beforehand would only open a window where neither copy exists. Every other
-/// combination is a rename the kernel refuses, so the destination has to go
-/// first.
-bool replacement_needs_removal(const fs::path& source, const fs::path& destination) {
+/// A rename replaces one non-directory with another atomically, which is the
+/// strongest guarantee available: at no point does neither copy exist. The
+/// kernel refuses every other combination, so a directory on either side has to
+/// be replaced in steps.
+bool replacement_needs_staging(const fs::path& source, const fs::path& destination) {
     return is_directory_entry(source) || is_directory_entry(destination);
 }
 
-/// Reserve an unused staging name beside `destination`.
+/// Reserve an unused name beside `destination`, starting with `prefix`.
 ///
-/// Copies are assembled under this name and moved into place once they are
-/// complete, so a failure part-way through leaves the existing destination
-/// intact.
-fs::path reserve_staging_path(const fs::path& destination, std::error_code& error) {
+/// Used for both the staging entry an operation prepares and the backup an
+/// existing destination is held under. Both live in the destination directory,
+/// so installing one is a rename within a single directory and cannot cross a
+/// filesystem boundary.
+fs::path reserve_sibling_path(const fs::path& destination, std::string_view prefix,
+                              std::error_code& error) {
     const fs::path directory = destination.parent_path();
-    const std::string base = ".odysea-staging-" + destination.filename().string();
+    const std::string base = std::string(prefix) + destination.filename().string();
 
     constexpr unsigned max_attempts = 10000;
     for (unsigned attempt = 0; attempt < max_attempts; ++attempt) {
@@ -183,33 +185,89 @@ void grant_traversal(const fs::path& root) {
     }
 }
 
-void discard_staging(const fs::path& staging) {
+/// Remove an entry this code created and no longer needs.
+///
+/// Only ever called for a staging or backup path, never for anything the caller
+/// named. Failure is not reported: the operation it belongs to has already
+/// decided its outcome, and leaving an entry behind costs a stray name rather
+/// than data.
+void discard_working_entry(const fs::path& working) {
     std::error_code ec;
-    fs::remove_all(staging, ec);
+    fs::remove_all(working, ec);
     if (!ec) {
         return;
     }
 
-    // The failed copy may have reproduced a directory that cannot be entered.
-    grant_traversal(staging);
+    // A failed copy may have reproduced a directory that cannot be entered.
+    grant_traversal(working);
     std::error_code retry_ec;
-    fs::remove_all(staging, retry_ec);
+    fs::remove_all(working, retry_ec);
 }
 
-/// Abandon a staged move without losing anything.
+/// Abandon a staged operation without losing anything.
 ///
 /// When the source was relocated into the staging path it is the only copy, so
 /// it is put back under its original name. When the staging path holds a copy
 /// the source still exists, so the copy is discarded. If the source cannot be
 /// put back it is left under the staging name rather than deleted: a misplaced
 /// entry is recoverable, a deleted one is not.
-void unwind_staging(const fs::path& staging, const fs::path& source, bool source_relocated) {
+void unwind_staging(const fs::path& staging, const fs::path& source, bool source_relocated,
+                    const detail::RenameStep& rename_step) {
     if (!source_relocated) {
-        discard_staging(staging);
+        discard_working_entry(staging);
         return;
     }
     std::error_code ec;
-    fs::rename(staging, source, ec);
+    rename_step(detail::RenameKind::Unwind, staging, source, ec);
+}
+
+/// Put `prepared` at `destination`, keeping whatever is already there until the
+/// install has succeeded.
+///
+/// The occupant is moved aside to a sibling backup rather than removed, so
+/// there is no point at which the destination has been given up before its
+/// replacement exists. A failed install puts the occupant straight back. The
+/// backup is removed only once the destination holds the replacement.
+///
+/// `prepared` is left alone in every failure path: the caller owns it and knows
+/// whether it is a copy to discard or the only remaining copy of the source.
+///
+/// When the install fails and the occupant cannot be put back, the occupant
+/// stays under the backup name. That is a deliberate choice of debris over
+/// deletion: an entry under an unexpected name can be recovered, and there is
+/// nothing to gain from removing the only copy of data the caller never asked
+/// to lose.
+std::error_code install_over(const fs::path& prepared, const fs::path& destination,
+                             const detail::RenameStep& rename_step) {
+    if (!path_present(destination)) {
+        std::error_code install_ec;
+        rename_step(detail::RenameKind::Install, prepared, destination, install_ec);
+        return install_ec;
+    }
+
+    std::error_code reserve_ec;
+    const fs::path backup = reserve_sibling_path(destination, detail::backup_prefix, reserve_ec);
+    if (reserve_ec) {
+        return reserve_ec;
+    }
+
+    // Nothing has been disturbed yet, so a failure here costs nothing.
+    std::error_code backup_ec;
+    rename_step(detail::RenameKind::Backup, destination, backup, backup_ec);
+    if (backup_ec) {
+        return backup_ec;
+    }
+
+    std::error_code install_ec;
+    rename_step(detail::RenameKind::Install, prepared, destination, install_ec);
+    if (install_ec) {
+        std::error_code restore_ec;
+        rename_step(detail::RenameKind::Restore, backup, destination, restore_ec);
+        return install_ec;
+    }
+
+    discard_working_entry(backup);
+    return {};
 }
 
 constexpr fs::copy_options recursive_copy =
@@ -249,8 +307,15 @@ OperationOutcome resolve_destination(const fs::path& directory, std::string_view
     return failure(std::errc::file_exists);
 }
 
-OperationOutcome copy_into(const fs::path& source, const fs::path& destination_directory,
-                           const OperationOptions& options) {
+namespace detail {
+
+void rename_with_filesystem(RenameKind /*kind*/, const fs::path& from, const fs::path& to,
+                            std::error_code& error) {
+    fs::rename(from, to, error);
+}
+
+OperationOutcome copy_into_using(const fs::path& source, const fs::path& destination_directory,
+                                 const OperationOptions& options, const RenameStep& rename_step) {
     OperationOutcome outcome = prepare_transfer(source, destination_directory, options);
     if (!outcome.succeeded()) {
         return outcome;
@@ -263,19 +328,12 @@ OperationOutcome copy_into(const fs::path& source, const fs::path& destination_d
         return outcome;
     }
 
-    if (!path_present(outcome.destination)) {
-        std::error_code ec;
-        fs::copy(source, outcome.destination, recursive_copy, ec);
-        if (ec) {
-            return failure(ec);
-        }
-        return outcome;
-    }
-
-    // Replacing something that exists: assemble the copy under a staging name
-    // first, so a failure part-way through leaves the destination intact.
+    // The copy is always assembled under a staging name and installed once it
+    // is complete, whether or not the destination is occupied. A copy that
+    // fails part-way therefore leaves nothing behind: neither a partial entry
+    // at a free destination nor a damaged one at an occupied destination.
     std::error_code staging_ec;
-    const fs::path staging = reserve_staging_path(outcome.destination, staging_ec);
+    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
     if (staging_ec) {
         return failure(staging_ec);
     }
@@ -283,36 +341,20 @@ OperationOutcome copy_into(const fs::path& source, const fs::path& destination_d
     std::error_code copy_ec;
     fs::copy(source, staging, recursive_copy, copy_ec);
     if (copy_ec) {
-        discard_staging(staging);
+        discard_working_entry(staging);
         return failure(copy_ec);
     }
 
-    if (replacement_needs_removal(staging, outcome.destination)) {
-        std::error_code remove_ec;
-        fs::remove_all(outcome.destination, remove_ec);
-        if (remove_ec) {
-            discard_staging(staging);
-            return failure(remove_ec);
-        }
-    }
-
-    std::error_code install_ec;
-    fs::rename(staging, outcome.destination, install_ec);
+    const std::error_code install_ec = install_over(staging, outcome.destination, rename_step);
     if (install_ec) {
-        discard_staging(staging);
+        discard_working_entry(staging);
         return failure(install_ec);
     }
     return outcome;
 }
 
-namespace detail {
-
-void rename_with_filesystem(const fs::path& from, const fs::path& to, std::error_code& error) {
-    fs::rename(from, to, error);
-}
-
 OperationOutcome move_into_using(const fs::path& source, const fs::path& destination_directory,
-                                 const OperationOptions& options, RenameStep rename_step) {
+                                 const OperationOptions& options, const RenameStep& rename_step) {
     OperationOutcome outcome = prepare_transfer(source, destination_directory, options);
     if (!outcome.succeeded()) {
         return outcome;
@@ -327,9 +369,9 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
     // replaces one non-directory with another atomically when something is. Try
     // it before anything is disturbed: nothing has been removed if it fails.
     if (!path_present(outcome.destination) ||
-        !replacement_needs_removal(source, outcome.destination)) {
+        !replacement_needs_staging(source, outcome.destination)) {
         std::error_code ec;
-        rename_step(source, outcome.destination, ec);
+        rename_step(RenameKind::Relocate, source, outcome.destination, ec);
         if (!ec) {
             return outcome;
         }
@@ -344,14 +386,14 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
     // complete, so a failure along the way costs neither the source nor the
     // destination.
     std::error_code staging_ec;
-    const fs::path staging = reserve_staging_path(outcome.destination, staging_ec);
+    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
     if (staging_ec) {
         return failure(staging_ec);
     }
 
     bool source_relocated = false;
     std::error_code relocate_ec;
-    rename_step(source, staging, relocate_ec);
+    rename_step(RenameKind::Relocate, source, staging, relocate_ec);
     if (!relocate_ec) {
         // Same filesystem: the source now lives under the staging name, and can
         // be put back untouched if a later step fails.
@@ -360,7 +402,7 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
         std::error_code copy_ec;
         fs::copy(source, staging, recursive_copy, copy_ec);
         if (copy_ec) {
-            discard_staging(staging);
+            discard_working_entry(staging);
             return failure(copy_ec);
         }
     } else {
@@ -368,20 +410,9 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
         return failure(relocate_ec);
     }
 
-    if (path_present(outcome.destination) &&
-        replacement_needs_removal(staging, outcome.destination)) {
-        std::error_code remove_ec;
-        fs::remove_all(outcome.destination, remove_ec);
-        if (remove_ec) {
-            unwind_staging(staging, source, source_relocated);
-            return failure(remove_ec);
-        }
-    }
-
-    std::error_code install_ec;
-    fs::rename(staging, outcome.destination, install_ec);
+    const std::error_code install_ec = install_over(staging, outcome.destination, rename_step);
     if (install_ec) {
-        unwind_staging(staging, source, source_relocated);
+        unwind_staging(staging, source, source_relocated, rename_step);
         return failure(install_ec);
     }
 
@@ -396,16 +427,9 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
     return outcome;
 }
 
-} // namespace detail
-
-OperationOutcome move_into(const fs::path& source, const fs::path& destination_directory,
-                           const OperationOptions& options) {
-    return detail::move_into_using(source, destination_directory, options,
-                                   &detail::rename_with_filesystem);
-}
-
-OperationOutcome rename_entry(const fs::path& source, std::string_view new_name,
-                              const OperationOptions& options) {
+OperationOutcome rename_entry_using(const fs::path& source, std::string_view new_name,
+                                    const OperationOptions& options,
+                                    const RenameStep& rename_step) {
     if (source.empty() || !path_present(source)) {
         return failure(std::errc::no_such_file_or_directory);
     }
@@ -422,21 +446,61 @@ OperationOutcome rename_entry(const fs::path& source, std::string_view new_name,
         return outcome;
     }
 
-    if (path_present(outcome.destination) &&
-        replacement_needs_removal(source, outcome.destination)) {
-        std::error_code remove_ec;
-        fs::remove_all(outcome.destination, remove_ec);
-        if (remove_ec) {
-            return failure(remove_ec);
+    // A free name, or one non-directory replacing another, is a single atomic
+    // rename. Both paths share a parent directory, so it cannot cross a
+    // filesystem boundary and has no fallback to fall back to.
+    if (!path_present(outcome.destination) ||
+        !replacement_needs_staging(source, outcome.destination)) {
+        std::error_code ec;
+        rename_step(RenameKind::Relocate, source, outcome.destination, ec);
+        if (ec) {
+            return failure(ec);
         }
+        return outcome;
     }
 
-    std::error_code ec;
-    fs::rename(source, outcome.destination, ec);
-    if (ec) {
-        return failure(ec);
+    // A directory is involved, so the destination has to move aside first. The
+    // source is relocated to a staging name before that happens, which keeps
+    // the recovery uniform: whatever fails, the source goes back under its
+    // original name and the destination goes back under its own.
+    std::error_code staging_ec;
+    const fs::path staging = reserve_sibling_path(outcome.destination, staging_prefix, staging_ec);
+    if (staging_ec) {
+        return failure(staging_ec);
+    }
+
+    std::error_code relocate_ec;
+    rename_step(RenameKind::Relocate, source, staging, relocate_ec);
+    if (relocate_ec) {
+        // The staging name was reserved, never created.
+        return failure(relocate_ec);
+    }
+
+    const std::error_code install_ec = install_over(staging, outcome.destination, rename_step);
+    if (install_ec) {
+        unwind_staging(staging, source, true, rename_step);
+        return failure(install_ec);
     }
     return outcome;
+}
+
+} // namespace detail
+
+OperationOutcome copy_into(const fs::path& source, const fs::path& destination_directory,
+                           const OperationOptions& options) {
+    return detail::copy_into_using(source, destination_directory, options,
+                                   &detail::rename_with_filesystem);
+}
+
+OperationOutcome move_into(const fs::path& source, const fs::path& destination_directory,
+                           const OperationOptions& options) {
+    return detail::move_into_using(source, destination_directory, options,
+                                   &detail::rename_with_filesystem);
+}
+
+OperationOutcome rename_entry(const fs::path& source, std::string_view new_name,
+                              const OperationOptions& options) {
+    return detail::rename_entry_using(source, new_name, options, &detail::rename_with_filesystem);
 }
 
 } // namespace odysea::core

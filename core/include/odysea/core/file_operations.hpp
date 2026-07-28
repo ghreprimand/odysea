@@ -3,6 +3,14 @@
 // Toolkit-agnostic. No Qt, no GUI types. Copy, move, and rename are expressed
 // as explicit requests that never throw: every failure is reported through an
 // outcome so the presentation layer can decide how to surface it.
+//
+// Replacing an existing entry cannot always be done in one step, so these
+// operations prepare the replacement under a temporary name in the destination
+// directory and move the existing entry aside while the swap happens. Both
+// temporary names start with a dot and are removed once the operation settles.
+// In the rare case where recovery from a failed step itself fails, the data is
+// left under its temporary name rather than removed: an entry under an
+// unexpected name can be recovered, a deleted one cannot.
 #pragma once
 
 #include <filesystem>
@@ -56,9 +64,13 @@ struct OperationOutcome {
 ///
 /// When the resolved destination is the source itself the copy is a no-op that
 /// reports success, so an entry can never be destroyed by being copied over
-/// itself. When it replaces something else, the copy is assembled beside the
-/// destination and moved into place once complete, so a failure part-way
-/// through leaves the existing destination intact.
+/// itself.
+///
+/// Otherwise the copy is assembled beside the destination and installed once it
+/// is complete. An existing destination is moved aside rather than removed, and
+/// is discarded only after the replacement is in place, so no failure at any
+/// point costs either the source or the destination. A failed copy leaves no
+/// partial entry behind.
 [[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const OperationOptions& options);
@@ -77,9 +89,9 @@ struct OperationOutcome {
 ///
 /// Every other case — a replacement a rename cannot perform, or a move across
 /// filesystems — assembles the moved entry beside the destination and swaps it
-/// into place. The existing destination is never removed before its
-/// replacement is complete, so a failure part-way through leaves both the
-/// source and the destination intact.
+/// into place. The existing destination is moved aside rather than removed and
+/// is discarded only after the replacement is in place, so a failure at any
+/// point leaves both the source and the destination intact.
 [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const OperationOptions& options);
@@ -92,6 +104,11 @@ struct OperationOutcome {
 ///
 /// Renaming an entry to a name that already resolves to that same entry is a
 /// no-op that reports success, whether it matches by spelling or by identity.
+///
+/// A free name, and one non-directory replacing another, are handled by a
+/// single atomic rename. Replacing a directory moves the existing destination
+/// aside and discards it only after the replacement is in place, so a failure
+/// leaves both entries intact.
 [[nodiscard]] OperationOutcome rename_entry(const std::filesystem::path& source,
                                             std::string_view new_name,
                                             const OperationOptions& options);
