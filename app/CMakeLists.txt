@@ -3,7 +3,7 @@
 # The shell is GPU-rendered through Qt Quick's scene graph. It consumes the
 # toolkit-agnostic odysea::core library for all filesystem work, keeping the
 # performance-critical model free of framework overhead.
-find_package(Qt6 6.6 REQUIRED COMPONENTS Concurrent Core Gui Qml Quick QuickControls2)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Concurrent Core Gui Qml Quick QuickControls2 QuickTest)
 
 qt_standard_project_setup(REQUIRES 6.6)
 qt_policy(SET QTP0004 NEW)

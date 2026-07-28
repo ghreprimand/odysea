@@ -7,6 +7,25 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Complete list selection regression coverage
+
+Rubber-band selection now remains available when rows fill the viewport through
+a narrow background gutter beside the row delegates. The gutter and the empty
+space below the last row share the same selection behavior, while row click,
+modified-click, double-click, right-click, and future row-drag handling remain
+independent.
+
+The rendered-shell regression suite now exercises plain, Control-modified,
+Shift-modified, double, and right pointer actions; keyboard cursor, toggle, and
+clear actions; and rubber-band drags in both partially filled and filled
+viewports. Qt QuickTest is an explicit configure-time dependency. Tab buttons
+use stable implicit sizing so the tab bar no longer forms a width binding loop.
+
+Verified with diagnostic-free QML linting, the Qt Quick interaction suite,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
 ## 2026-07-27 -- Pointer hit testing and scan watcher lifetime
 
 The list rubber-band surface now occupies only unused space below the final

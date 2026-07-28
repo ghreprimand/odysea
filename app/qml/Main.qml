@@ -51,8 +51,66 @@ ApplicationWindow {
         }
     }
 
+    component RubberBandArea: MouseArea {
+        id: bandPointer
+
+        required property var listView
+        required property var selectionRectangle
+        required property var selectionModel
+        required property int selectionRowHeight
+        property real originX: 0
+        property real originY: 0
+
+        acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.CrossCursor
+
+        function rowAt(viewY) {
+            if (listView.count === 0) {
+                return -1
+            }
+            return Math.max(0, Math.min(listView.count - 1,
+                                        Math.floor((listView.contentY + viewY)
+                                                   / selectionRowHeight)))
+        }
+
+        onPressed: mouse => {
+            originX = mouse.x
+            originY = mouse.y
+            selectionRectangle.visible = false
+            selectionModel.beginRubberBand(
+                        (mouse.modifiers & Qt.ControlModifier) !== 0)
+            listView.forceActiveFocus()
+        }
+
+        onPositionChanged: mouse => {
+            if (!pressed) {
+                return
+            }
+            selectionRectangle.visible = true
+            selectionRectangle.x = bandPointer.x + Math.min(originX, mouse.x)
+            selectionRectangle.y = bandPointer.y + Math.min(originY, mouse.y)
+            selectionRectangle.width = Math.abs(mouse.x - originX)
+            selectionRectangle.height = Math.abs(mouse.y - originY)
+            selectionModel.updateRubberBand(
+                        rowAt(bandPointer.y + originY),
+                        rowAt(bandPointer.y + mouse.y))
+        }
+
+        onReleased: {
+            selectionRectangle.visible = false
+            selectionModel.endRubberBand()
+        }
+
+        onCanceled: {
+            selectionRectangle.visible = false
+            selectionModel.endRubberBand()
+        }
+    }
+
     component DirectoryPane: FocusScope {
         id: pane
+
+        readonly property int selectionGutterWidth: 28
 
         Rectangle {
             anchors.fill: parent
@@ -109,7 +167,7 @@ ApplicationWindow {
                 required property double size
                 required property bool selected
 
-                width: directoryList.width
+                width: directoryList.width - pane.selectionGutterWidth
                 height: root.rowHeight
                 z: 1
 
@@ -199,62 +257,36 @@ ApplicationWindow {
                 }
             }
 
-            MouseArea {
-                id: rubberBandPointer
+            RubberBandArea {
+                id: blankBandPointer
 
-                property real originX: 0
-                property real originY: 0
-
+                objectName: "rubberBandBlankArea"
+                listView: directoryList
+                selectionRectangle: rubberBand
+                selectionModel: root.shellModel
+                selectionRowHeight: root.rowHeight
                 x: 0
                 y: Math.max(0, Math.min(directoryList.height,
                                         directoryList.count * root.rowHeight
                                         - directoryList.contentY))
-                width: directoryList.width
+                width: directoryList.width - verticalBar.width
                 height: Math.max(0, directoryList.height - y)
-                acceptedButtons: Qt.LeftButton
                 z: 0
+            }
 
-                function rowAt(viewY) {
-                    if (directoryList.count === 0) {
-                        return -1
-                    }
-                    return Math.max(0, Math.min(directoryList.count - 1,
-                                                Math.floor((directoryList.contentY + viewY)
-                                                           / root.rowHeight)))
-                }
+            RubberBandArea {
+                id: gutterBandPointer
 
-                onPressed: mouse => {
-                    originX = mouse.x
-                    originY = mouse.y
-                    rubberBand.visible = false
-                    root.shellModel.beginRubberBand(
-                                (mouse.modifiers & Qt.ControlModifier) !== 0)
-                    directoryList.forceActiveFocus()
-                }
-
-                onPositionChanged: mouse => {
-                    if (!pressed) {
-                        return
-                    }
-                    rubberBand.visible = true
-                    rubberBand.x = Math.min(originX, mouse.x)
-                    rubberBand.y = rubberBandPointer.y + Math.min(originY, mouse.y)
-                    rubberBand.width = Math.abs(mouse.x - originX)
-                    rubberBand.height = Math.abs(mouse.y - originY)
-                    root.shellModel.updateRubberBand(
-                                rowAt(rubberBandPointer.y + originY),
-                                rowAt(rubberBandPointer.y + mouse.y))
-                }
-
-                onReleased: {
-                    rubberBand.visible = false
-                    root.shellModel.endRubberBand()
-                }
-
-                onCanceled: {
-                    rubberBand.visible = false
-                    root.shellModel.endRubberBand()
-                }
+                objectName: "rubberBandGutter"
+                listView: directoryList
+                selectionRectangle: rubberBand
+                selectionModel: root.shellModel
+                selectionRowHeight: root.rowHeight
+                x: directoryList.width - pane.selectionGutterWidth
+                y: 0
+                width: pane.selectionGutterWidth - verticalBar.width
+                height: blankBandPointer.y
+                z: 2
             }
 
             Rectangle {
@@ -266,7 +298,11 @@ ApplicationWindow {
                 radius: 3
             }
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: ScrollBar {
+                id: verticalBar
+
+                width: 8
+            }
         }
     }
 
@@ -473,7 +509,7 @@ ApplicationWindow {
                             id: tabButton
 
                             required property int index
-                            width: Math.max(110, tabs.width / Math.max(1, root.shellModel.tabCount))
+                            implicitWidth: 140
                             text: root.shellModel.tabLabel(index)
                             onClicked: root.shellModel.activateTab(index)
 
