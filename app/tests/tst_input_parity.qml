@@ -45,13 +45,20 @@ TestCase {
         property int firstRubberBandRow: -1
         property int lastRubberBandRow: -1
         property int endRubberBandCalls: 0
+        property int activateTabCalls: 0
+        property int activatedTab: -1
+        property int selectAllCalls: 0
 
         function activate(row) {
             activateCalls += 1
             activatedRow = row
         }
         function activatePane(pane) {}
-        function activateTab(tab) {}
+        function activateTab(tab) {
+            activateTabCalls += 1
+            activatedTab = tab
+            activeTab = tab
+        }
         function addTab() {}
         function beginRubberBand(additive) {
             beginRubberBandCalls += 1
@@ -78,10 +85,12 @@ TestCase {
         function requestMove() {}
         function requestRename() {}
         function requestTrash() {}
-        function selectAll() {}
+        function selectAll() {
+            selectAllCalls += 1
+        }
         function setDualPaneEnabled(enabled) {}
         function tabLabel(tab) {
-            return "Sample"
+            return "Sample " + tab
         }
         function toggleCurrent() {
             toggleCurrentCalls += 1
@@ -117,6 +126,9 @@ TestCase {
             firstRubberBandRow = -1
             lastRubberBandRow = -1
             endRubberBandCalls = 0
+            activateTabCalls = 0
+            activatedTab = -1
+            selectAllCalls = 0
         }
     }
 
@@ -138,6 +150,8 @@ TestCase {
     }
 
     function init() {
+        fakeModel.tabCount = 1
+        fakeModel.activeTab = 0
         populateRows(4)
         fakeModel.resetTelemetry()
     }
@@ -167,6 +181,9 @@ TestCase {
 
     function child(objectName) {
         let item = findChild(shellWindow.contentItem, objectName)
+        if (item === null) {
+            item = findChild(shellWindow.header, objectName)
+        }
         tryVerify(function() {
             return item !== null
         })
@@ -198,6 +215,17 @@ TestCase {
         verify(fakeModel.lastRubberBandRow >= fakeModel.firstRubberBandRow)
     }
 
+    function prepareScrollableRows(contentY) {
+        populateRows(60)
+        let list = child("directoryList")
+        list.cancelFlick()
+        list.contentY = contentY
+        tryCompare(list, "contentY", contentY)
+        waitForRendering(shellWindow.contentItem)
+        fakeModel.resetTelemetry()
+        return list
+    }
+
     function test_blankAreaRubberBand() {
         verifyBandDrag(child("rubberBandBlankArea"))
     }
@@ -225,6 +253,54 @@ TestCase {
         verifyBandDrag(child("rubberBandGutter"))
     }
 
+    function test_bandAnchorSurvivesContentMovement() {
+        let list = prepareScrollableRows(300)
+        let gutter = child("rubberBandGutter")
+        let pointerX = gutter.width / 2
+
+        mousePress(gutter, pointerX, 100, Qt.LeftButton, Qt.NoModifier)
+        list.contentY = 368
+        tryCompare(list, "contentY", 368)
+        mouseMove(gutter, pointerX, 150, 10, Qt.LeftButton, Qt.NoModifier)
+        mouseRelease(gutter, pointerX, 150, Qt.LeftButton, Qt.NoModifier)
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1)
+        verify(fakeModel.updateRubberBandCalls > 0)
+        compare(fakeModel.firstRubberBandRow, Math.floor(400 / 34))
+        compare(fakeModel.lastRubberBandRow, Math.floor(518 / 34))
+        compare(fakeModel.endRubberBandCalls, 1)
+    }
+
+    function test_scrolledDownwardFilledViewportRubberBand() {
+        let list = prepareScrollableRows(300)
+        let gutter = child("rubberBandGutter")
+
+        mouseDrag(gutter, gutter.width / 2, 30, 0, 140,
+                  Qt.LeftButton, Qt.NoModifier, 10)
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1)
+        verify(fakeModel.updateRubberBandCalls > 2)
+        compare(fakeModel.firstRubberBandRow, Math.floor(330 / 34))
+        compare(fakeModel.lastRubberBandRow, Math.floor(470 / 34))
+        compare(fakeModel.endRubberBandCalls, 1)
+        compare(list.contentY, 300)
+    }
+
+    function test_scrolledUpwardFilledViewportRubberBand() {
+        let list = prepareScrollableRows(300)
+        let gutter = child("rubberBandGutter")
+
+        mouseDrag(gutter, gutter.width / 2, 200, 0, -140,
+                  Qt.LeftButton, Qt.NoModifier, 10)
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1)
+        verify(fakeModel.updateRubberBandCalls > 2)
+        compare(fakeModel.firstRubberBandRow, Math.floor(500 / 34))
+        compare(fakeModel.lastRubberBandRow, Math.floor(360 / 34))
+        compare(fakeModel.endRubberBandCalls, 1)
+        compare(list.contentY, 300)
+    }
+
     function test_keyboardSelectionPaths() {
         let list = child("directoryList")
         list.forceActiveFocus()
@@ -247,6 +323,54 @@ TestCase {
         compare(fakeModel.selectedModifiers, Qt.NoModifier)
     }
 
+    function test_scrolledRowClickPathsRemainIndependent() {
+        prepareScrollableRows(300)
+
+        clickRow(10, Qt.LeftButton, Qt.NoModifier)
+        tryCompare(fakeModel, "selectRowCalls", 1)
+        compare(fakeModel.selectedRow, 10)
+        compare(fakeModel.beginRubberBandCalls, 0)
+
+        let doubleRow = rowAt(11)
+        mouseDoubleClickSequence(doubleRow, doubleRow.width / 2, doubleRow.height / 2,
+                                 Qt.LeftButton, Qt.NoModifier)
+        tryCompare(fakeModel, "activateCalls", 1)
+        compare(fakeModel.activatedRow, 11)
+        compare(fakeModel.beginRubberBandCalls, 0)
+
+        clickRow(12, Qt.RightButton, Qt.NoModifier)
+        tryCompare(fakeModel, "selectedRow", 12)
+        compare(fakeModel.beginRubberBandCalls, 0)
+        keyClick(Qt.Key_Escape)
+    }
+
+    function test_scrolledRowWheelRemainsIndependent() {
+        let list = prepareScrollableRows(300)
+        let row = rowAt(10)
+        const initialContentY = list.contentY
+
+        mouseWheel(row, row.width / 2, row.height / 2, 0, -120,
+                   Qt.NoButton, Qt.NoModifier, 10)
+
+        tryVerify(function() {
+            return list.contentY !== initialContentY
+        })
+        list.cancelFlick()
+
+        list.contentY = 300
+        tryCompare(list, "contentY", 300)
+        let gutter = child("rubberBandGutter")
+        mouseWheel(gutter, gutter.width / 2, gutter.height / 2, 0, -120,
+                   Qt.NoButton, Qt.NoModifier, 10)
+        tryVerify(function() {
+            return list.contentY !== 300
+        })
+        list.cancelFlick()
+
+        compare(fakeModel.beginRubberBandCalls, 0)
+        compare(fakeModel.selectRowCalls, 0)
+    }
+
     function test_rightClickReachesSelectionModel() {
         clickRow(1, Qt.RightButton, Qt.NoModifier)
         tryCompare(fakeModel, "selectRowCalls", 1)
@@ -259,5 +383,42 @@ TestCase {
         tryCompare(fakeModel, "selectRowCalls", 1)
         compare(fakeModel.selectedRow, 2)
         verify((fakeModel.selectedModifiers & Qt.ShiftModifier) !== 0)
+    }
+
+    function test_tabSwitchingKeyboardAndMouseParity() {
+        fakeModel.tabCount = 3
+        fakeModel.activeTab = 1
+        waitForRendering(shellWindow.contentItem)
+        fakeModel.resetTelemetry()
+
+        keyClick(Qt.Key_Tab, Qt.ControlModifier)
+        tryCompare(fakeModel, "activateTabCalls", 1)
+        compare(fakeModel.activatedTab, 2)
+
+        keyClick(Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier)
+        tryCompare(fakeModel, "activateTabCalls", 2)
+        compare(fakeModel.activatedTab, 1)
+
+        let thirdTab = child("tabButton-2")
+        mouseClick(thirdTab, thirdTab.width / 2, thirdTab.height / 2,
+                   Qt.LeftButton, Qt.NoModifier)
+        tryCompare(fakeModel, "activateTabCalls", 3)
+        compare(fakeModel.activatedTab, 2)
+    }
+
+    function test_selectAllKeyboardAndMouseParity() {
+        let list = child("directoryList")
+        list.forceActiveFocus()
+        tryVerify(function() {
+            return list.activeFocus
+        })
+
+        keyClick(Qt.Key_A, Qt.ControlModifier)
+        tryCompare(fakeModel, "selectAllCalls", 1)
+
+        let selectAllButton = child("selectAllButton")
+        mouseClick(selectAllButton, selectAllButton.width / 2,
+                   selectAllButton.height / 2, Qt.LeftButton, Qt.NoModifier)
+        tryCompare(fakeModel, "selectAllCalls", 2)
     }
 }

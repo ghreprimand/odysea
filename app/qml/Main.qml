@@ -59,23 +59,23 @@ ApplicationWindow {
         required property var selectionModel
         required property int selectionRowHeight
         property real originX: 0
-        property real originY: 0
+        property real originContentY: 0
 
         acceptedButtons: Qt.LeftButton
         cursorShape: Qt.CrossCursor
+        preventStealing: true
 
-        function rowAt(viewY) {
+        function rowAtContent(contentY) {
             if (listView.count === 0) {
                 return -1
             }
             return Math.max(0, Math.min(listView.count - 1,
-                                        Math.floor((listView.contentY + viewY)
-                                                   / selectionRowHeight)))
+                                        Math.floor(contentY / selectionRowHeight)))
         }
 
         onPressed: mouse => {
             originX = mouse.x
-            originY = mouse.y
+            originContentY = listView.contentY + bandPointer.y + mouse.y
             selectionRectangle.visible = false
             selectionModel.beginRubberBand(
                         (mouse.modifiers & Qt.ControlModifier) !== 0)
@@ -86,14 +86,16 @@ ApplicationWindow {
             if (!pressed) {
                 return
             }
+            const pointerContentY = listView.contentY + bandPointer.y + mouse.y
             selectionRectangle.visible = true
             selectionRectangle.x = bandPointer.x + Math.min(originX, mouse.x)
-            selectionRectangle.y = bandPointer.y + Math.min(originY, mouse.y)
+            selectionRectangle.y = Math.min(originContentY, pointerContentY)
+                    - listView.contentY
             selectionRectangle.width = Math.abs(mouse.x - originX)
-            selectionRectangle.height = Math.abs(mouse.y - originY)
+            selectionRectangle.height = Math.abs(pointerContentY - originContentY)
             selectionModel.updateRubberBand(
-                        rowAt(bandPointer.y + originY),
-                        rowAt(bandPointer.y + mouse.y))
+                        rowAtContent(originContentY),
+                        rowAtContent(pointerContentY))
         }
 
         onReleased: {
@@ -319,6 +321,15 @@ ApplicationWindow {
         return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GiB"
     }
 
+    function activateRelativeTab(offset) {
+        const count = root.shellModel.tabCount
+        if (count < 1) {
+            return
+        }
+        const nextTab = (root.shellModel.activeTab + offset + count) % count
+        root.shellModel.activateTab(nextTab)
+    }
+
     Shortcut {
         sequence: "Alt+Left"
         enabled: root.shellModel.canGoBack
@@ -367,6 +378,14 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+W"
         onActivated: root.shellModel.closeTab(root.shellModel.activeTab)
+    }
+    Shortcut {
+        sequence: "Ctrl+Tab"
+        onActivated: root.activateRelativeTab(1)
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+Tab"
+        onActivated: root.activateRelativeTab(-1)
     }
     Shortcut {
         sequence: "Ctrl+Shift+P"
@@ -509,6 +528,7 @@ ApplicationWindow {
                             id: tabButton
 
                             required property int index
+                            objectName: "tabButton-" + index
                             implicitWidth: 140
                             text: root.shellModel.tabLabel(index)
                             onClicked: root.shellModel.activateTab(index)
@@ -587,6 +607,14 @@ ApplicationWindow {
                     text: qsTr("Hidden")
                     checked: root.shellModel.showHidden
                     onToggled: root.shellModel.showHidden = checked
+                }
+
+                ShellButton {
+                    objectName: "selectAllButton"
+                    text: qsTr("Select all")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Select all entries (Ctrl+A)")
+                    onClicked: root.shellModel.selectAll()
                 }
 
                 Item {

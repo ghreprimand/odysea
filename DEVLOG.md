@@ -7,6 +7,24 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Stable band gestures and complete parity controls
+
+Rubber-band selection now retains its pointer grab over scrollable lists and
+stores its press anchor in content coordinates. Filled-viewport drags therefore
+keep their full range in both directions from any scroll position, while future
+content movement during selection cannot silently move the anchor.
+
+Tabs can be switched with Control+Tab and Control+Shift+Tab as well as pointer
+activation. Select All now has a direct pointer control alongside Control+A.
+Rendered-shell tests distinguish both input paths and cover band gestures at a
+nonzero scroll position, a content-moving anchor, and unchanged row click,
+double-click, right-click, and wheel behavior.
+
+Verified with diagnostic-free QML linting, the Qt Quick interaction suite,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
 ## 2026-07-27 -- Complete list selection regression coverage
 
 Rubber-band selection now remains available when rows fill the viewport through
