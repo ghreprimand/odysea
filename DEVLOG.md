@@ -7,6 +7,51 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Stage cross-filesystem moves before replacing anything
+
+Replacing a destination by move removed it before the rename was attempted.
+Within one filesystem the following rename then completed the move, but across
+a filesystem boundary the rename failed and the fallback copy ran with the
+destination already gone: if that copy then failed, the destination had been
+destroyed for nothing. The recursive copy in the fallback also wrote directly
+over the destination path, so a copy interrupted part-way left a half-written
+result in place of what used to be there.
+
+A move now removes nothing until its replacement exists. A rename is still
+attempted first and still completes the common cases in one atomic step: moving
+into a free name, and replacing one non-directory with another. Only when the
+rename cannot do the job — because a directory is being replaced, or because
+the two paths are on different filesystems — is the moved entry assembled under
+a staging name beside the destination and then swapped into place. Within one
+filesystem that staging step is a rename, so the source itself is preserved and
+can be put back under its original name if a later step fails. Across
+filesystems it is a copy, and the source stays where it is until the copy has
+been installed. A failure at any point discards the staging entry or restores
+the source, leaving both the source and the destination as they were.
+
+The route a move takes depends on whether the kernel reports a filesystem
+boundary, which a test cannot arrange on a single mount point. The rename step
+is therefore injectable through an internal header that is not part of the
+public API, so the fallback is driven deterministically wherever the tests run.
+Coverage confirms that a boundary-crossing move replaces both a file and a
+directory, removes the source only after the replacement is installed, and
+leaves no staging entry behind; and that a boundary-crossing move whose copy
+cannot complete fails with the source, the destination, and the destination's
+contents all intact. The same behavior is also exercised over a real filesystem
+boundary when the machine offers a second writable filesystem, and reported as
+skipped when it does not.
+
+The coverage discriminates: with the previous implementation restored, three
+checks fail, including the one that crosses a real boundary.
+
+Verified with the release and sanitizer presets: warning-clean builds, the
+eight-test release suite including the formatting, static-analysis, and
+publishing guards, the seven-test sanitizer suite under ASan and UBSan, the
+mutation suite repeated ten times in release and four times under sanitizers,
+and a headless application smoke launch.
+
+---
+
 ## 2026-07-28 -- Enforced file-length ceiling
 
 Tracked source and text files now have a hard ceiling of 2,000 physical lines.

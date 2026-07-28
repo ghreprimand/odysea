@@ -71,9 +71,15 @@ struct OperationOutcome {
 /// std::errc::invalid_argument.
 ///
 /// When the resolved destination is the source itself the move is a no-op that
-/// reports success. Replacing one non-directory with another is left to the
-/// rename, which swaps them atomically; only combinations a rename cannot
-/// perform remove the destination first.
+/// reports success. Moving into a free name, and replacing one non-directory
+/// with another, are left to the rename, which does either in a single atomic
+/// step.
+///
+/// Every other case — a replacement a rename cannot perform, or a move across
+/// filesystems — assembles the moved entry beside the destination and swaps it
+/// into place. The existing destination is never removed before its
+/// replacement is complete, so a failure part-way through leaves both the
+/// source and the destination intact.
 [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const OperationOptions& options);

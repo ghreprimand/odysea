@@ -1,10 +1,12 @@
 // Headless tests for the core copy, move, and rename primitives.
 #include "odysea/core/file_operations.hpp"
 
+#include "file_operations_internal.hpp"
 #include "test_support.hpp"
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
@@ -192,6 +194,182 @@ void test_a_failed_directory_copy_leaves_the_destination_intact() {
     check(!staging_left_behind, "a failed copy removes the staging entry it created");
 }
 
+/// A rename step that always reports a filesystem boundary.
+///
+/// Every move that cannot be completed by a single rename takes the same route,
+/// whether the boundary is real or reported here, so the fallback can be driven
+/// deterministically on one filesystem.
+void rename_across_devices(const fs::path& /*from*/, const fs::path& /*to*/,
+                           std::error_code& error) {
+    error = std::make_error_code(std::errc::cross_device_link);
+}
+
+/// A named pipe cannot be copied, so a source containing one fails the fallback
+/// copy on every machine, with no dependence on permissions or on the user.
+bool make_fifo(const fs::path& path) {
+    return ::mkfifo(path.c_str(), S_IRUSR | S_IWUSR) == 0;
+}
+
+bool holds_staging_entry(const fs::path& directory) {
+    std::error_code ec;
+    fs::directory_iterator element(directory, ec);
+    if (ec) {
+        return false;
+    }
+    const fs::directory_iterator end;
+    for (; element != end; ++element) {
+        if (element->path().filename().string().starts_with(".odysea-staging-")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// A directory on a filesystem other than the one holding `neighbour`, or an
+/// empty path when the machine offers none that is writable.
+fs::path second_filesystem_directory(const fs::path& neighbour) {
+    struct ::stat neighbour_info{};
+    if (::stat(neighbour.c_str(), &neighbour_info) != 0) {
+        return {};
+    }
+
+    for (const char* candidate : {"/dev/shm", "/run/user"}) {
+        struct ::stat candidate_info{};
+        if (::stat(candidate, &candidate_info) != 0) {
+            continue;
+        }
+        if (candidate_info.st_dev == neighbour_info.st_dev) {
+            continue;
+        }
+
+        const fs::path scratch =
+            fs::path(candidate) / ("odysea_cross_device_" + std::to_string(::getpid()));
+        std::error_code ec;
+        fs::remove_all(scratch, ec);
+        fs::create_directories(scratch, ec);
+        if (!ec && fs::exists(scratch)) {
+            return scratch;
+        }
+    }
+    return {};
+}
+
+void test_a_cross_device_move_replaces_a_file() {
+    const odysea::test::TemporaryTree tree("cross_device_file");
+    const fs::path source = tree.file("source/report.txt", "new");
+    const fs::path target_dir = tree.directory("target");
+    const fs::path destination = tree.file("target/report.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite}, &rename_across_devices);
+    check(outcome.succeeded(), "a move across filesystems replaces an existing file");
+    check(odysea::test::read_text(destination) == "new",
+          "the replacement contents are in place after the fallback copy");
+    check(!fs::exists(source), "the source is removed once the copy is installed");
+    check(!holds_staging_entry(target_dir),
+          "a completed cross-filesystem move leaves no staging entry");
+}
+
+void test_a_cross_device_move_replaces_a_directory() {
+    const odysea::test::TemporaryTree tree("cross_device_directory");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/stale.txt", "stale");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite}, &rename_across_devices);
+    check(outcome.succeeded(), "a move across filesystems replaces an existing directory");
+    check(odysea::test::read_text(target_dir / "project/kept.txt") == "kept",
+          "the moved tree is installed at the destination");
+    check(!fs::exists(target_dir / "project/stale.txt"),
+          "the replaced directory is gone rather than merged into");
+    check(!fs::exists(source), "the source tree is removed once the copy is installed");
+    check(!holds_staging_entry(target_dir),
+          "a completed cross-filesystem directory move leaves no staging entry");
+}
+
+void test_a_failed_cross_device_move_preserves_the_destination_tree() {
+    const odysea::test::TemporaryTree tree("cross_device_failure");
+    tree.file("source/project/kept.txt", "kept");
+    const fs::path source = tree.root() / "source/project";
+    check(make_fifo(source / "pipe"), "the fixture source should be able to hold a named pipe");
+
+    const fs::path target_dir = tree.directory("target");
+    tree.file("target/project/irreplaceable.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite}, &rename_across_devices);
+    check(!outcome.succeeded(), "a move across filesystems fails when the copy cannot complete");
+    check(fs::exists(target_dir / "project/irreplaceable.txt"),
+          "a failed cross-filesystem move leaves the destination tree in place");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "the surviving destination keeps its contents");
+    check(fs::exists(source / "kept.txt"), "a failed cross-filesystem move leaves the source tree");
+    check(!holds_staging_entry(target_dir), "a failed cross-filesystem move discards its staging");
+}
+
+void test_a_failed_cross_device_move_preserves_a_replaced_file() {
+    const odysea::test::TemporaryTree tree("cross_device_file_failure");
+    const fs::path source_dir = tree.directory("source");
+    const fs::path source = source_dir / "report.txt";
+    check(make_fifo(source), "the fixture source should be able to be a named pipe");
+    const fs::path target_dir = tree.directory("target");
+    const fs::path destination = tree.file("target/report.txt", "old");
+
+    const OperationOutcome outcome = detail::move_into_using(
+        source, target_dir, {.conflict = ConflictPolicy::Overwrite}, &rename_across_devices);
+    check(!outcome.succeeded(), "a cross-filesystem move of an uncopyable entry fails");
+    check(odysea::test::read_text(destination) == "old",
+          "the destination file survives a failed cross-filesystem move");
+    check(fs::exists(source), "the source survives a failed cross-filesystem move");
+    check(!holds_staging_entry(target_dir),
+          "a failed cross-filesystem file move discards its staging");
+}
+
+/// The same behaviour over a real filesystem boundary, when the machine has a
+/// second writable filesystem. Confirms the injected step above models what the
+/// kernel actually reports.
+void test_a_move_over_a_real_filesystem_boundary() {
+    const odysea::test::TemporaryTree tree("real_cross_device");
+    const fs::path target_dir = tree.directory("target");
+    const fs::path scratch = second_filesystem_directory(target_dir);
+    if (scratch.empty()) {
+        std::puts(
+            "file_operations: skipping the real cross-filesystem case (no second filesystem)");
+        return;
+    }
+
+    std::error_code ec;
+    fs::create_directories(scratch / "project", ec);
+    {
+        std::ofstream kept(scratch / "project/kept.txt", std::ios::binary | std::ios::trunc);
+        kept << "kept";
+    }
+    tree.file("target/project/irreplaceable.txt", "old");
+    check(make_fifo(scratch / "project/pipe"),
+          "the fixture source should be able to hold a named pipe");
+
+    const OperationOutcome failed =
+        move_into(scratch / "project", target_dir, {.conflict = ConflictPolicy::Overwrite});
+    check(!failed.succeeded(), "a real cross-filesystem move fails when the copy cannot complete");
+    check(odysea::test::read_text(target_dir / "project/irreplaceable.txt") == "old",
+          "a failed real cross-filesystem move leaves the destination tree in place");
+    check(!holds_staging_entry(target_dir),
+          "a failed real cross-filesystem move discards its staging");
+
+    fs::remove(scratch / "project/pipe", ec);
+    const OperationOutcome moved =
+        move_into(scratch / "project", target_dir, {.conflict = ConflictPolicy::Overwrite});
+    check(moved.succeeded(), "a real cross-filesystem move replaces the destination");
+    check(odysea::test::read_text(target_dir / "project/kept.txt") == "kept",
+          "the moved tree is installed across a real filesystem boundary");
+    check(!fs::exists(scratch / "project"), "the source is removed after a real move succeeds");
+    check(!holds_staging_entry(target_dir), "a completed real move leaves no staging entry");
+
+    fs::remove_all(scratch, ec);
+}
+
 void test_copy_file() {
     const odysea::test::TemporaryTree tree("copy_file");
     const fs::path source = tree.file("source/note.txt", "contents");
@@ -349,6 +527,11 @@ int main() {
     test_replacing_a_file_uses_an_atomic_rename();
     test_a_failed_overwrite_preserves_both_entries();
     test_a_failed_directory_copy_leaves_the_destination_intact();
+    test_a_cross_device_move_replaces_a_file();
+    test_a_cross_device_move_replaces_a_directory();
+    test_a_failed_cross_device_move_preserves_the_destination_tree();
+    test_a_failed_cross_device_move_preserves_a_replaced_file();
+    test_a_move_over_a_real_filesystem_boundary();
     test_copy_file();
     test_copy_directory_recursively();
     test_copy_preserves_symlinks();

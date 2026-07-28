@@ -4,7 +4,11 @@
 function(odysea_add_core_test test_name source_file)
     add_executable(${test_name} ${source_file})
 
-    target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    # The core source directory is on the include path so tests can reach the
+    # internal seams that make otherwise environment-dependent failure paths,
+    # such as a move across filesystems, deterministic.
+    target_include_directories(${test_name}
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core/src)
 
     target_link_libraries(${test_name}
         PRIVATE odysea::core odysea_warnings odysea_sanitizers)

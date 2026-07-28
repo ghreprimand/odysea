@@ -1,5 +1,7 @@
 #include "odysea/core/file_operations.hpp"
 
+#include "file_operations_internal.hpp"
+
 #include <string>
 #include <string_view>
 #include <utility>
@@ -194,6 +196,22 @@ void discard_staging(const fs::path& staging) {
     fs::remove_all(staging, retry_ec);
 }
 
+/// Abandon a staged move without losing anything.
+///
+/// When the source was relocated into the staging path it is the only copy, so
+/// it is put back under its original name. When the staging path holds a copy
+/// the source still exists, so the copy is discarded. If the source cannot be
+/// put back it is left under the staging name rather than deleted: a misplaced
+/// entry is recoverable, a deleted one is not.
+void unwind_staging(const fs::path& staging, const fs::path& source, bool source_relocated) {
+    if (!source_relocated) {
+        discard_staging(staging);
+        return;
+    }
+    std::error_code ec;
+    fs::rename(staging, source, ec);
+}
+
 constexpr fs::copy_options recursive_copy =
     fs::copy_options::recursive | fs::copy_options::copy_symlinks;
 
@@ -287,8 +305,14 @@ OperationOutcome copy_into(const fs::path& source, const fs::path& destination_d
     return outcome;
 }
 
-OperationOutcome move_into(const fs::path& source, const fs::path& destination_directory,
-                           const OperationOptions& options) {
+namespace detail {
+
+void rename_with_filesystem(const fs::path& from, const fs::path& to, std::error_code& error) {
+    fs::rename(from, to, error);
+}
+
+OperationOutcome move_into_using(const fs::path& source, const fs::path& destination_directory,
+                                 const OperationOptions& options, RenameStep rename_step) {
     OperationOutcome outcome = prepare_transfer(source, destination_directory, options);
     if (!outcome.succeeded()) {
         return outcome;
@@ -299,39 +323,85 @@ OperationOutcome move_into(const fs::path& source, const fs::path& destination_d
         return outcome;
     }
 
+    // A rename moves the entry in one step when nothing is in the way, and
+    // replaces one non-directory with another atomically when something is. Try
+    // it before anything is disturbed: nothing has been removed if it fails.
+    if (!path_present(outcome.destination) ||
+        !replacement_needs_removal(source, outcome.destination)) {
+        std::error_code ec;
+        rename_step(source, outcome.destination, ec);
+        if (!ec) {
+            return outcome;
+        }
+        if (ec != std::errc::cross_device_link) {
+            return failure(ec);
+        }
+    }
+
+    // Either the rename cannot replace what is in the way, or the two paths are
+    // on different filesystems. Both cases assemble the moved entry beside the
+    // destination first: nothing existing is removed until the replacement is
+    // complete, so a failure along the way costs neither the source nor the
+    // destination.
+    std::error_code staging_ec;
+    const fs::path staging = reserve_staging_path(outcome.destination, staging_ec);
+    if (staging_ec) {
+        return failure(staging_ec);
+    }
+
+    bool source_relocated = false;
+    std::error_code relocate_ec;
+    rename_step(source, staging, relocate_ec);
+    if (!relocate_ec) {
+        // Same filesystem: the source now lives under the staging name, and can
+        // be put back untouched if a later step fails.
+        source_relocated = true;
+    } else if (relocate_ec == std::errc::cross_device_link) {
+        std::error_code copy_ec;
+        fs::copy(source, staging, recursive_copy, copy_ec);
+        if (copy_ec) {
+            discard_staging(staging);
+            return failure(copy_ec);
+        }
+    } else {
+        // The staging name was reserved, never created.
+        return failure(relocate_ec);
+    }
+
     if (path_present(outcome.destination) &&
-        replacement_needs_removal(source, outcome.destination)) {
+        replacement_needs_removal(staging, outcome.destination)) {
         std::error_code remove_ec;
         fs::remove_all(outcome.destination, remove_ec);
         if (remove_ec) {
+            unwind_staging(staging, source, source_relocated);
             return failure(remove_ec);
         }
     }
 
-    std::error_code ec;
-    fs::rename(source, outcome.destination, ec);
-    if (!ec) {
-        return outcome;
-    }
-    if (ec != std::errc::cross_device_link) {
-        return failure(ec);
+    std::error_code install_ec;
+    fs::rename(staging, outcome.destination, install_ec);
+    if (install_ec) {
+        unwind_staging(staging, source, source_relocated);
+        return failure(install_ec);
     }
 
-    // Different filesystems: copy the tree across, then drop the original. The
-    // source is only removed once the copy has fully succeeded.
-    std::error_code copy_ec;
-    fs::copy(source, outcome.destination, recursive_copy | fs::copy_options::overwrite_existing,
-             copy_ec);
-    if (copy_ec) {
-        return failure(copy_ec);
-    }
-
-    std::error_code remove_ec;
-    fs::remove_all(source, remove_ec);
-    if (remove_ec) {
-        return failure(remove_ec);
+    if (!source_relocated) {
+        // The move was completed by copying, so the original is still in place.
+        std::error_code remove_ec;
+        fs::remove_all(source, remove_ec);
+        if (remove_ec) {
+            return failure(remove_ec);
+        }
     }
     return outcome;
+}
+
+} // namespace detail
+
+OperationOutcome move_into(const fs::path& source, const fs::path& destination_directory,
+                           const OperationOptions& options) {
+    return detail::move_into_using(source, destination_directory, options,
+                                   &detail::rename_with_filesystem);
 }
 
 OperationOutcome rename_entry(const fs::path& source, std::string_view new_name,
