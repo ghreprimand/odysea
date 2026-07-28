@@ -304,6 +304,16 @@ TestCase {
         mouseClick(cell, cell.width / 2, cell.height / 2, button, modifiers);
     }
 
+    function realizedGridCellCount(rowCount) {
+        let realized = 0;
+        for (let index = 0; index < rowCount; ++index) {
+            if (findChild(shellWindow.contentItem, "entryCell-" + index) !== null) {
+                ++realized;
+            }
+        }
+        return realized;
+    }
+
     function verifyBandDrag(area, expectRows) {
         tryVerify(function () {
             return area.width > 4 && area.height > 80;
@@ -467,6 +477,9 @@ TestCase {
             return fakeModel.requestThumbnailCalls > 0;
         });
         verify(fakeModel.requestThumbnailCalls < fakeModel.count);
+        const realized = realizedGridCellCount(fakeModel.count);
+        verify(realized > 0);
+        verify(realized < fakeModel.count);
         verify(cellAt(0) !== null);
     }
 

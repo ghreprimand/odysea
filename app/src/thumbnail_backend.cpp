@@ -53,6 +53,14 @@ constexpr std::size_t bytesPerPixel = 4;
     return QString::fromStdString(path.string());
 }
 
+[[nodiscard]] int allocationLimitMegabytes(const ThumbnailDecodeLimits& limits) noexcept {
+    constexpr std::size_t bytesPerMegabyte = 1024UL * 1024UL;
+    const std::size_t rounded = limits.max_decoded_bytes / bytesPerMegabyte +
+                                (limits.max_decoded_bytes % bytesPerMegabyte == 0 ? 0UL : 1UL);
+    return static_cast<int>(std::clamp(rounded, std::size_t{1},
+                                       static_cast<std::size_t>(std::numeric_limits<int>::max())));
+}
+
 } // namespace
 
 QImage thumbnailImageToQImage(const odysea::core::ThumbnailImage& source, std::error_code& error) {
@@ -125,6 +133,16 @@ odysea::core::ThumbnailImage QtThumbnailProducer::produce(const std::filesystem:
                                                           odysea::core::ThumbnailSize size,
                                                           std::error_code& error) {
     error.clear();
+    const std::filesystem::file_status status = std::filesystem::status(source, error);
+    if (error) {
+        return {};
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+        error = makeError(std::errc::invalid_argument);
+        return {};
+    }
+
+    QImageReader::setAllocationLimit(allocationLimitMegabytes(limits_));
     QImageReader reader(pathString(source));
     reader.setDecideFormatFromContent(true);
     reader.setAutoTransform(true);
@@ -174,6 +192,7 @@ FreedesktopThumbnailStore::load(const odysea::core::ThumbnailKey& key, std::erro
         return std::nullopt;
     }
 
+    QImageReader::setAllocationLimit(allocationLimitMegabytes(limits_));
     QImageReader reader(pathString(path), QByteArrayLiteral("png"));
     const QSize storedSize = reader.size();
     if (!dimensionsFit(storedSize, limits_, error)) {

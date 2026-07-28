@@ -12,15 +12,16 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fs = std::filesystem;
 
 namespace {
 
-void writeFile(const fs::path& path) {
+void writeFile(const fs::path& path, std::string_view contents = "image fixture") {
     std::ofstream stream(path, std::ios::binary);
-    stream << "image fixture";
+    stream << contents;
 }
 
 int rowForName(const DirectoryListModel& model, const QString& name) {
@@ -119,6 +120,10 @@ class ThumbnailModelTest : public QObject {
     void rolesUseStableKeysAndDisappearWithEntries();
     void staleResultCannotAttachToReusedRow();
     void releasedRequestDoesNotPublish();
+    void completedThumbnailIsRemovedOnRelease();
+    void providerEvictsLeastRecentlyUsedImagesByByteCost();
+    void changedVisibleFileIsRequestedAgain();
+    void symlinkUsesResolvedTargetMetadata();
     void queuedDeliveryIsSafeAcrossDestruction();
 };
 
@@ -241,6 +246,139 @@ void ThumbnailModelTest::releasedRequestDoesNotPublish() {
     QTest::qWait(20);
     QVERIFY(
         model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty());
+}
+
+void ThumbnailModelTest::completedThumbnailIsRemovedOnRelease() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    writeFile(fs::path(fixture.path().toStdString()) / "picture.png");
+
+    ThumbnailImageProvider provider;
+    RecordingProducer producer;
+    EmptyStore store;
+    DirectoryListModel model(provider, producer, store, testOptions());
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.rowCount(), 1);
+
+    model.requestThumbnail(0);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty(),
+        5000);
+    const QString entryPath = model.data(model.index(0), DirectoryListModel::PathRole).toString();
+    const QString source =
+        model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString();
+    const QString id = providerId(source);
+    QVERIFY(!provider.requestImage(id, nullptr, {}).isNull());
+
+    model.releaseThumbnail(entryPath);
+    QVERIFY(
+        model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty());
+    QVERIFY(!model.data(model.index(0), DirectoryListModel::ThumbnailLoadingRole).toBool());
+    QVERIFY(provider.requestImage(id, nullptr, {}).isNull());
+}
+
+void ThumbnailModelTest::providerEvictsLeastRecentlyUsedImagesByByteCost() {
+    QImage first(QSize{2, 2}, QImage::Format_RGBA8888);
+    QImage second(QSize{2, 2}, QImage::Format_RGBA8888);
+    QImage third(QSize{2, 2}, QImage::Format_RGBA8888);
+    first.fill(Qt::red);
+    second.fill(Qt::green);
+    third.fill(Qt::blue);
+    QCOMPARE(first.sizeInBytes(), 16);
+
+    ThumbnailImageProvider provider(32);
+    QVERIFY(provider.insert(QStringLiteral("first"), first).retained);
+    QVERIFY(provider.insert(QStringLiteral("second"), second).retained);
+    QVERIFY(!provider.requestImage(QStringLiteral("first"), nullptr, {}).isNull());
+
+    const ThumbnailImageProvider::InsertResult insertion =
+        provider.insert(QStringLiteral("third"), third);
+    QVERIFY(insertion.retained);
+    QCOMPARE(insertion.evictedIds, QStringList{QStringLiteral("second")});
+    QVERIFY(!provider.requestImage(QStringLiteral("first"), nullptr, {}).isNull());
+    QVERIFY(provider.requestImage(QStringLiteral("second"), nullptr, {}).isNull());
+    QVERIFY(!provider.requestImage(QStringLiteral("third"), nullptr, {}).isNull());
+}
+
+void ThumbnailModelTest::changedVisibleFileIsRequestedAgain() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path picture = fs::path(fixture.path().toStdString()) / "picture.png";
+    writeFile(picture);
+
+    ThumbnailImageProvider provider;
+    RecordingProducer producer;
+    EmptyStore store;
+    DirectoryListModel model(provider, producer, store, testOptions());
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.rowCount(), 1);
+
+    model.requestThumbnail(0);
+    QTRY_COMPARE_WITH_TIMEOUT(producer.calls(), 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty(),
+        5000);
+    const QString originalSource =
+        model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString();
+
+    writeFile(picture, "changed image fixture with a different byte length");
+    model.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(producer.calls(), 2, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty(),
+        5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model.data(model.index(0), DirectoryListModel::ThumbnailSourceRole).toString() !=
+            originalSource,
+        5000);
+}
+
+void ThumbnailModelTest::symlinkUsesResolvedTargetMetadata() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path target = root / "target.png";
+    const fs::path link = root / "linked.png";
+    writeFile(target);
+    std::error_code linkError;
+    fs::create_symlink(target, link, linkError);
+    QVERIFY(!linkError);
+
+    ThumbnailImageProvider provider;
+    RecordingProducer producer;
+    EmptyStore store;
+    DirectoryListModel model(provider, producer, store, testOptions());
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    const int linkedRow = rowForName(model, QStringLiteral("linked.png"));
+    QVERIFY(linkedRow >= 0);
+
+    model.requestThumbnail(linkedRow);
+    QTRY_COMPARE_WITH_TIMEOUT(producer.calls(), 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model.data(model.index(linkedRow), DirectoryListModel::ThumbnailSourceRole)
+             .toString()
+             .isEmpty(),
+        5000);
+    const QString originalSource =
+        model.data(model.index(linkedRow), DirectoryListModel::ThumbnailSourceRole).toString();
+
+    writeFile(target, "replacement target contents with a different size");
+    model.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(producer.calls(), 2, 5000);
+    const int refreshedLinkedRow = rowForName(model, QStringLiteral("linked.png"));
+    QVERIFY(refreshedLinkedRow >= 0);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model.data(model.index(refreshedLinkedRow), DirectoryListModel::ThumbnailSourceRole)
+             .toString()
+             .isEmpty(),
+        5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model.data(model.index(refreshedLinkedRow), DirectoryListModel::ThumbnailSourceRole)
+                .toString() != originalSource,
+        5000);
 }
 
 void ThumbnailModelTest::queuedDeliveryIsSafeAcrossDestruction() {

@@ -15,10 +15,20 @@ standard `Ctrl+1` and `Ctrl+2` shortcuts provide the matching keyboard path.
 Each view retains its own scroll position when hidden.
 
 The grid realizes only its viewport and a bounded cache buffer. Visible
-delegates request thumbnails lazily, release unfinished work when hidden or
-destroyed, and load opaque provider URLs asynchronously. Directory and
-unsupported-file placeholders remain usable while decoding is absent or
+delegates request thumbnails lazily, release both unfinished work and completed
+provider images when hidden or destroyed, and load opaque provider URLs
+asynchronously. The provider has its own 64 MiB byte budget and evicts decoded
+images in least-recently-used order independently of the core cache. Directory
+and unsupported-file placeholders remain usable while decoding is absent or
 refused.
+
+The application builds every thumbnail key through the core cache policy.
+Symbolic links therefore retain their own cache URI while using their resolved
+target's size and modification time for invalidation. A changed visible source
+is requested again immediately after its old provider state is removed.
+Non-regular sources are rejected before a decoder opens them, and the image
+reader's allocation limit reinforces the existing dimension and decoded-byte
+bounds.
 
 Grid cells preserve click, control-click, shift-click, double-click, context
 menu, wheel, and flick behavior. Arrow and Home/End navigation, activation,
@@ -27,20 +37,26 @@ Rubber-band selection computes explicit two-dimensional cell intersections and
 passes stable model rows to the shared selection layer.
 
 Rendered-shell tests require a non-empty model before exercising the view. They
-distinguish virtualization from eager delegate creation, cover keyboard and
-pointer switching, selection and scroll preservation, thumbnail requests,
-cell activation and context selection, two-dimensional band geometry, and
-flick-versus-selection arbitration.
+count realized grid cells to distinguish virtualization from eager delegate
+creation, and cover keyboard and pointer switching, selection and scroll
+preservation, thumbnail requests, cell activation and context selection,
+two-dimensional band geometry, and flick-versus-selection arbitration.
+
+Focused adapter regressions cover completed-image release, provider byte-budget
+eviction order, automatic re-request after an in-place change, symbolic-link
+target invalidation, and early refusal of directories and named pipes.
 
 Verified with warning-clean release and ASan/UBSan builds and suites, scoped
 static analysis, C++ and QML formatting, zero-warning QML linting, the
 public-repository and tracked-file length guards, and offscreen release and
 sanitizer smoke launches. The thumbnail-model and rendered-shell tests also
-passed twenty-five consecutive release runs; the thumbnail-model test passed
-ten consecutive sanitizer runs.
+passed fifteen consecutive release runs alongside the thumbnail backend; the
+thumbnail model and backend each passed five consecutive sanitizer runs.
 
-The M2 grid and asynchronous cached-thumbnail roadmap item is complete.
-Type-ahead, drag-and-drop, breadcrumbs, and the command palette remain open.
+The M2 grid and asynchronous cached-thumbnail roadmap item remains open until
+its bounded provider lifecycle and source-invalidation behavior finish
+acceptance. Type-ahead, drag-and-drop, breadcrumbs, and the command palette
+also remain open.
 
 ## 2026-07-28 -- Decode and deliver thumbnails through the application adapter
 

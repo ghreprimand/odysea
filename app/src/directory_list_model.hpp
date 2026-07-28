@@ -217,6 +217,7 @@ class DirectoryListModel : public QAbstractListModel {
     void beginThumbnailGeneration();
     void reconcileThumbnails();
     void removeThumbnailState(const QString& key);
+    void removeEvictedProviderImages(const QStringList& ids);
     void postThumbnailResult(odysea::core::ThumbnailResult result);
     void receiveThumbnailResult(odysea::core::ThumbnailResult result);
 

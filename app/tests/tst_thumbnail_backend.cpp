@@ -5,6 +5,7 @@
 #include <QTest>
 
 #include <filesystem>
+#include <sys/stat.h>
 
 namespace fs = std::filesystem;
 
@@ -45,6 +46,7 @@ class ThumbnailBackendTest : public QObject {
 
   private slots:
     void producerAllowsOnlyBoundedWebFormats();
+    void producerRejectsNonRegularSourcesBeforeOpening();
     void storeRoundTripsAndExposesStaleMetadata();
 };
 
@@ -79,6 +81,24 @@ void ThumbnailBackendTest::producerAllowsOnlyBoundedWebFormats() {
         ThumbnailDecodeLimits{.max_dimension = 64, .max_decoded_bytes = 64});
     static_cast<void>(byteBounded.produce(png, odysea::core::ThumbnailSize::Normal, error));
     QCOMPARE(error, std::make_error_code(std::errc::value_too_large));
+}
+
+void ThumbnailBackendTest::producerRejectsNonRegularSourcesBeforeOpening() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path directory = root / "directory";
+    const fs::path fifo = root / "source.pipe";
+    fs::create_directory(directory);
+    QCOMPARE(::mkfifo(fifo.c_str(), 0600), 0);
+
+    QtThumbnailProducer producer;
+    std::error_code error;
+    static_cast<void>(producer.produce(directory, odysea::core::ThumbnailSize::Normal, error));
+    QCOMPARE(error, std::make_error_code(std::errc::invalid_argument));
+
+    static_cast<void>(producer.produce(fifo, odysea::core::ThumbnailSize::Normal, error));
+    QCOMPARE(error, std::make_error_code(std::errc::invalid_argument));
 }
 
 void ThumbnailBackendTest::storeRoundTripsAndExposesStaleMetadata() {

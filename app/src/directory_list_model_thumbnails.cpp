@@ -39,13 +39,8 @@ void DirectoryListModel::initializeThumbnailService(odysea::core::ThumbnailProdu
 
 std::optional<odysea::core::ThumbnailKey>
 DirectoryListModel::thumbnailKeyForEntry(const odysea::core::Entry& entry) const {
-    if (entry.kind != odysea::core::EntryKind::File) {
-        return std::nullopt;
-    }
-    return odysea::core::ThumbnailKey{.uri = odysea::core::file_uri(entry.path),
-                                      .modified_seconds = entry.modified_seconds,
-                                      .size = entry.size,
-                                      .edge = odysea::core::ThumbnailSize::Large};
+    std::error_code error;
+    return odysea::core::thumbnail_key_for(entry.path, odysea::core::ThumbnailSize::Large, error);
 }
 
 void DirectoryListModel::requestThumbnail(int row) {
@@ -81,19 +76,13 @@ void DirectoryListModel::releaseThumbnail(const QString& entryPath) {
         return;
     }
     const QString stableKey = QDir::cleanPath(entryPath);
-    if (!thumbnailLoadingKeys_.contains(stableKey)) {
+    if (!requestedThumbnailKeys_.contains(stableKey) && !thumbnailIds_.contains(stableKey)) {
         return;
     }
-
-    const auto requested = requestedThumbnailKeys_.constFind(stableKey);
-    if (requested != requestedThumbnailKeys_.cend()) {
-        thumbnailService_->release(*requested, thumbnailGeneration_);
-    }
-    thumbnailLoadingKeys_.remove(stableKey);
-    requestedThumbnailKeys_.remove(stableKey);
+    removeThumbnailState(stableKey);
     const int row = rowForEntryKey(stableKey);
     if (row >= 0) {
-        emit dataChanged(index(row), index(row), {ThumbnailLoadingRole});
+        emit dataChanged(index(row), index(row), {ThumbnailSourceRole, ThumbnailLoadingRole});
     }
 }
 
@@ -140,6 +129,29 @@ void DirectoryListModel::reconcileThumbnails() {
         if (!current.has_value() || *current != requestedThumbnailKeys_.value(stableKey)) {
             removeThumbnailState(stableKey);
             emit dataChanged(index(row), index(row), {ThumbnailSourceRole, ThumbnailLoadingRole});
+            if (current.has_value()) {
+                requestThumbnail(row);
+            }
+        }
+    }
+}
+
+void DirectoryListModel::removeEvictedProviderImages(const QStringList& ids) {
+    for (const QString& id : ids) {
+        auto mapping = thumbnailIds_.cbegin();
+        while (mapping != thumbnailIds_.cend() && mapping.value() != id) {
+            ++mapping;
+        }
+        if (mapping == thumbnailIds_.cend()) {
+            continue;
+        }
+
+        const QString stableKey = mapping.key();
+        thumbnailIds_.remove(stableKey);
+        requestedThumbnailKeys_.remove(stableKey);
+        const int row = rowForEntryKey(stableKey);
+        if (row >= 0) {
+            emit dataChanged(index(row), index(row), {ThumbnailSourceRole});
         }
     }
 }
@@ -198,7 +210,13 @@ void DirectoryListModel::receiveThumbnailResult(odysea::core::ThumbnailResult re
     if (!previousId.isEmpty() && previousId != id) {
         thumbnailProvider_->remove(previousId);
     }
-    thumbnailProvider_->insert(id, std::move(image));
-    thumbnailIds_.insert(stableKey, id);
+    const ThumbnailImageProvider::InsertResult insertion =
+        thumbnailProvider_->insert(id, std::move(image));
+    removeEvictedProviderImages(insertion.evictedIds);
+    if (insertion.retained) {
+        thumbnailIds_.insert(stableKey, id);
+    } else {
+        requestedThumbnailKeys_.remove(stableKey);
+    }
     emit dataChanged(index(row), index(row), {ThumbnailSourceRole, ThumbnailLoadingRole});
 }

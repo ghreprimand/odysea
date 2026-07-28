@@ -22,7 +22,7 @@ graphical shell grows around it.
 ## M2 — Shell views
 
 - [x] Incremental adapter updates and geometry-driven selection foundation.
-- [x] Grid view with asynchronous, cached thumbnails.
+- [ ] Grid view with asynchronous, cached thumbnails.
 - [x] Off-thread directory scanning so the UI never stalls.
 - [ ] Keyboard navigation and type-ahead.
 - [ ] Mouse interaction parity: double-click open, context menus,
