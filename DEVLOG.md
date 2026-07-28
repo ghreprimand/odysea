@@ -53,10 +53,12 @@ sanitizer smoke launches. The thumbnail-model and rendered-shell tests also
 passed fifteen consecutive release runs alongside the thumbnail backend; the
 thumbnail model and backend each passed five consecutive sanitizer runs.
 
-The M2 grid and asynchronous cached-thumbnail roadmap item remains open until
-its bounded provider lifecycle and source-invalidation behavior finish
-acceptance. Type-ahead, drag-and-drop, breadcrumbs, and the command palette
-also remain open.
+The M2 grid and asynchronous cached-thumbnail roadmap item is complete.
+Integrated verification passed all eighteen release tests and all seventeen
+enabled ASan/UBSan tests, including the repository, formatting, QML, static
+analysis, and file-length gates. Both offscreen application launches remained
+healthy for the smoke window. Type-ahead, drag-and-drop, breadcrumbs, and the
+command palette remain open.
 
 ## 2026-07-28 -- Decode and deliver thumbnails through the application adapter
 
