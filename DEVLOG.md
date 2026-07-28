@@ -43,6 +43,37 @@ offscreen release and sanitizer smoke launches. The adapter and rendered-shell
 tests also passed fifteen consecutive release runs and five consecutive
 sanitizer runs.
 
+---
+
+## 2026-07-28 -- Load the shell through a linkable QML module
+
+The declarative shell is now a linkable static QML module rather than a module
+attached to the application executable. The application and the rendered-shell
+tests both link it, so `import OdySea` resolves through the generated `qmldir`
+in either case.
+
+This closes a real gap between the two. The rendered-shell tests previously
+imported `../qml` as a directory, which reads source files straight from the
+working tree and never consults the module. A scene omitted from the module's
+file list therefore kept its tests green while the application could not start.
+With the module linked, omitting `Main.qml` from the module fails the shell
+tests with `Main is not a type`, which is the same failure the application
+reports.
+
+The tests run from a dedicated executable that links the module, because the
+generic QML test runner only ever sees a source directory. The scenes, the
+fixtures, and the assertions are unchanged.
+
+Linting a scene that imports the module requires the built module directory on
+the import path, so the QML lint gate now accepts import roots and CMake passes
+the build tree's application directory. Import roots containing whitespace are
+refused rather than silently word-split.
+
+Verified with release and sanitizer builds, the full test suites, the QML
+formatting and lint gates, and an offscreen application launch.
+
+---
+
 ## 2026-07-28 -- Add a virtualized thumbnail grid
 
 The shell now offers list and grid presentations over the same incremental

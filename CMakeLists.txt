@@ -57,7 +57,7 @@ add_test(
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh format)
 add_test(
     NAME qml_lint_guard
-    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh lint)
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh lint ${CMAKE_BINARY_DIR}/app)
 add_test(
     NAME file_length_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length.sh)

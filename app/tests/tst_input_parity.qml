@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
-import "../qml"
+import OdySea
 
 TestCase {
     id: testCase
