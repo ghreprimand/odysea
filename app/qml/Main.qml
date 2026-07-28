@@ -12,6 +12,7 @@ ApplicationWindow {
 
     required property var shellModel
 
+    objectName: "mainWindow"
     readonly property int rowHeight: 34
     readonly property color backgroundColor: "#16130f"
     readonly property color panelColor: "#201b16"
@@ -62,6 +63,8 @@ ApplicationWindow {
 
         ListView {
             id: directoryList
+
+            objectName: "directoryList"
             anchors.fill: parent
             anchors.margins: 4
             model: root.shellModel
@@ -99,6 +102,7 @@ ApplicationWindow {
             delegate: Item {
                 id: entryRow
 
+                objectName: "entryRow-" + index
                 required property int index
                 required property string name
                 required property bool isDir
@@ -201,7 +205,12 @@ ApplicationWindow {
                 property real originX: 0
                 property real originY: 0
 
-                anchors.fill: parent
+                x: 0
+                y: Math.max(0, Math.min(directoryList.height,
+                                        directoryList.count * root.rowHeight
+                                        - directoryList.contentY))
+                width: directoryList.width
+                height: Math.max(0, directoryList.height - y)
                 acceptedButtons: Qt.LeftButton
                 z: 0
 
@@ -229,10 +238,12 @@ ApplicationWindow {
                     }
                     rubberBand.visible = true
                     rubberBand.x = Math.min(originX, mouse.x)
-                    rubberBand.y = Math.min(originY, mouse.y)
+                    rubberBand.y = rubberBandPointer.y + Math.min(originY, mouse.y)
                     rubberBand.width = Math.abs(mouse.x - originX)
                     rubberBand.height = Math.abs(mouse.y - originY)
-                    root.shellModel.updateRubberBand(rowAt(originY), rowAt(mouse.y))
+                    root.shellModel.updateRubberBand(
+                                rowAt(rubberBandPointer.y + originY),
+                                rowAt(rubberBandPointer.y + mouse.y))
                 }
 
                 onReleased: {

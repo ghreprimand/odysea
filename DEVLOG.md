@@ -7,6 +7,24 @@ and architecture decisions.
 
 ---
 
+## 2026-07-27 -- Pointer hit testing and scan watcher lifetime
+
+The list rubber-band surface now occupies only unused space below the final
+visible row, so row clicks, modified clicks, and double-clicks reach their
+delegates while blank-area drags still create range selections. A Qt Quick test
+sends a left click through the rendered shell and verifies that the selection
+model receives the row.
+
+Asynchronous scans now use a single RAII-owned future watcher. The watcher
+observes the newest scan without heap allocation or deferred manual deletion,
+while generation checks continue to reject stale results. Selection input uses
+the keyboard-modifier type directly across the QML boundary.
+
+Verified with diagnostic-free QML linting, the Qt Quick pointer regression,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
 ## 2026-07-27 -- Input-parity navigation shell
 
 The graphical shell now pairs pointer controls with keyboard shortcuts for

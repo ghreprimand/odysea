@@ -2,7 +2,6 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QFutureWatcher>
 #include <QtConcurrentRun>
 
 #include <algorithm>
@@ -16,7 +15,12 @@ constexpr int maximumSortMode = DirectoryListModel::SortByType;
 
 } // namespace
 
-DirectoryListModel::DirectoryListModel(QObject* parent) : QAbstractListModel(parent) {}
+DirectoryListModel::DirectoryListModel(QObject* parent) : QAbstractListModel(parent) {
+    connect(&scanWatcher_, &QFutureWatcher<ScanResult>::finished, this, [this]() {
+        auto future = scanWatcher_.future();
+        applyScanResult(future.takeResult());
+    });
+}
 
 int DirectoryListModel::rowCount(const QModelIndex& parent) const {
     if (parent.isValid()) {
@@ -202,15 +206,14 @@ void DirectoryListModel::activate(int row) {
     setStatusMessage(tr("Opening files is waiting for the platform launcher hookup."));
 }
 
-void DirectoryListModel::selectRow(int row, int modifiers) {
+void DirectoryListModel::selectRow(int row, Qt::KeyboardModifiers modifiers) {
     if (row < 0 || row >= rowCount()) {
         return;
     }
 
-    const auto keyboardModifiers = static_cast<Qt::KeyboardModifiers>(modifiers);
-    if (keyboardModifiers.testFlag(Qt::ShiftModifier)) {
+    if (modifiers.testFlag(Qt::ShiftModifier)) {
         selectRangeTo(row);
-    } else if (keyboardModifiers.testFlag(Qt::ControlModifier)) {
+    } else if (modifiers.testFlag(Qt::ControlModifier)) {
         QSet<int> selection = selectedRows_;
         if (selection.contains(row)) {
             selection.remove(row);
@@ -457,16 +460,9 @@ void DirectoryListModel::startScan() {
     setBusy(true);
     setErrorString({});
 
-    auto* const watcher = new QFutureWatcher<ScanResult>(this);
-    connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
-        auto future = watcher->future();
-        applyScanResult(future.takeResult());
-        watcher->deleteLater();
-    });
-
     const std::string scanPath = path_.toStdString();
     const odysea::core::ListOptions options{.show_hidden = showHidden_};
-    watcher->setFuture(QtConcurrent::run([scanPath, options, generation]() {
+    scanWatcher_.setFuture(QtConcurrent::run([scanPath, options, generation]() {
         std::error_code error;
         ScanResult result;
         result.generation = generation;

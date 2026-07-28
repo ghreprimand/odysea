@@ -26,3 +26,11 @@ target_link_libraries(odysea
         odysea_warnings odysea_sanitizers)
 
 install(TARGETS odysea RUNTIME DESTINATION bin)
+
+add_test(
+    NAME shell_input_parity
+    COMMAND Qt6::qmltestrunner
+        -input ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+set_tests_properties(
+    shell_input_parity
+    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

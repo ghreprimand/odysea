@@ -6,6 +6,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QFutureWatcher>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -76,7 +77,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void activate(int row);
 
-    Q_INVOKABLE void selectRow(int row, int modifiers);
+    Q_INVOKABLE void selectRow(int row, Qt::KeyboardModifiers modifiers);
     Q_INVOKABLE void moveCursor(int delta, bool extendSelection, bool preserveSelection);
     Q_INVOKABLE void moveCursorTo(int row, bool extendSelection, bool preserveSelection);
     Q_INVOKABLE void toggleCurrent();
@@ -162,6 +163,7 @@ class DirectoryListModel : public QAbstractListModel {
     QSet<int> selectedRows_;
     QSet<int> rubberBandBase_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
+    QFutureWatcher<ScanResult> scanWatcher_;
     std::uint64_t scanGeneration_ = 0;
     int sortMode_ = SortByName;
     int currentIndex_ = -1;
