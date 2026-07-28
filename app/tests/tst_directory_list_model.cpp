@@ -406,6 +406,13 @@ void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("after.txt"));
     QCOMPARE(currentName(model), QStringLiteral("after.txt"));
+
+    fs::rename(root / "after.txt", root / "final.txt");
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("final.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("final.txt"));
 }
 
 void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {

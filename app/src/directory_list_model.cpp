@@ -526,40 +526,13 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     const QSet<int> previousSelectedRows = selectedRows_;
 
     QSet<QString> targetKeys;
-    QHash<QString, int> targetIdentityCounts;
-    QHash<QString, QString> targetIdentityKeys;
     targetKeys.reserve(static_cast<qsizetype>(presented.size()));
     for (const odysea::core::Entry& entry : presented) {
         const QString key = entryKey(entry);
         targetKeys.insert(key);
-        const QString identity = entryIdentity(entry);
-        if (!identity.isEmpty()) {
-            ++targetIdentityCounts[identity];
-            targetIdentityKeys[identity] = key;
-        }
-    }
-
-    QHash<QString, int> currentIdentityCounts;
-    for (const odysea::core::Entry& entry : entries_) {
-        const QString identity = entryIdentity(entry);
-        if (!identity.isEmpty()) {
-            ++currentIdentityCounts[identity];
-        }
     }
 
     QHash<QString, QString> resolvedKeyRemaps = pendingEntryKeyRemaps_;
-    for (const odysea::core::Entry& entry : entries_) {
-        const QString oldKey = entryKey(entry);
-        if (targetKeys.contains(oldKey) || resolvedKeyRemaps.contains(oldKey)) {
-            continue;
-        }
-        const QString identity = entryIdentity(entry);
-        if (!identity.isEmpty() && currentIdentityCounts.value(identity) == 1 &&
-            targetIdentityCounts.value(identity) == 1) {
-            resolvedKeyRemaps.insert(oldKey, targetIdentityKeys.value(identity));
-        }
-    }
-
     const auto resolvedKey = [this, &resolvedKeyRemaps](const odysea::core::Entry& entry) {
         const QString key = entryKey(entry);
         return resolvedKeyRemaps.value(key, key);
@@ -716,6 +689,25 @@ void DirectoryListModel::setCurrentIndex(int row) {
                            ? entryKey(entries_[static_cast<std::size_t>(row)])
                            : QString{};
     emit currentIndexChanged();
+}
+
+void DirectoryListModel::remapEntryKey(const QString& oldKey, const QString& newKey) {
+    if (oldKey == newKey) {
+        return;
+    }
+    if (selectedEntryKeys_.remove(oldKey)) {
+        selectedEntryKeys_.insert(newKey);
+    }
+    if (currentEntryKey_ == oldKey) {
+        currentEntryKey_ = newKey;
+    }
+    if (selectionAnchorKey_ == oldKey) {
+        selectionAnchorKey_ = newKey;
+    }
+    if (rubberBandBaseKeys_.remove(oldKey)) {
+        rubberBandBaseKeys_.insert(newKey);
+    }
+    pendingEntryKeyRemaps_.insert(oldKey, newKey);
 }
 
 void DirectoryListModel::replaceSelection(QSet<int> selection) {

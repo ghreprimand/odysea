@@ -28,6 +28,7 @@ void DirectoryListModel::startScan() {
         watchService_.replace({}, ++watchToken_);
         scannedPath_.clear();
         scannedEntries_.clear();
+        scanBaselineEntries_.clear();
         scanEntries_.clear();
         applyPresentationSettings(true);
         setBusy(false);
@@ -39,6 +40,7 @@ void DirectoryListModel::startScan() {
         scannedEntries_.clear();
         applyPresentationSettings();
     }
+    scanBaselineEntries_ = scannedEntries_;
 
     setBusy(true);
     setErrorString({});
@@ -112,7 +114,37 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
         return;
     }
 
+    QHash<QString, int> baselineIdentityCounts;
+    QHash<QString, int> completedIdentityCounts;
+    QHash<QString, QString> completedIdentityKeys;
+    QSet<QString> completedKeys;
+    for (const odysea::core::Entry& entry : scanBaselineEntries_) {
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++baselineIdentityCounts[identity];
+        }
+    }
+    for (const odysea::core::Entry& entry : scanEntries_) {
+        const QString key = entryKey(entry);
+        completedKeys.insert(key);
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++completedIdentityCounts[identity];
+            completedIdentityKeys[identity] = key;
+        }
+    }
+    for (const odysea::core::Entry& entry : scanBaselineEntries_) {
+        const QString oldKey = entryKey(entry);
+        const QString identity = entryIdentity(entry);
+        if (!completedKeys.contains(oldKey) && !identity.isEmpty() &&
+            baselineIdentityCounts.value(identity) == 1 &&
+            completedIdentityCounts.value(identity) == 1) {
+            remapEntryKey(oldKey, completedIdentityKeys.value(identity));
+        }
+    }
+
     scannedEntries_ = std::move(scanEntries_);
+    scanBaselineEntries_.clear();
     setErrorString(summary.error ? QString::fromStdString(summary.error.message()) : QString{});
     applyPresentationSettings(true);
     setBusy(false);
@@ -165,19 +197,7 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         const QString oldKey = entryKey(oldEntry);
         const QString newKey = entryKey(newEntry);
         remappedOldKeys.insert(oldKey);
-        if (selectedEntryKeys_.remove(oldKey)) {
-            selectedEntryKeys_.insert(newKey);
-        }
-        if (currentEntryKey_ == oldKey) {
-            currentEntryKey_ = newKey;
-        }
-        if (selectionAnchorKey_ == oldKey) {
-            selectionAnchorKey_ = newKey;
-        }
-        if (rubberBandBaseKeys_.remove(oldKey)) {
-            rubberBandBaseKeys_.insert(newKey);
-        }
-        pendingEntryKeyRemaps_.insert(oldKey, newKey);
+        remapEntryKey(oldKey, newKey);
     };
 
     for (const DirectoryEntryRename& rename : update.renamedEntries) {

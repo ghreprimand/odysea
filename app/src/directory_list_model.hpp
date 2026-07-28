@@ -182,6 +182,7 @@ class DirectoryListModel : public QAbstractListModel {
     void setOperationBusy(bool busy);
     void setOperationErrorString(const QString& errorString);
     void setCurrentIndex(int row);
+    void remapEntryKey(const QString& oldKey, const QString& newKey);
     void replaceSelection(QSet<int> selection);
     void replaceSelectionKeys(QSet<QString> keys);
     void rebuildSelectionRows();
@@ -202,6 +203,7 @@ class DirectoryListModel : public QAbstractListModel {
     QString currentEntryKey_;
     QString scannedPath_;
     std::vector<odysea::core::Entry> scannedEntries_;
+    std::vector<odysea::core::Entry> scanBaselineEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
     QSet<int> selectedRows_;
