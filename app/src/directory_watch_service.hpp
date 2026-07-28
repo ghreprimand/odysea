@@ -14,11 +14,17 @@
 #include <thread>
 #include <vector>
 
+struct DirectoryEntryRename {
+    std::string oldName;
+    std::string newName;
+};
+
 struct DirectoryWatchUpdate {
     std::uint64_t token = 0;
     std::filesystem::path directory;
     std::vector<std::string> removedNames;
     std::vector<odysea::core::Entry> updatedEntries;
+    std::vector<DirectoryEntryRename> renamedEntries;
     std::error_code error;
     bool rescanRequired = false;
 };

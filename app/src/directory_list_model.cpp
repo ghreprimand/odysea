@@ -407,14 +407,17 @@ QStringList DirectoryListModel::selectedPaths() const {
     return paths;
 }
 
+QString DirectoryListModel::entryKey(const odysea::core::Entry& entry) const {
+    return QString::fromStdString(entry.path.lexically_normal().string());
+}
+
 QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) const {
     if (entry.device != 0 && entry.inode != 0) {
         return QStringLiteral("inode:%1:%2")
             .arg(static_cast<qulonglong>(entry.device))
             .arg(static_cast<qulonglong>(entry.inode));
     }
-    return QStringLiteral("path:%1").arg(
-        QString::fromStdString(entry.path.lexically_normal().string()));
+    return {};
 }
 
 void DirectoryListModel::navigateTo(const QString& path, bool recordHistory) {
@@ -454,10 +457,6 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         if (!showHidden_ && odysea::core::is_hidden_name(entry.name)) {
             continue;
         }
-        if (operationBusy_ && odysea::core::classify_working_entry(entry.name) !=
-                                  odysea::core::WorkingEntryRole::None) {
-            continue;
-        }
         if (needle.isEmpty() || name.contains(needle, Qt::CaseInsensitive)) {
             presented.push_back(entry);
         }
@@ -485,14 +484,14 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     }
 
     if (finalScanBatch) {
-        QSet<QString> availableIdentities;
-        availableIdentities.reserve(static_cast<qsizetype>(scannedEntries_.size()));
+        QSet<QString> availableKeys;
+        availableKeys.reserve(static_cast<qsizetype>(scannedEntries_.size()));
         for (const odysea::core::Entry& entry : scannedEntries_) {
-            availableIdentities.insert(entryIdentity(entry));
+            availableKeys.insert(entryKey(entry));
         }
-        selectedEntryPaths_.intersect(availableIdentities);
-        if (!currentEntryPath_.isEmpty() && !availableIdentities.contains(currentEntryPath_)) {
-            currentEntryPath_.clear();
+        selectedEntryKeys_.intersect(availableKeys);
+        if (!currentEntryKey_.isEmpty() && !availableKeys.contains(currentEntryKey_)) {
+            currentEntryKey_.clear();
         }
     }
 
@@ -503,9 +502,9 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     rubberBandBase_.clear();
     rebuildSelectionRows();
     currentIndex_ = -1;
-    if (!currentEntryPath_.isEmpty()) {
+    if (!currentEntryKey_.isEmpty()) {
         for (int row = 0; row < rowCount(); ++row) {
-            if (entryIdentity(entries_[static_cast<std::size_t>(row)]) == currentEntryPath_) {
+            if (entryKey(entries_[static_cast<std::size_t>(row)]) == currentEntryKey_) {
                 currentIndex_ = row;
                 break;
             }
@@ -513,7 +512,7 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     }
     if (currentIndex_ < 0 && finalScanBatch && !entries_.empty()) {
         currentIndex_ = 0;
-        currentEntryPath_ = entryIdentity(entries_.front());
+        currentEntryKey_ = entryKey(entries_.front());
     }
     selectionAnchor_ = currentIndex_;
     endResetModel();
@@ -554,24 +553,24 @@ void DirectoryListModel::setCurrentIndex(int row) {
         return;
     }
     currentIndex_ = row;
-    currentEntryPath_ = row >= 0 && row < rowCount()
-                            ? entryIdentity(entries_[static_cast<std::size_t>(row)])
-                            : QString{};
+    currentEntryKey_ = row >= 0 && row < rowCount()
+                           ? entryKey(entries_[static_cast<std::size_t>(row)])
+                           : QString{};
     emit currentIndexChanged();
 }
 
 void DirectoryListModel::replaceSelection(QSet<int> selection) {
-    QSet<QString> identities;
+    QSet<QString> keys;
     for (const int row : selection) {
         if (row >= 0 && row < rowCount()) {
-            identities.insert(entryIdentity(entries_[static_cast<std::size_t>(row)]));
+            keys.insert(entryKey(entries_[static_cast<std::size_t>(row)]));
         }
     }
-    if (selectedRows_ == selection && selectedEntryPaths_ == identities) {
+    if (selectedRows_ == selection && selectedEntryKeys_ == keys) {
         return;
     }
     selectedRows_ = std::move(selection);
-    selectedEntryPaths_ = std::move(identities);
+    selectedEntryKeys_ = std::move(keys);
     notifySelectionRoles();
     emit selectedCountChanged();
 }
@@ -579,7 +578,7 @@ void DirectoryListModel::replaceSelection(QSet<int> selection) {
 void DirectoryListModel::rebuildSelectionRows() {
     selectedRows_.clear();
     for (int row = 0; row < rowCount(); ++row) {
-        if (selectedEntryPaths_.contains(entryIdentity(entries_[static_cast<std::size_t>(row)]))) {
+        if (selectedEntryKeys_.contains(entryKey(entries_[static_cast<std::size_t>(row)]))) {
             selectedRows_.insert(row);
         }
     }

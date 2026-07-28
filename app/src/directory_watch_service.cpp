@@ -72,6 +72,7 @@ void DirectoryWatchService::run() {
                                                   .directory = requestedDirectory,
                                                   .removedNames = {},
                                                   .updatedEntries = {},
+                                                  .renamedEntries = {},
                                                   .error = creationError_,
                                                   .rescanRequired = false});
                 }
@@ -95,6 +96,7 @@ void DirectoryWatchService::run() {
                                                   .directory = activeDirectory,
                                                   .removedNames = {},
                                                   .updatedEntries = {},
+                                                  .renamedEntries = {},
                                                   .error = addError,
                                                   .rescanRequired = false});
                 }
@@ -152,9 +154,12 @@ DirectoryWatchService::makeUpdate(std::uint64_t token, const std::filesystem::pa
                                 .directory = directory,
                                 .removedNames = {},
                                 .updatedEntries = {},
+                                .renamedEntries = {},
                                 .error = error,
                                 .rescanRequired = false};
     std::map<std::string, PendingChange> pending;
+    std::map<std::uint32_t, std::string> movedFrom;
+    std::map<std::uint32_t, std::string> movedTo;
 
     for (const odysea::core::DirectoryChange& change : changes) {
         switch (change.kind) {
@@ -165,17 +170,31 @@ DirectoryWatchService::makeUpdate(std::uint64_t token, const std::filesystem::pa
             if (!change.name.empty()) {
                 pending[change.name] = PendingChange::Update;
             }
+            if (change.rename_cookie != 0 && !change.name.empty()) {
+                movedTo[change.rename_cookie] = change.name;
+            }
             break;
         case odysea::core::ChangeKind::Deleted:
         case odysea::core::ChangeKind::MovedFrom:
             if (!change.name.empty()) {
                 pending[change.name] = PendingChange::Remove;
             }
+            if (change.rename_cookie != 0 && !change.name.empty()) {
+                movedFrom[change.rename_cookie] = change.name;
+            }
             break;
         case odysea::core::ChangeKind::WatchRemoved:
         case odysea::core::ChangeKind::Overflow:
             update.rescanRequired = true;
             break;
+        }
+    }
+
+    for (const auto& [cookie, oldName] : movedFrom) {
+        const auto destination = movedTo.find(cookie);
+        if (destination != movedTo.end()) {
+            update.renamedEntries.push_back(
+                DirectoryEntryRename{.oldName = oldName, .newName = destination->second});
         }
     }
 

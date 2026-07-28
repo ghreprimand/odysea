@@ -147,21 +147,68 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         return;
     }
 
-    QSet<QString> updatedIdentities;
-    for (const odysea::core::Entry& updated : update.updatedEntries) {
-        updatedIdentities.insert(entryIdentity(updated));
+    QSet<QString> remappedOldKeys;
+    const auto remapKey = [this, &remappedOldKeys](const odysea::core::Entry& oldEntry,
+                                                   const odysea::core::Entry& newEntry) {
+        const QString oldKey = entryKey(oldEntry);
+        const QString newKey = entryKey(newEntry);
+        remappedOldKeys.insert(oldKey);
+        if (selectedEntryKeys_.remove(oldKey)) {
+            selectedEntryKeys_.insert(newKey);
+        }
+        if (currentEntryKey_ == oldKey) {
+            currentEntryKey_ = newKey;
+        }
+    };
+
+    for (const DirectoryEntryRename& rename : update.renamedEntries) {
+        const auto oldEntry =
+            std::ranges::find(scannedEntries_, rename.oldName, &odysea::core::Entry::name);
+        const auto newEntry =
+            std::ranges::find(update.updatedEntries, rename.newName, &odysea::core::Entry::name);
+        if (oldEntry != scannedEntries_.end() && newEntry != update.updatedEntries.end()) {
+            remapKey(*oldEntry, *newEntry);
+        }
     }
 
     for (const std::string& removedName : update.removedNames) {
-        std::erase_if(scannedEntries_, [this, &removedName, &updatedIdentities](const auto& entry) {
+        const auto oldEntry =
+            std::ranges::find(scannedEntries_, removedName, &odysea::core::Entry::name);
+        if (oldEntry == scannedEntries_.end() || remappedOldKeys.contains(entryKey(*oldEntry))) {
+            continue;
+        }
+
+        const QString identity = entryIdentity(*oldEntry);
+        if (identity.isEmpty()) {
+            continue;
+        }
+        const auto oldIdentityCount =
+            std::ranges::count_if(scannedEntries_, [this, &identity](const auto& entry) {
+                return entryIdentity(entry) == identity;
+            });
+        const auto newIdentityCount =
+            std::ranges::count_if(update.updatedEntries, [this, &identity](const auto& entry) {
+                return entryIdentity(entry) == identity;
+            });
+        if (oldIdentityCount == 1 && newIdentityCount == 1) {
+            const auto newEntry =
+                std::ranges::find_if(update.updatedEntries, [this, &identity](const auto& entry) {
+                    return entryIdentity(entry) == identity;
+                });
+            remapKey(*oldEntry, *newEntry);
+        }
+    }
+
+    for (const std::string& removedName : update.removedNames) {
+        std::erase_if(scannedEntries_, [this, &removedName, &remappedOldKeys](const auto& entry) {
             if (entry.name != removedName) {
                 return false;
             }
-            const QString identity = entryIdentity(entry);
-            if (!updatedIdentities.contains(identity)) {
-                selectedEntryPaths_.remove(identity);
-                if (currentEntryPath_ == identity) {
-                    currentEntryPath_.clear();
+            const QString key = entryKey(entry);
+            if (!remappedOldKeys.contains(key)) {
+                selectedEntryKeys_.remove(key);
+                if (currentEntryKey_ == key) {
+                    currentEntryKey_.clear();
                 }
             }
             return true;
@@ -169,10 +216,10 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
     }
 
     for (odysea::core::Entry& updated : update.updatedEntries) {
-        const QString identity = entryIdentity(updated);
+        const QString key = entryKey(updated);
         const auto existing =
-            std::ranges::find_if(scannedEntries_, [this, &updated, &identity](const auto& entry) {
-                return entryIdentity(entry) == identity || entry.name == updated.name;
+            std::ranges::find_if(scannedEntries_, [this, &updated, &key](const auto& entry) {
+                return entryKey(entry) == key || entry.name == updated.name;
             });
         if (existing == scannedEntries_.end()) {
             scannedEntries_.push_back(std::move(updated));

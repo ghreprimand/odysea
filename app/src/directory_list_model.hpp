@@ -161,6 +161,7 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] const PaneState& currentPane() const;
     [[nodiscard]] QString normalizedPath(const QString& path) const;
     [[nodiscard]] QStringList selectedPaths() const;
+    [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
     [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
     [[nodiscard]] odysea::core::OperationOptions operationOptions(int conflictMode) const;
 
@@ -194,12 +195,12 @@ class DirectoryListModel : public QAbstractListModel {
     QString filterText_;
     QString statusMessage_;
     QString operationErrorString_;
-    QString currentEntryPath_;
+    QString currentEntryKey_;
     std::vector<odysea::core::Entry> scannedEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
     QSet<int> selectedRows_;
-    QSet<QString> selectedEntryPaths_;
+    QSet<QString> selectedEntryKeys_;
     QSet<int> rubberBandBase_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
     odysea::core::DirectoryScanner scanner_;

@@ -1,5 +1,7 @@
 #include "directory_list_model.hpp"
 
+#include "file_operations_internal.hpp"
+
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QTemporaryDir>
@@ -8,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 
@@ -18,6 +21,11 @@ namespace {
 void writeFile(const fs::path& path, std::string_view contents = "data") {
     std::ofstream stream(path, std::ios::binary);
     stream << contents;
+}
+
+std::string readFile(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
 int rowForName(const DirectoryListModel& model, const QString& name) {
@@ -36,6 +44,41 @@ QString selectedName(const DirectoryListModel& model) {
         }
     }
     return {};
+}
+
+QString currentName(const DirectoryListModel& model) {
+    const int row = model.currentIndex();
+    if (row < 0 || row >= model.rowCount()) {
+        return {};
+    }
+    return model.data(model.index(row), DirectoryListModel::NameRole).toString();
+}
+
+fs::path workingEntry(const fs::path& directory, odysea::core::WorkingEntryRole role) {
+    std::error_code error;
+    fs::directory_iterator element(directory, error);
+    if (error) {
+        return {};
+    }
+    const fs::directory_iterator end;
+    for (; element != end; ++element) {
+        if (odysea::core::classify_working_entry(element->path().filename().string()) == role) {
+            return element->path();
+        }
+    }
+    return {};
+}
+
+odysea::core::detail::RenameStep failInstallAndUnwind() {
+    return [](odysea::core::detail::RenameKind kind, const fs::path& from, const fs::path& to,
+              std::error_code& error) {
+        if (kind == odysea::core::detail::RenameKind::Install ||
+            kind == odysea::core::detail::RenameKind::Unwind) {
+            error = std::make_error_code(std::errc::permission_denied);
+            return;
+        }
+        odysea::core::detail::rename_with_filesystem(kind, from, to, error);
+    };
 }
 
 class EnvironmentRestore {
@@ -69,9 +112,11 @@ class DirectoryListModelTest : public QObject {
     void rapidNavigationCancelsStaleBatches();
     void incrementalScannerPublishesBatches();
     void watcherBurstPreservesRenamedSelection();
+    void hardLinksRemainDistinctAcrossRefreshAndRename();
+    void uniqueInodeFallbackPreservesRename();
     void selectionSurvivesSortFilterAndRefresh();
     void operationsReachCoreAndReportFailures();
-    void recoveryEntriesFollowHiddenFileVisibility();
+    void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
     void destructionDropsQueuedWorkerCallbacks();
 };
@@ -146,6 +191,75 @@ void DirectoryListModelTest::watcherBurstPreservesRenamedSelection() {
     QTRY_COMPARE_WITH_TIMEOUT(rowForName(model, QStringLiteral("created-a.txt")), -1, 5000);
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("renamed.txt"));
+}
+
+void DirectoryListModelTest::hardLinksRemainDistinctAcrossRefreshAndRename() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "first.txt", "shared");
+    fs::create_hard_link(root / "first.txt", root / "second.txt");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("first.txt")), Qt::NoModifier);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("first.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("first.txt"));
+
+    model.setSortMode(DirectoryListModel::SortBySize);
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("first.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("first.txt"));
+
+    writeFile(root / "unrelated.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("unrelated.txt")) >= 0, 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("first.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("first.txt"));
+
+    fs::rename(root / "second.txt", root / "alternate.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("alternate.txt")) >= 0, 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("first.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("first.txt"));
+
+    fs::rename(root / "first.txt", root / "renamed.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("renamed.txt")) >= 0, 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("renamed.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("renamed.txt"));
+}
+
+void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "before.txt");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("before.txt")), Qt::NoModifier);
+    model.watchService_.stop();
+
+    fs::rename(root / "before.txt", root / "after.txt");
+    const odysea::core::Entry renamed =
+        odysea::core::make_entry(fs::directory_entry(root / "after.txt"));
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"before.txt"},
+                                                .updatedEntries = {renamed},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("after.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("after.txt"));
 }
 
 void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {
@@ -237,20 +351,43 @@ void DirectoryListModelTest::operationsReachCoreAndReportFailures() {
     QVERIFY(!model.operationErrorString().isEmpty());
 }
 
-void DirectoryListModelTest::recoveryEntriesFollowHiddenFileVisibility() {
+void DirectoryListModelTest::retainedRecoveryRemainsVisibleDuringOperation() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
-    const fs::path recovery = fs::path(fixture.path().toStdString()) / ".odysea-old-000000000000-1";
-    writeFile(recovery, "recoverable");
+    const fs::path root = fixture.path().toStdString();
+    const fs::path source = root / "source" / "project";
+    const fs::path target = root / "target";
+    fs::create_directories(source);
+    fs::create_directories(target / "project");
+    writeFile(source / "kept.txt", "only copy");
+    writeFile(target / "project" / "existing.txt", "existing");
+
+    const odysea::core::OperationOutcome outcome = odysea::core::detail::move_into_using(
+        source, target, {.conflict = odysea::core::ConflictPolicy::Overwrite},
+        failInstallAndUnwind());
+    QVERIFY(!outcome.succeeded());
+    QVERIFY(!fs::exists(source));
+    const fs::path retained = workingEntry(target, odysea::core::WorkingEntryRole::Prepared);
+    QVERIFY(!retained.empty());
+    QCOMPARE(QString::fromStdString(readFile(retained / "kept.txt")), QStringLiteral("only copy"));
 
     DirectoryListModel model;
-    model.setPath(fixture.path());
+    model.setPath(QString::fromStdString(target.string()));
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.rowCount(), 0);
+    QCOMPARE(model.rowCount(), 1);
 
     model.setShowHidden(true);
-    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 1, 1000);
-    QCOMPARE(model.data(model.index(0), DirectoryListModel::RecoveryEntryRole).toBool(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 2, 1000);
+    const int retainedRow = rowForName(model, QString::fromStdString(retained.filename().string()));
+    QVERIFY(retainedRow >= 0);
+    QCOMPARE(model.data(model.index(retainedRow), DirectoryListModel::RecoveryEntryRole).toBool(),
+             true);
+
+    model.setOperationBusy(true);
+    model.applyPresentationSettings();
+    QCOMPARE(model.rowCount(), 2);
+    QVERIFY(rowForName(model, QString::fromStdString(retained.filename().string())) >= 0);
+    QVERIFY(fs::exists(retained / "kept.txt"));
 }
 
 void DirectoryListModelTest::overflowRequestsARescan() {
@@ -267,6 +404,7 @@ void DirectoryListModelTest::overflowRequestsARescan() {
                                                 .directory = root,
                                                 .removedNames = {},
                                                 .updatedEntries = {},
+                                                .renamedEntries = {},
                                                 .error = {},
                                                 .rescanRequired = true});
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);

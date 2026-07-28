@@ -49,6 +49,9 @@ install(TARGETS odysea RUNTIME DESTINATION bin)
 qt_add_executable(odysea_app_tests
     tests/tst_directory_list_model.cpp)
 
+target_include_directories(odysea_app_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/core/src)
+
 target_link_libraries(odysea_app_tests
     PRIVATE
         odysea_app_adapter Qt6::Test
