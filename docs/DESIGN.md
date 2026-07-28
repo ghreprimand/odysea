@@ -60,14 +60,17 @@ terminal file manager. Achieving both at once is a deliberate design target.
 
 The codebase separates a toolkit-agnostic core from the presentation layer:
 
-- **`core/` (pure C++20, no Qt).** Directory reading, entry metadata, sorting,
-  and — as the roadmap advances — filesystem operations and a watch/refresh
-  mechanism. It has no GUI dependency and is unit-tested headless. This is where
-  the performance-critical work lives, deliberately free of framework overhead.
+- **`core/` (pure C++20, no Qt).** Directory reading, stable entry identity,
+  cancellable scanning, incremental directory watching, transactional copy,
+  move, and rename, and freedesktop trash support. It has no GUI dependency and
+  is unit-tested headless. This is where the performance-critical work lives,
+  deliberately free of framework overhead.
 - **`app/` (Qt Quick).** The GPU-rendered shell: the QML scene, input handling,
   theming, and (later) thumbnail presentation. A thin adapter
   (`DirectoryListModel`, a `QAbstractListModel`) is the single boundary that
-  exposes the core to QML; the core itself never includes a Qt header.
+  exposes the core to QML. It marshals scanner and watcher callbacks onto the UI
+  thread and schedules mutations away from it; the core itself never includes a
+  Qt header.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

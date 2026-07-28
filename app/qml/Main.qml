@@ -1,11 +1,10 @@
 // OdySea shell foundation. Navigation, selection, filtering, tabs, panes, and
 // filesystem-operation requests expose matching pointer and keyboard paths.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-
-pragma ComponentBehavior: Bound
 
 ApplicationWindow {
     id: root
@@ -67,45 +66,40 @@ ApplicationWindow {
 
         function rowAtContent(contentY) {
             if (listView.count === 0) {
-                return -1
+                return -1;
             }
-            return Math.max(0, Math.min(listView.count - 1,
-                                        Math.floor(contentY / selectionRowHeight)))
+            return Math.max(0, Math.min(listView.count - 1, Math.floor(contentY / selectionRowHeight)));
         }
 
         onPressed: mouse => {
-            originX = mouse.x
-            originContentY = listView.contentY + bandPointer.y + mouse.y
-            selectionRectangle.visible = false
-            selectionModel.beginRubberBand(
-                        (mouse.modifiers & Qt.ControlModifier) !== 0)
-            listView.forceActiveFocus()
+            originX = mouse.x;
+            originContentY = listView.contentY + bandPointer.y + mouse.y;
+            selectionRectangle.visible = false;
+            selectionModel.beginRubberBand((mouse.modifiers & Qt.ControlModifier) !== 0);
+            listView.forceActiveFocus();
         }
 
         onPositionChanged: mouse => {
             if (!pressed) {
-                return
+                return;
             }
-            const pointerContentY = listView.contentY + bandPointer.y + mouse.y
-            selectionRectangle.visible = true
-            selectionRectangle.x = bandPointer.x + Math.min(originX, mouse.x)
-            selectionRectangle.y = Math.min(originContentY, pointerContentY)
-                    - listView.contentY
-            selectionRectangle.width = Math.abs(mouse.x - originX)
-            selectionRectangle.height = Math.abs(pointerContentY - originContentY)
-            selectionModel.updateRubberBand(
-                        rowAtContent(originContentY),
-                        rowAtContent(pointerContentY))
+            const pointerContentY = listView.contentY + bandPointer.y + mouse.y;
+            selectionRectangle.visible = true;
+            selectionRectangle.x = bandPointer.x + Math.min(originX, mouse.x);
+            selectionRectangle.y = Math.min(originContentY, pointerContentY) - listView.contentY;
+            selectionRectangle.width = Math.abs(mouse.x - originX);
+            selectionRectangle.height = Math.abs(pointerContentY - originContentY);
+            selectionModel.updateRubberBand(rowAtContent(originContentY), rowAtContent(pointerContentY));
         }
 
         onReleased: {
-            selectionRectangle.visible = false
-            selectionModel.endRubberBand()
+            selectionRectangle.visible = false;
+            selectionModel.endRubberBand();
         }
 
         onCanceled: {
-            selectionRectangle.visible = false
-            selectionModel.endRubberBand()
+            selectionRectangle.visible = false;
+            selectionModel.endRubberBand();
         }
     }
 
@@ -135,28 +129,27 @@ ApplicationWindow {
             highlightMoveDuration: 60
 
             Keys.onPressed: event => {
-                const extend = (event.modifiers & Qt.ShiftModifier) !== 0
-                const preserve = (event.modifiers & Qt.ControlModifier) !== 0
+                const extend = (event.modifiers & Qt.ShiftModifier) !== 0;
+                const preserve = (event.modifiers & Qt.ControlModifier) !== 0;
                 if (event.key === Qt.Key_Up) {
-                    root.shellModel.moveCursor(-1, extend, preserve)
+                    root.shellModel.moveCursor(-1, extend, preserve);
                 } else if (event.key === Qt.Key_Down) {
-                    root.shellModel.moveCursor(1, extend, preserve)
+                    root.shellModel.moveCursor(1, extend, preserve);
                 } else if (event.key === Qt.Key_Home) {
-                    root.shellModel.moveCursorTo(0, extend, preserve)
+                    root.shellModel.moveCursorTo(0, extend, preserve);
                 } else if (event.key === Qt.Key_End) {
-                    root.shellModel.moveCursorTo(directoryList.count - 1, extend, preserve)
+                    root.shellModel.moveCursorTo(directoryList.count - 1, extend, preserve);
                 } else if (event.key === Qt.Key_Space) {
-                    root.shellModel.toggleCurrent()
+                    root.shellModel.toggleCurrent();
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.shellModel.activate(root.shellModel.currentIndex)
+                    root.shellModel.activate(root.shellModel.currentIndex);
                 } else if (event.key === Qt.Key_Escape) {
-                    root.shellModel.clearSelection()
+                    root.shellModel.clearSelection();
                 } else {
-                    return
+                    return;
                 }
-                event.accepted = true
-                directoryList.positionViewAtIndex(root.shellModel.currentIndex,
-                                                  ListView.Contain)
+                event.accepted = true;
+                directoryList.positionViewAtIndex(root.shellModel.currentIndex, ListView.Contain);
             }
 
             delegate: Item {
@@ -168,6 +161,8 @@ ApplicationWindow {
                 required property bool isDir
                 required property double size
                 required property bool selected
+                required property bool recoveryEntry
+                readonly property var entryContextMenu: entryMenu
 
                 width: directoryList.width - pane.selectionGutterWidth
                 height: root.rowHeight
@@ -175,10 +170,8 @@ ApplicationWindow {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: entryRow.selected ? root.selectionColor
-                                             : (rowPointer.containsMouse ? "#28211b" : "transparent")
-                    border.color: root.shellModel.currentIndex === entryRow.index
-                                  ? root.accentColor : "transparent"
+                    color: entryRow.selected ? root.selectionColor : (rowPointer.containsMouse ? "#28211b" : "transparent")
+                    border.color: root.shellModel.currentIndex === entryRow.index ? root.accentColor : "transparent"
                     radius: 4
                 }
 
@@ -192,6 +185,14 @@ ApplicationWindow {
                         text: entryRow.isDir ? "\u25B8" : "\u2022"
                         color: entryRow.isDir ? root.accentColor : "#7a7266"
                         font.pixelSize: 14
+                    }
+
+                    Text {
+                        visible: entryRow.recoveryEntry
+                        text: qsTr("RECOVERY")
+                        color: "#ff8f7a"
+                        font.bold: true
+                        font.pixelSize: 10
                     }
 
                     Text {
@@ -218,16 +219,16 @@ ApplicationWindow {
                     hoverEnabled: true
 
                     onClicked: mouse => {
-                        directoryList.forceActiveFocus()
-                        root.shellModel.selectRow(entryRow.index, mouse.modifiers)
+                        directoryList.forceActiveFocus();
+                        root.shellModel.selectRow(entryRow.index, mouse.modifiers);
                         if (mouse.button === Qt.RightButton) {
-                            entryMenu.popup()
+                            entryMenu.popup();
                         }
                     }
 
                     onDoubleClicked: mouse => {
                         if (mouse.button === Qt.LeftButton) {
-                            root.shellModel.activate(entryRow.index)
+                            root.shellModel.activate(entryRow.index);
                         }
                     }
                 }
@@ -235,24 +236,30 @@ ApplicationWindow {
                 Menu {
                     id: entryMenu
 
+                    objectName: "entryMenu-" + entryRow.index
+
                     MenuItem {
                         text: entryRow.isDir ? qsTr("Open folder") : qsTr("Open")
                         onTriggered: root.shellModel.activate(entryRow.index)
                     }
                     MenuSeparator {}
                     MenuItem {
+                        objectName: "contextCopyAction-" + entryRow.index
                         text: qsTr("Copy")
                         onTriggered: root.shellModel.requestCopy()
                     }
                     MenuItem {
+                        objectName: "contextMoveAction-" + entryRow.index
                         text: qsTr("Move")
                         onTriggered: root.shellModel.requestMove()
                     }
                     MenuItem {
+                        objectName: "contextRenameAction-" + entryRow.index
                         text: qsTr("Rename")
                         onTriggered: root.shellModel.requestRename()
                     }
                     MenuItem {
+                        objectName: "contextTrashAction-" + entryRow.index
                         text: qsTr("Move to Trash")
                         onTriggered: root.shellModel.requestTrash()
                     }
@@ -268,9 +275,7 @@ ApplicationWindow {
                 selectionModel: root.shellModel
                 selectionRowHeight: root.rowHeight
                 x: 0
-                y: Math.max(0, Math.min(directoryList.height,
-                                        directoryList.count * root.rowHeight
-                                        - directoryList.contentY))
+                y: Math.max(0, Math.min(directoryList.height, directoryList.count * root.rowHeight - directoryList.contentY))
                 width: directoryList.width - verticalBar.width
                 height: Math.max(0, directoryList.height - y)
                 z: 0
@@ -310,24 +315,24 @@ ApplicationWindow {
 
     function formatSize(bytes) {
         if (bytes < 1024) {
-            return bytes + " B"
+            return bytes + " B";
         }
         if (bytes < 1024 * 1024) {
-            return (bytes / 1024).toFixed(1) + " KiB"
+            return (bytes / 1024).toFixed(1) + " KiB";
         }
         if (bytes < 1024 * 1024 * 1024) {
-            return (bytes / (1024 * 1024)).toFixed(1) + " MiB"
+            return (bytes / (1024 * 1024)).toFixed(1) + " MiB";
         }
-        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GiB"
+        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GiB";
     }
 
     function activateRelativeTab(offset) {
-        const count = root.shellModel.tabCount
+        const count = root.shellModel.tabCount;
         if (count < 1) {
-            return
+            return;
         }
-        const nextTab = (root.shellModel.activeTab + offset + count) % count
-        root.shellModel.activateTab(nextTab)
+        const nextTab = (root.shellModel.activeTab + offset + count) % count;
+        root.shellModel.activateTab(nextTab);
     }
 
     Shortcut {
@@ -360,15 +365,15 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+L"
         onActivated: {
-            addressField.forceActiveFocus()
-            addressField.selectAll()
+            addressField.forceActiveFocus();
+            addressField.selectAll();
         }
     }
     Shortcut {
         sequence: "Ctrl+F"
         onActivated: {
-            filterField.forceActiveFocus()
-            filterField.selectAll()
+            filterField.forceActiveFocus();
+            filterField.selectAll();
         }
     }
     Shortcut {
@@ -469,15 +474,14 @@ ApplicationWindow {
                     selectByMouse: true
                     placeholderText: qsTr("Location")
                     onAccepted: {
-                        root.shellModel.path = text
-                        text = root.shellModel.path
-                        focus = false
+                        root.shellModel.path = text;
+                        text = root.shellModel.path;
+                        focus = false;
                     }
 
                     background: Rectangle {
                         color: root.backgroundColor
-                        border.color: addressField.activeFocus ? root.accentColor
-                                                               : root.borderColor
+                        border.color: addressField.activeFocus ? root.accentColor : root.borderColor
                         radius: 5
                     }
                 }
@@ -487,7 +491,7 @@ ApplicationWindow {
 
                     function onPathChanged() {
                         if (!addressField.activeFocus) {
-                            addressField.text = root.shellModel.path
+                            addressField.text = root.shellModel.path;
                         }
                     }
                 }
@@ -587,8 +591,7 @@ ApplicationWindow {
 
                     background: Rectangle {
                         color: root.panelColor
-                        border.color: filterField.activeFocus ? root.accentColor
-                                                              : root.borderColor
+                        border.color: filterField.activeFocus ? root.accentColor : root.borderColor
                         radius: 5
                     }
                 }
@@ -622,29 +625,33 @@ ApplicationWindow {
                 }
 
                 ShellButton {
+                    objectName: "copyButton"
                     text: qsTr("Copy")
-                    enabled: root.shellModel.selectedCount > 0
+                    enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Copy selection (Ctrl+C)")
                     onClicked: root.shellModel.requestCopy()
                 }
                 ShellButton {
+                    objectName: "moveButton"
                     text: qsTr("Move")
-                    enabled: root.shellModel.selectedCount > 0
+                    enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Move selection (Ctrl+X)")
                     onClicked: root.shellModel.requestMove()
                 }
                 ShellButton {
+                    objectName: "renameButton"
                     text: qsTr("Rename")
-                    enabled: root.shellModel.selectedCount === 1
+                    enabled: root.shellModel.selectedCount === 1 && !root.shellModel.operationBusy
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Rename selection (F2)")
                     onClicked: root.shellModel.requestRename()
                 }
                 ShellButton {
+                    objectName: "trashButton"
                     text: qsTr("Trash")
-                    enabled: root.shellModel.selectedCount > 0
+                    enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Move selection to trash (Delete)")
                     onClicked: root.shellModel.requestTrash()
@@ -717,6 +724,16 @@ ApplicationWindow {
         }
     }
 
+    FilesystemDialogs {
+        shellModel: root.shellModel
+        backgroundColor: root.backgroundColor
+        panelColor: root.panelColor
+        borderColor: root.borderColor
+        primaryTextColor: root.primaryTextColor
+        secondaryTextColor: root.secondaryTextColor
+        accentColor: root.accentColor
+    }
+
     footer: Rectangle {
         implicitHeight: 30
         color: root.panelColor
@@ -729,7 +746,7 @@ ApplicationWindow {
             spacing: 12
 
             BusyIndicator {
-                visible: root.shellModel.busy
+                visible: root.shellModel.busy || root.shellModel.operationBusy
                 running: visible
                 implicitWidth: 20
                 implicitHeight: 20
@@ -737,11 +754,8 @@ ApplicationWindow {
 
             Text {
                 Layout.fillWidth: true
-                text: root.shellModel.errorString.length > 0
-                      ? qsTr("Could not read folder: ") + root.shellModel.errorString
-                      : root.shellModel.statusMessage
-                color: root.shellModel.errorString.length > 0 ? "#ff8f7a"
-                                                              : root.secondaryTextColor
+                text: root.shellModel.operationErrorString.length > 0 ? root.shellModel.operationErrorString : (root.shellModel.errorString.length > 0 ? qsTr("Could not read folder: ") + root.shellModel.errorString : root.shellModel.statusMessage)
+                color: root.shellModel.operationErrorString.length > 0 || root.shellModel.errorString.length > 0 ? "#ff8f7a" : root.secondaryTextColor
                 elide: Text.ElideRight
                 font.pixelSize: 12
             }
@@ -753,8 +767,7 @@ ApplicationWindow {
             }
 
             Text {
-                text: qsTr("Pane %1 of %2").arg(root.shellModel.activePane + 1)
-                      .arg(root.shellModel.paneCount)
+                text: qsTr("Pane %1 of %2").arg(root.shellModel.activePane + 1).arg(root.shellModel.paneCount)
                 color: root.secondaryTextColor
                 font.pixelSize: 12
             }

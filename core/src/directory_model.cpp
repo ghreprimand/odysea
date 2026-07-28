@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <sys/stat.h>
 
 namespace odysea::core {
 namespace fs = std::filesystem;
@@ -40,6 +41,11 @@ Entry make_entry(const fs::directory_entry& element) {
     entry.path = element.path();
     entry.kind = classify(element, ec);
     entry.size = (entry.kind == EntryKind::File) ? element.file_size(ec) : 0;
+    struct ::stat metadata{};
+    if (::lstat(entry.path.c_str(), &metadata) == 0) {
+        entry.device = static_cast<std::uint64_t>(metadata.st_dev);
+        entry.inode = static_cast<std::uint64_t>(metadata.st_ino);
+    }
     return entry;
 }
 

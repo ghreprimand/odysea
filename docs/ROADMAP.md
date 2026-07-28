@@ -8,21 +8,21 @@ graphical shell grows around it.
 - [x] Toolkit-agnostic filesystem model (`core/`): entries, metadata, sorting.
 - [x] Headless test suite, runnable under AddressSanitizer.
 - [x] Minimal GPU-rendered listing view (Qt Quick `ListView`).
-- [ ] Filesystem operations: copy, move, rename, delete (to trash).
-- [ ] Directory watch and incremental refresh.
+- [x] Filesystem operations: copy, move, rename, delete (to trash).
+- [x] Directory watch and incremental refresh.
 
 ## M1 — Navigation state
 
-- [ ] Navigation history (back/forward/up) and current-location model.
-- [ ] Selection model (single, range, toggle) — driven by both keyboard
+- [x] Navigation history (back/forward/up) and current-location model.
+- [x] Selection model (single, range, toggle) — driven by both keyboard
       (space/shift/ctrl+arrows) and mouse (click, ctrl/shift-click, rubber-band).
-- [ ] Sort and filter settings; hidden-file toggle in the UI.
-- [ ] Tab and pane model.
+- [x] Sort and filter settings; hidden-file toggle in the UI.
+- [x] Tab and pane model.
 
 ## M2 — Shell views
 
 - [ ] Grid view with asynchronous, cached thumbnails.
-- [ ] Off-thread directory scanning so the UI never stalls.
+- [x] Off-thread directory scanning so the UI never stalls.
 - [ ] Keyboard navigation and type-ahead.
 - [ ] Mouse interaction parity: double-click open, context menus,
       drag-and-drop (internal + drag-out), clickable breadcrumbs.

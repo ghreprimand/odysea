@@ -7,6 +7,42 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Live core integration and recoverable operations
+
+The Qt adapter now owns the cancellable core scanner and consumes incremental
+batches through queued UI-thread delivery. Rapid navigation cancels superseded
+work. A stoppable worker owns the inotify watcher, coalesces each event burst,
+resolves changed metadata off the GUI thread, incrementally updates affected
+entries, replaces watches after navigation, and requests a full scan after an
+overflow or removed watch.
+
+Directory entries carry device and inode identity from the Qt-free core. The
+adapter keys selection by directory-entry path so distinct hard links never
+collapse, remaps paired rename events by their inotify cookie, and uses inode
+identity only as a fallback when it is unique in both event sets. Selection and
+the current row therefore survive sorting, filtering, scanning, watch
+refreshes, and external renames without relying on presentation indices.
+Hidden operation-recovery entries remain absent from the default listing but
+become visible and clearly labeled when hidden files are enabled. They are
+never suppressed after discovery, including while an unrelated operation is
+active; watcher refreshes are deferred until that operation settles.
+
+Copy, move, rename, and move-to-trash now run off the GUI thread through the
+core transactional APIs. Destination and rename dialogs expose conflict
+handling, trash requires confirmation, failures open an error dialog and remain
+visible in the status area, and every operation is reachable through standard
+keyboard shortcuts, toolbar buttons, and entry context menus.
+
+Adapter tests cover incremental batches, rapid-navigation cancellation, watcher
+bursts and overflow recovery, hard-link-safe rename remapping, queued-callback
+destruction, mutation success and failure, stable selection, and forced
+retention of sole-copy recovery data. Rendered-shell tests cover keyboard,
+toolbar, context-menu, dialog-confirmation, and error-feedback paths. Verified
+with QML linting, formatting, static analysis, the tracked-file length and
+public-repository guards, warning-clean release and sanitizer builds, both
+complete CTest suites, repeated stress runs, and headless release and sanitizer
+smoke launches.
+
 ## 2026-07-28 -- Number collisions within the name limit, and correct the working-entry contract
 
 Two corrections to the public contract of the mutation primitives.

@@ -11,10 +11,14 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
+#include "directory_watch_service.hpp"
+#include "filesystem_operation_job.hpp"
 #include "odysea/core/directory_model.hpp"
+#include "odysea/core/directory_scanner.hpp"
 
 class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
@@ -34,14 +38,28 @@ class DirectoryListModel : public QAbstractListModel {
     Q_PROPERTY(int paneCount READ paneCount NOTIFY panesChanged)
     Q_PROPERTY(int activePane READ activePane NOTIFY panesChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
+    Q_PROPERTY(bool operationBusy READ operationBusy NOTIFY operationBusyChanged)
+    Q_PROPERTY(
+        QString operationErrorString READ operationErrorString NOTIFY operationErrorStringChanged)
 
   public:
-    enum Roles { NameRole = Qt::UserRole + 1, IsDirRole, SizeRole, PathRole, SelectedRole };
+    enum Roles {
+        NameRole = Qt::UserRole + 1,
+        IsDirRole,
+        SizeRole,
+        PathRole,
+        SelectedRole,
+        RecoveryEntryRole
+    };
 
     enum SortMode { SortByName = 0, SortBySize, SortByType };
     Q_ENUM(SortMode)
 
+    enum ConflictMode { ConflictFail = 0, ConflictOverwrite, ConflictAutoRename };
+    Q_ENUM(ConflictMode)
+
     explicit DirectoryListModel(QObject* parent = nullptr);
+    ~DirectoryListModel() override;
 
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
@@ -70,6 +88,8 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] int paneCount() const noexcept;
     [[nodiscard]] int activePane() const noexcept;
     [[nodiscard]] QString statusMessage() const;
+    [[nodiscard]] bool operationBusy() const noexcept;
+    [[nodiscard]] QString operationErrorString() const;
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void goBack();
@@ -98,6 +118,10 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void requestMove();
     Q_INVOKABLE void requestRename();
     Q_INVOKABLE void requestTrash();
+    Q_INVOKABLE void performCopy(const QString& destinationDirectory, int conflictMode);
+    Q_INVOKABLE void performMove(const QString& destinationDirectory, int conflictMode);
+    Q_INVOKABLE void performRename(const QString& newName, int conflictMode);
+    Q_INVOKABLE void performTrash();
 
   signals:
     void pathChanged();
@@ -112,15 +136,13 @@ class DirectoryListModel : public QAbstractListModel {
     void tabsChanged();
     void panesChanged();
     void statusMessageChanged();
+    void operationBusyChanged();
+    void operationErrorStringChanged();
     void openRequested(const QString& path);
     void filesystemOperationRequested(const QString& operation, const QStringList& paths);
 
   private:
-    struct ScanResult {
-        std::uint64_t generation = 0;
-        std::vector<odysea::core::Entry> entries;
-        std::string errorMessage;
-    };
+    friend class DirectoryListModelTest;
 
     struct TabState {
         QString path;
@@ -139,38 +161,63 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] const PaneState& currentPane() const;
     [[nodiscard]] QString normalizedPath(const QString& path) const;
     [[nodiscard]] QStringList selectedPaths() const;
+    [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
+    [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
+    [[nodiscard]] odysea::core::OperationOptions operationOptions(int conflictMode) const;
 
     void navigateTo(const QString& path, bool recordHistory);
     void setCurrentPath(const QString& path);
     void startScan();
-    void applyScanResult(ScanResult result);
-    void applyPresentationSettings();
+    void receiveScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
+    void receiveScanComplete(odysea::core::ScanSummary summary);
+    void applyWatchUpdate(DirectoryWatchUpdate update);
+    void replaceWatch();
+    void applyPresentationSettings(bool finalScanBatch = false);
     void setBusy(bool busy);
     void setErrorString(const QString& errorString);
     void setStatusMessage(const QString& statusMessage);
+    void setOperationBusy(bool busy);
+    void setOperationErrorString(const QString& errorString);
     void setCurrentIndex(int row);
     void replaceSelection(QSet<int> selection);
+    void rebuildSelectionRows();
     void selectRangeTo(int row);
     void notifySelectionRoles();
     void requestOperation(const QString& operation);
+    void startOperation(FilesystemOperationRequest request);
+    void finishOperation(FilesystemOperationResult result);
+    void postScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
+    void postScanComplete(odysea::core::ScanSummary summary);
+    void postWatchUpdate(DirectoryWatchUpdate update);
 
     QString path_;
     QString errorString_;
     QString filterText_;
     QString statusMessage_;
+    QString operationErrorString_;
+    QString currentEntryKey_;
     std::vector<odysea::core::Entry> scannedEntries_;
+    std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
     QSet<int> selectedRows_;
+    QSet<QString> selectedEntryKeys_;
     QSet<int> rubberBandBase_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
-    QFutureWatcher<ScanResult> scanWatcher_;
-    std::uint64_t scanGeneration_ = 0;
+    odysea::core::DirectoryScanner scanner_;
+    DirectoryWatchService watchService_;
+    QFutureWatcher<FilesystemOperationResult> operationWatcher_;
+    std::atomic<bool> deliverCallbacks_{true};
+    std::uint64_t activeScanToken_ = 0;
+    std::uint64_t watchToken_ = 0;
     int sortMode_ = SortByName;
     int currentIndex_ = -1;
     int selectionAnchor_ = -1;
     int activePane_ = 0;
     int paneCount_ = 1;
     bool busy_ = false;
+    bool operationBusy_ = false;
     bool showHidden_ = false;
     bool rubberBandActive_ = false;
+    bool scanReceivedBatch_ = false;
+    bool watchRefreshPending_ = false;
 };
