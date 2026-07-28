@@ -37,6 +37,107 @@ restoring the previous two-extension gate fails eleven, a gate that inspects
 nothing fails all thirteen on rejection, and a gate that always fails fails all
 thirteen on acceptance.
 
+## 2026-07-28 -- Bounded, cancellable thumbnail scheduling
+
+Thumbnail work now runs on a small pool of core workers behind two interfaces
+the caller supplies: one that turns a file into pixels and one that reads and
+writes the persistent cache. Both are free of any toolkit type, so scheduling is
+verified headless with fakes, without a codec, an image file, or a display
+server. Results are delivered on a worker thread and never while a lock is held,
+matching the directory scanner so a consumer marshals both the same way.
+
+Four properties decide whether a grid of thumbnails stays usable, and each is
+enforced rather than assumed. Asking repeatedly for one source decodes it once
+while still answering every request separately. Entries the user can see are
+decoded before entries they cannot. Work belonging to a location the view has
+left is dropped: refused at the door, purged from the queue, skipped at the
+moment it would be claimed, and suppressed at delivery, so a decode already
+running still populates the cache but answers nobody. Decoded pixels are
+retained under a byte budget, evicting least-recently-used entries, and results
+are shared so an image already handed out survives its own eviction.
+
+Two smaller bounds keep pathological directories cheap. A source that cannot be
+decoded is remembered, so a directory full of files no codec understands is not
+attempted again on every pass, and forgetting that record makes the source
+eligible again. The queue itself is bounded, dropping the oldest background
+request rather than growing without limit.
+
+A stored thumbnail is used only after the recorded description is checked
+against the source, so an out-of-date file on disk is replaced instead of shown.
+Shutdown stops accepting work, suppresses delivery, and joins every worker
+before returning, so no result arrives after the service is gone.
+
+Verified with a headless scheduling suite built entirely on latches and
+counters, with no sleeps, repeated twenty-five times without variation.
+Reverting a guard fails it: removing deduplication, eviction, refusal memory,
+priority ordering, the queue bound, the stored-description check, or request
+withdrawal each fails checks, and replacing the joining shutdown with a
+detaching one crashes outright. Cancellation is deliberately defended at four
+points, so removing any one of them alone is caught by the others; removing the
+whole layer fails seven checks.
+
+Known gap: no view consumes this yet, and nothing here decodes an image, so the
+roadmap entry for thumbnails remains unchecked.
+
+## 2026-07-28 -- Interoperable thumbnail cache policy
+
+The core now decides which thumbnail is wanted, where it belongs, and whether a
+stored one still describes its source. Decoding is deliberately absent: a codec
+belongs with the presentation layer that already links one, while everything
+that has to be verified without a display server stays here.
+
+Cache layout follows the freedesktop.org Thumbnail Managing Standard. Source
+paths become `file://` URIs, cache files are named after the digest of those
+URIs, sizes map to the standard directories, and refused sources are recorded
+under a directory namespaced by application and version so a later version
+retries what an earlier one declined.
+
+URI escaping matters more than it appears. The trash specification and the
+thumbnail cache want different byte sets, and reusing the trash escaping would
+have escaped characters other desktops leave literal. Because the cache file
+name is the digest of those exact bytes, the result would have been a private
+cache invisible to every other application and blind to theirs, with no
+symptom. The escaping is therefore pinned by expectations taken from an
+established implementation rather than from this one.
+
+Validity is checked on inspection, not assumed from the file name. A digest
+carries no collision guarantee, so a stored thumbnail is accepted only when the
+source URI recorded inside it matches, the recorded modification time matches,
+and the recorded length matches whenever the writer recorded one. Stored
+thumbnails are themselves never thumbnailed.
+
+Describing a source resolves symbolic links for content metadata while still
+addressing the path as the caller named it, so a link appears under its own
+name yet its thumbnail goes stale when the contents it points at change. Listing
+metadata describes the link and cannot be reused for this, which the headers of
+both components now state.
+
+Verified with a headless policy suite covering the published digest vectors and
+every padding boundary, the escaping expectations, cache layout and fallbacks,
+key derivation across links and refused sources, and the validity rules.
+Reverting any single guard fails that suite: the trash escaping fails two URI
+expectations, a corrupted round constant fails eighteen checks, dropping the
+recorded-URI comparison fails the collision case, describing the link instead of
+its target fails four checks, and removing the cache exclusion fails two.
+
+Known gap: nothing consumes this yet. Scheduling, caching, and the decoding
+layer are still open, so the roadmap entry for thumbnails remains unchecked.
+
+## 2026-07-28 -- Directory entries carry a modification timestamp
+
+Listings now expose the last content-modification time of every entry in whole
+Unix seconds. The value comes from the metadata lookup the listing already
+performs, so no additional system call is made per entry.
+
+The timestamp describes the listed entry itself and never the target of a
+symbolic link, matching the size and identity fields beside it. Selection
+identity depends on telling a link apart from what it points at, so a cache
+keyed on file contents resolves target metadata separately rather than
+reinterpreting this field. The header states that boundary.
+
+Verified with the headless listing suite, which pins a symbolic link and its
+target to deliberately different times and requires each entry to report its
+own; resolving the link instead fails that check.
 ## 2026-07-28 -- Establish deterministic QML quality gates
 
 The declarative shell now has a repository-owned `qmlformat` baseline using Qt

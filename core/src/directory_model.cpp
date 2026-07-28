@@ -45,6 +45,7 @@ Entry make_entry(const fs::directory_entry& element) {
     if (::lstat(entry.path.c_str(), &metadata) == 0) {
         entry.device = static_cast<std::uint64_t>(metadata.st_dev);
         entry.inode = static_cast<std::uint64_t>(metadata.st_ino);
+        entry.modified_seconds = static_cast<std::int64_t>(metadata.st_mtim.tv_sec);
     }
     return entry;
 }
