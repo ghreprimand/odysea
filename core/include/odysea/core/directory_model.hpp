@@ -26,6 +26,15 @@ struct Entry {
     /// sorting, filtering, and refresh. Zero when metadata lookup failed.
     std::uint64_t device = 0;
     std::uint64_t inode = 0;
+    /// Whole seconds of the last content modification, as a Unix timestamp.
+    /// Zero when metadata lookup failed.
+    ///
+    /// Like `size`, `device`, and `inode`, this describes the entry itself and
+    /// never the target of a symbolic link, because selection identity has to
+    /// tell a link apart from what it points at. A consumer that needs the
+    /// target's metadata, such as a cache keyed on file contents, resolves it
+    /// separately instead of reinterpreting this field.
+    std::int64_t modified_seconds = 0;
 
     [[nodiscard]] bool is_directory() const noexcept { return kind == EntryKind::Directory; }
 };

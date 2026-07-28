@@ -7,6 +7,22 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Directory entries carry a modification timestamp
+
+Listings now expose the last content-modification time of every entry in whole
+Unix seconds. The value comes from the metadata lookup the listing already
+performs, so no additional system call is made per entry.
+
+The timestamp describes the listed entry itself and never the target of a
+symbolic link, matching the size and identity fields beside it. Selection
+identity depends on telling a link apart from what it points at, so a cache
+keyed on file contents resolves target metadata separately rather than
+reinterpreting this field. The header states that boundary.
+
+Verified with the headless listing suite, which pins a symbolic link and its
+target to deliberately different times and requires each entry to report its
+own; resolving the link instead fails that check.
+
 ## 2026-07-28 -- Establish deterministic QML quality gates
 
 The declarative shell now has a repository-owned `qmlformat` baseline using Qt

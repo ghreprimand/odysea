@@ -6,11 +6,15 @@
 #include "odysea/core/directory_model.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdio>
+#include <ctime>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <sys/stat.h>
 #include <system_error>
 #include <thread>
 #include <unistd.h>
@@ -118,6 +122,61 @@ void test_listing_a_directory_being_modified_never_throws(const fs::path& root) 
     fs::remove_all(busy);
 }
 
+// Set both timestamps of an entry. Whether a symbolic link is followed is
+// exactly the distinction under test below, so it is named rather than passed
+// as a bare flag.
+enum class LinkHandling { Follow, DoNotFollow };
+
+bool set_modification_time(const fs::path& path, std::time_t seconds, LinkHandling handling) {
+    const std::array<::timespec, 2> times{::timespec{.tv_sec = seconds, .tv_nsec = 0},
+                                          ::timespec{.tv_sec = seconds, .tv_nsec = 0}};
+    const int flags = handling == LinkHandling::DoNotFollow ? AT_SYMLINK_NOFOLLOW : 0;
+    return ::utimensat(AT_FDCWD, path.c_str(), times.data(), flags) == 0;
+}
+
+void test_entries_carry_their_own_modification_time(const fs::path& root) {
+    // A thumbnail or content cache needs a modification timestamp, but
+    // selection identity needs that timestamp to describe the listed entry
+    // rather than whatever a symbolic link points at. Both properties are
+    // pinned here: the link and its target are given deliberately different
+    // times, and each entry must report its own.
+    const fs::path directory = root / "subdir" / "timestamps";
+    fs::remove_all(directory);
+    fs::create_directories(directory);
+
+    const fs::path target = directory / "target.txt";
+    std::ofstream(target) << "payload";
+
+    const fs::path link = directory / "link.txt";
+    std::error_code link_ec;
+    fs::create_symlink(target, link, link_ec);
+
+    constexpr std::time_t target_time = 1000000000;
+    constexpr std::time_t link_time = 1500000000;
+    check(set_modification_time(target, target_time, LinkHandling::Follow),
+          "the fixture can set a file modification time");
+    const bool link_time_set =
+        !link_ec && set_modification_time(link, link_time, LinkHandling::DoNotFollow);
+
+    std::error_code ec;
+    const auto entries = odysea::core::read_directory(directory, {.show_hidden = true}, ec);
+    check(!ec, "the timestamp fixture lists without error");
+
+    const auto target_entry =
+        std::ranges::find_if(entries, [](const auto& e) { return e.name == "target.txt"; });
+    check(target_entry != entries.end() && target_entry->modified_seconds == target_time,
+          "an entry reports the modification time of the file it names");
+
+    if (link_time_set) {
+        const auto link_entry =
+            std::ranges::find_if(entries, [](const auto& e) { return e.name == "link.txt"; });
+        check(link_entry != entries.end() && link_entry->modified_seconds == link_time,
+              "a symbolic link reports its own modification time, not its target's");
+    }
+
+    fs::remove_all(directory);
+}
+
 } // namespace
 
 int main() {
@@ -155,6 +214,7 @@ int main() {
     check(static_cast<bool>(ec), "missing directory should set the error_code");
     check(missing.empty(), "missing directory should yield no entries");
 
+    test_entries_carry_their_own_modification_time(root);
     test_hostile_inputs_report_instead_of_throwing(root);
     test_a_successful_listing_clears_a_stale_error(root);
     test_listing_a_directory_being_modified_never_throws(root);
