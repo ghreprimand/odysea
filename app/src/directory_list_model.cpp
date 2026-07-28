@@ -220,10 +220,10 @@ void DirectoryListModel::selectRow(int row, Qt::KeyboardModifiers modifiers) {
         } else {
             selection.insert(row);
         }
-        selectionAnchor_ = row;
+        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
         replaceSelection(std::move(selection));
     } else {
-        selectionAnchor_ = row;
+        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
         replaceSelection(QSet<int>{row});
     }
     setCurrentIndex(row);
@@ -244,7 +244,7 @@ void DirectoryListModel::moveCursorTo(int row, bool extendSelection, bool preser
     if (extendSelection) {
         selectRangeTo(row);
     } else if (!preserveSelection) {
-        selectionAnchor_ = row;
+        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
         replaceSelection(QSet<int>{row});
     }
     setCurrentIndex(row);
@@ -260,7 +260,7 @@ void DirectoryListModel::toggleCurrent() {
     } else {
         selection.insert(currentIndex_);
     }
-    selectionAnchor_ = currentIndex_;
+    selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(currentIndex_)]);
     replaceSelection(std::move(selection));
 }
 
@@ -278,29 +278,34 @@ void DirectoryListModel::clearSelection() {
 
 void DirectoryListModel::beginRubberBand(bool additive) {
     rubberBandActive_ = true;
-    rubberBandBase_ = additive ? selectedRows_ : QSet<int>{};
+    rubberBandBaseKeys_ = additive ? selectedEntryKeys_ : QSet<QString>{};
     if (!additive) {
         replaceSelection({});
     }
 }
 
-void DirectoryListModel::updateRubberBand(int firstRow, int lastRow) {
-    if (!rubberBandActive_ || rowCount() == 0) {
+void DirectoryListModel::updateRubberBandSelection(const QVariantList& rows, int currentRow) {
+    if (!rubberBandActive_) {
         return;
     }
-    const int first = std::clamp(std::min(firstRow, lastRow), 0, rowCount() - 1);
-    const int last = std::clamp(std::max(firstRow, lastRow), 0, rowCount() - 1);
-    QSet<int> selection = rubberBandBase_;
-    for (int row = first; row <= last; ++row) {
-        selection.insert(row);
+
+    QSet<QString> keys = rubberBandBaseKeys_;
+    for (const QVariant& value : rows) {
+        bool converted = false;
+        const int row = value.toInt(&converted);
+        if (converted && row >= 0 && row < rowCount()) {
+            keys.insert(entryKey(entries_[static_cast<std::size_t>(row)]));
+        }
     }
-    replaceSelection(std::move(selection));
-    setCurrentIndex(lastRow >= firstRow ? last : first);
+    replaceSelectionKeys(std::move(keys));
+    if (currentRow >= 0 && currentRow < rowCount()) {
+        setCurrentIndex(currentRow);
+    }
 }
 
 void DirectoryListModel::endRubberBand() {
     rubberBandActive_ = false;
-    rubberBandBase_.clear();
+    rubberBandBaseKeys_.clear();
 }
 
 QString DirectoryListModel::tabLabel(int tabIndex) const {
@@ -425,6 +430,18 @@ QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) cons
     return {};
 }
 
+int DirectoryListModel::rowForEntryKey(const QString& key) const {
+    if (key.isEmpty()) {
+        return -1;
+    }
+    for (int row = 0; row < rowCount(); ++row) {
+        if (entryKey(entries_[static_cast<std::size_t>(row)]) == key) {
+            return row;
+        }
+    }
+    return -1;
+}
+
 void DirectoryListModel::navigateTo(const QString& path, bool recordHistory) {
     const QString target = normalizedPath(path);
     if (target.isEmpty() || target == path_) {
@@ -443,7 +460,7 @@ void DirectoryListModel::setCurrentPath(const QString& path) {
     if (path_ != path) {
         replaceSelection({});
         setCurrentIndex(-1);
-        selectionAnchor_ = -1;
+        selectionAnchorKey_.clear();
     }
     path_ = path;
     currentTab().path = path;
@@ -498,6 +515,10 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         if (!currentEntryKey_.isEmpty() && !availableKeys.contains(currentEntryKey_)) {
             currentEntryKey_.clear();
         }
+        if (!selectionAnchorKey_.isEmpty() && !availableKeys.contains(selectionAnchorKey_)) {
+            selectionAnchorKey_.clear();
+        }
+        rubberBandBaseKeys_.intersect(availableKeys);
     }
 
     const int previousCurrent = currentIndex_;
@@ -645,8 +666,6 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         currentIndex_ = 0;
         currentEntryKey_ = entryKey(entries_.front());
     }
-    selectionAnchor_ = currentIndex_;
-    rubberBandBase_.clear();
     pendingEntryKeyRemaps_.clear();
 
     for (const int row : changedRows) {
@@ -706,10 +725,20 @@ void DirectoryListModel::replaceSelection(QSet<int> selection) {
             keys.insert(entryKey(entries_[static_cast<std::size_t>(row)]));
         }
     }
-    if (selectedRows_ == selection && selectedEntryKeys_ == keys) {
+    replaceSelectionKeys(std::move(keys));
+}
+
+void DirectoryListModel::replaceSelectionKeys(QSet<QString> keys) {
+    QSet<int> rows;
+    for (int row = 0; row < rowCount(); ++row) {
+        if (keys.contains(entryKey(entries_[static_cast<std::size_t>(row)]))) {
+            rows.insert(row);
+        }
+    }
+    if (selectedRows_ == rows && selectedEntryKeys_ == keys) {
         return;
     }
-    selectedRows_ = std::move(selection);
+    selectedRows_ = std::move(rows);
     selectedEntryKeys_ = std::move(keys);
     notifySelectionRoles();
     emit selectedCountChanged();
@@ -725,11 +754,13 @@ void DirectoryListModel::rebuildSelectionRows() {
 }
 
 void DirectoryListModel::selectRangeTo(int row) {
-    if (selectionAnchor_ < 0) {
-        selectionAnchor_ = currentIndex_ >= 0 ? currentIndex_ : row;
+    int anchorRow = rowForEntryKey(selectionAnchorKey_);
+    if (anchorRow < 0) {
+        anchorRow = currentIndex_ >= 0 ? currentIndex_ : row;
+        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(anchorRow)]);
     }
-    const int first = std::min(selectionAnchor_, row);
-    const int last = std::max(selectionAnchor_, row);
+    const int first = std::min(anchorRow, row);
+    const int last = std::max(anchorRow, row);
     QSet<int> selection;
     for (int selectedRow = first; selectedRow <= last; ++selectedRow) {
         selection.insert(selectedRow);

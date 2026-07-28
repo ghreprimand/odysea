@@ -171,6 +171,12 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         if (currentEntryKey_ == oldKey) {
             currentEntryKey_ = newKey;
         }
+        if (selectionAnchorKey_ == oldKey) {
+            selectionAnchorKey_ = newKey;
+        }
+        if (rubberBandBaseKeys_.remove(oldKey)) {
+            rubberBandBaseKeys_.insert(newKey);
+        }
         pendingEntryKeyRemaps_.insert(oldKey, newKey);
     };
 
@@ -223,6 +229,10 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
                 if (currentEntryKey_ == key) {
                     currentEntryKey_.clear();
                 }
+                if (selectionAnchorKey_ == key) {
+                    selectionAnchorKey_.clear();
+                }
+                rubberBandBaseKeys_.remove(key);
             }
             return true;
         });

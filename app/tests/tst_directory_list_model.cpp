@@ -48,6 +48,16 @@ QString selectedName(const DirectoryListModel& model) {
     return {};
 }
 
+QStringList selectedNames(const DirectoryListModel& model) {
+    QStringList names;
+    for (int row = 0; row < model.rowCount(); ++row) {
+        if (model.data(model.index(row), DirectoryListModel::SelectedRole).toBool()) {
+            names.push_back(model.data(model.index(row), DirectoryListModel::NameRole).toString());
+        }
+    }
+    return names;
+}
+
 QString currentName(const DirectoryListModel& model) {
     const int row = model.currentIndex();
     if (row < 0 || row >= model.rowCount()) {
@@ -114,10 +124,12 @@ class DirectoryListModelTest : public QObject {
     void rapidNavigationCancelsStaleBatches();
     void incrementalScannerPublishesBatches();
     void watchAndPresentationUpdatesUseGranularSignals();
+    void navigationHistorySurvivesIncrementalUpdates();
     void watcherBurstPreservesRenamedSelection();
     void hardLinksRemainDistinctAcrossRefreshAndRename();
     void uniqueInodeFallbackPreservesRename();
     void selectionSurvivesSortFilterAndRefresh();
+    void explicitGeometricSelectionUsesRowSet();
     void operationsReachCoreAndReportFailures();
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
@@ -249,8 +261,56 @@ void DirectoryListModelTest::watchAndPresentationUpdatesUseGranularSignals() {
     QCOMPARE(model.rowCount(), 1);
     model.setFilterText({});
     QCOMPARE(model.rowCount(), 2);
+
+    writeFile(root / ".hidden.txt");
+    const qsizetype insertionsBeforeHidden = insertedSpy.count();
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / ".hidden.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(rowForName(model, QStringLiteral(".hidden.txt")), -1);
+    QCOMPARE(insertedSpy.count(), insertionsBeforeHidden);
+    model.setShowHidden(true);
+    QVERIFY(rowForName(model, QStringLiteral(".hidden.txt")) >= 0);
+    QCOMPARE(insertedSpy.count(), insertionsBeforeHidden + 1);
+
     model.setSortMode(DirectoryListModel::SortBySize);
     QVERIFY(layoutSpy.count() >= 2);
+    QCOMPARE(resetSpy.count(), 0);
+}
+
+void DirectoryListModelTest::navigationHistorySurvivesIncrementalUpdates() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path first = root / "first";
+    const fs::path second = root / "second";
+    fs::create_directories(first);
+    fs::create_directories(second);
+    writeFile(first / "one.txt");
+    writeFile(second / "two.txt");
+
+    DirectoryListModel model;
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    model.setPath(QString::fromStdString(first.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.setPath(QString::fromStdString(second.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QVERIFY(model.canGoBack());
+
+    writeFile(second / "three.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("three.txt")) >= 0, 5000);
+    QVERIFY(model.canGoBack());
+
+    model.goBack();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.path(), QString::fromStdString(first.string()));
+    QVERIFY(model.canGoForward());
+    QCOMPARE(rowForName(model, QStringLiteral("one.txt")) >= 0, true);
     QCOMPARE(resetSpy.count(), 0);
 }
 
@@ -375,6 +435,49 @@ void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("small.txt"));
+}
+
+void DirectoryListModelTest::explicitGeometricSelectionUsesRowSet() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int row = 0; row < 5; ++row) {
+        writeFile(root / ("entry-" + std::to_string(row) + ".txt"),
+                  std::string(static_cast<std::size_t>(5 - row), 'x'));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+
+    model.beginRubberBand(false);
+    model.updateRubberBandSelection(QVariantList{0, 2, 4, 4, -1, 99}, 2);
+    model.endRubberBand();
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-0.txt"), QStringLiteral("entry-2.txt"),
+                          QStringLiteral("entry-4.txt")}));
+    QCOMPARE(model.currentIndex(), 2);
+
+    model.selectRow(0, Qt::NoModifier);
+    model.selectRow(4, Qt::ShiftModifier);
+    model.setSortMode(DirectoryListModel::SortBySize);
+    model.selectRow(rowForName(model, QStringLiteral("entry-1.txt")), Qt::ShiftModifier);
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-0.txt")}));
+
+    model.setSortMode(DirectoryListModel::SortByName);
+    model.selectRow(1, Qt::NoModifier);
+    model.beginRubberBand(true);
+    model.updateRubberBandSelection(QVariantList{3}, 3);
+    model.endRubberBand();
+    QCOMPARE(selectedNames(model),
+             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-3.txt")}));
+    QCOMPARE(model.currentIndex(), 3);
+
+    model.beginRubberBand(false);
+    model.updateRubberBandSelection({}, -1);
+    model.endRubberBand();
+    QCOMPARE(model.selectedCount(), 0);
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {
