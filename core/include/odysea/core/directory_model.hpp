@@ -22,6 +22,10 @@ struct Entry {
     std::filesystem::path path;
     EntryKind kind = EntryKind::Other;
     std::uintmax_t size = 0;
+    /// Stable filesystem identity for preserving selection across rename,
+    /// sorting, filtering, and refresh. Zero when metadata lookup failed.
+    std::uint64_t device = 0;
+    std::uint64_t inode = 0;
 
     [[nodiscard]] bool is_directory() const noexcept { return kind == EntryKind::Directory; }
 };
