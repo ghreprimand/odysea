@@ -7,6 +7,17 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Enforced file-length ceiling
+
+Tracked source and text files now have a hard ceiling of 2,000 physical lines.
+The `file_length_guard` checks both indexed content and the tracked working tree
+so staged changes and later local edits cannot bypass the limit. Files
+approaching the ceiling must be split along clear responsibility boundaries
+without compressing readable code or documentation.
+
+Verified against the complete tracked corpus and through the release and
+ASan/UBSan CTest suites.
+
 ## 2026-07-27 -- Checkout-independent header analysis
 
 Static analysis now anchors its header filter to the detected source root

@@ -26,6 +26,9 @@ ctest --preset asan                # core tests run under ASan/UBSan
 # Formatting and static-analysis gates:
 ./tools/check_format.sh
 ./tools/check_clang_tidy.sh build/release
+
+# Tracked-file length ceiling:
+./tools/check_file_length.sh
 ```
 
 ## Project layout
@@ -57,6 +60,10 @@ These are not optional; they are how the project stays safe in C++:
   Clang release compilation database; the GCC sanitizer preset provides the
   separate ASan/UBSan runtime gate.
 - Warnings are errors (`-Werror`); keep the build clean.
+- No tracked source or text file may exceed 2,000 physical lines. Split files
+  along clear ownership or responsibility boundaries before reaching the
+  ceiling; do not compress readable code or prose to evade the limit. Keep
+  `file_length_guard` green.
 - Prefer small, reviewable commits with descriptive messages.
 
 ## Public repository safety
