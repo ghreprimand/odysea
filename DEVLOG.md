@@ -246,6 +246,88 @@ eight-test release suite including the formatting, static-analysis, and
 publishing guards, the seven-test sanitizer suite under ASan and UBSan, the
 listing suite repeated in both configurations, and a headless application smoke
 launch.
+## 2026-07-28 -- Stable band gestures and complete parity controls
+
+Rubber-band selection now retains its pointer grab over scrollable lists and
+stores its press anchor in content coordinates. Filled-viewport drags therefore
+keep their full range in both directions from any scroll position, while future
+content movement during selection cannot silently move the anchor.
+
+Tabs can be switched with Control+Tab and Control+Shift+Tab as well as pointer
+activation. Select All now has a direct pointer control alongside Control+A.
+Rendered-shell tests distinguish both input paths and cover band gestures at a
+nonzero scroll position, a content-moving anchor, and unchanged row click,
+double-click, right-click, and wheel behavior.
+
+Verified with diagnostic-free QML linting, the Qt Quick interaction suite,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
+## 2026-07-27 -- Complete list selection regression coverage
+
+Rubber-band selection now remains available when rows fill the viewport through
+a narrow background gutter beside the row delegates. The gutter and the empty
+space below the last row share the same selection behavior, while row click,
+modified-click, double-click, right-click, and future row-drag handling remain
+independent.
+
+The rendered-shell regression suite now exercises plain, Control-modified,
+Shift-modified, double, and right pointer actions; keyboard cursor, toggle, and
+clear actions; and rubber-band drags in both partially filled and filled
+viewports. Qt QuickTest is an explicit configure-time dependency. Tab buttons
+use stable implicit sizing so the tab bar no longer forms a width binding loop.
+
+Verified with diagnostic-free QML linting, the Qt Quick interaction suite,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
+## 2026-07-27 -- Pointer hit testing and scan watcher lifetime
+
+The list rubber-band surface now occupies only unused space below the final
+visible row, so row clicks, modified clicks, and double-clicks reach their
+delegates while blank-area drags still create range selections. A Qt Quick test
+sends a left click through the rendered shell and verifies that the selection
+model receives the row.
+
+Asynchronous scans now use a single RAII-owned future watcher. The watcher
+observes the newest scan without heap allocation or deferred manual deletion,
+while generation checks continue to reject stale results. Selection input uses
+the keyboard-modifier type directly across the QML boundary.
+
+Verified with diagnostic-free QML linting, the Qt Quick pointer regression,
+formatting and static-analysis gates, warning-clean release and sanitizer
+builds, both CTest suites, the public-repository guard, and headless release and
+sanitizer smoke launches.
+
+## 2026-07-27 -- Input-parity navigation shell
+
+The graphical shell now pairs pointer controls with keyboard shortcuts for
+back, forward, up, refresh, location entry, filtering, hidden-file visibility,
+sorting, tab creation and closure, pane activation, selection, entry
+activation, and filesystem-operation requests. Selection supports single,
+toggle, range, select-all, cursor-only movement, and rubber-band paths. The
+pane workspace preserves independent tab and navigation state while the
+transfer-oriented dual-pane layout remains a later milestone.
+
+Verified with diagnostic-free QML linting, warning-clean release and sanitizer
+builds, both CTest suites, and headless release and sanitizer smoke launches.
+
+## 2026-07-27 -- Asynchronous shell model and navigation state
+
+The Qt adapter now schedules directory reads away from the GUI thread and
+discards stale scan results after newer navigation requests. It exposes loading
+and error state, per-tab navigation history, two-pane workspace state,
+presentation sorting and filtering, hidden-file control, and a multi-selection
+model to the Qt Quick shell. Copy, move, rename, trash, and file-open requests
+cross explicit adapter seams while their core and platform implementations
+remain pending.
+
+The adapter keeps filesystem behavior in the toolkit-agnostic core. Qt owns
+only scheduling and presentation state.
+
+Verified with warning-clean Clang and GCC sanitizer builds.
 
 ## 2026-07-27 -- Checkout-independent header analysis
 
