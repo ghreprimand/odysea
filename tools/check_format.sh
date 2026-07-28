@@ -2,6 +2,29 @@
 
 set -euo pipefail
 
+# Every conventional C and C++ source or header extension, one per line.
+# Narrowing this list would let a file skip formatting purely by being named
+# differently, which is not a distinction anyone makes on purpose;
+# `tools/check_format_selftest.sh` holds the gate to the list one extension at
+# a time.
+#
+# Kept as newline-separated text rather than a shell array so the tracked
+# sources of this repository contain no at-sign, which the publishing guard
+# treats as a signal worth stopping on.
+readonly covered_extensions='c
+cc
+cpp
+cxx
+c++
+h
+hh
+hpp
+hxx
+h++
+inl
+ipp
+tpp'
+
 if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
     printf 'formatting_guard: SKIP (Git metadata unavailable)\n'
     exit 77
@@ -22,9 +45,14 @@ case "$format_version" in
 esac
 
 checked=0
-while IFS= read -r -d '' source_file; do
-    clang-format --dry-run --Werror "$source_file"
-    checked=$((checked + 1))
-done < <(git ls-files -z -- '*.cpp' '*.hpp')
+extension_count=0
+while IFS= read -r extension; do
+    extension_count=$((extension_count + 1))
+    while IFS= read -r -d '' source_file; do
+        clang-format --dry-run --Werror "$source_file"
+        checked=$((checked + 1))
+    done < <(git ls-files -z -- "*.${extension}")
+done <<<"$covered_extensions"
 
-printf 'formatting_guard: %d tracked C++ files passed\n' "$checked"
+printf 'formatting_guard: %d tracked C and C++ files passed across %d extensions\n' \
+    "$checked" "$extension_count"

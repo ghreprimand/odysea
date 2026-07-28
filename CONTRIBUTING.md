@@ -61,6 +61,11 @@ These are not optional; they are how the project stays safe in C++:
   `.clang-tidy`) are the verified tool versions. Static analysis runs from the
   Clang release compilation database; the GCC sanitizer preset provides the
   separate ASan/UBSan runtime gate.
+- Formatting covers every conventional C and C++ source and header extension,
+  not only `.cpp` and `.hpp`, so a file cannot skip the gate by being named
+  differently. `formatting_guard_self_test` holds the gate to that: it builds a
+  throwaway repository per extension and requires unformatted code to be
+  rejected and formatted code to be accepted in each one.
 - `qmlformat` and `qmllint` 6.10 enforce the declarative shell baseline. The
   tracked `.qmlformat.ini` is canonical, and lint warnings fail the gate.
 - Warnings are errors (`-Werror`); keep the build clean.

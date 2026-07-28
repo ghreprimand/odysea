@@ -7,6 +7,36 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Formatting covers every C and C++ extension
+
+The formatting gate checked only `.cpp` and `.hpp`, so a tracked `.c`, `.cc`,
+`.cxx`, `.c++`, `.h`, `.hh`, `.hxx`, `.h++`, `.inl`, `.ipp`, or `.tpp` file
+passed without being looked at. Naming a file differently is not a decision
+anyone makes in order to skip formatting, so the gate now covers all of them.
+
+A gate that silently checks nothing is indistinguishable from a gate that
+passes, which is the failure this change is really about. A self-test now
+builds a throwaway repository for each required extension, puts one
+deliberately unformatted file in it, and requires the gate to reject it, then
+formats that same file and requires the gate to accept it. The second half
+matters as much as the first: without it, a gate that always failed would look
+correct. The required extensions are stated in the self-test rather than read
+out of the gate, so a gate that quietly stopped covering one is caught instead
+of agreed with.
+
+No tracked file needed reformatting, because the repository currently uses only
+the two extensions the gate already covered. The fixtures are temporary and are
+removed afterwards; no unformatted file is tracked, which would otherwise leave
+the gate failing against its own test data.
+
+Verified with the formatting gate and its self-test, warning-clean release and
+ASan/UBSan builds and suites, the public-repository and file-length guards, and
+offscreen release and sanitizer smoke launches. Reverting the change fails the
+self-test: narrowing the covered extensions fails exactly the narrowed ones,
+restoring the previous two-extension gate fails eleven, a gate that inspects
+nothing fails all thirteen on rejection, and a gate that always fails fails all
+thirteen on acceptance.
+
 ## 2026-07-28 -- Establish deterministic QML quality gates
 
 The declarative shell now has a repository-owned `qmlformat` baseline using Qt
