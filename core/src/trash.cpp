@@ -259,7 +259,11 @@ TrashOutcome move_to_trash(const fs::path& source) {
         return failure(std::errc::no_such_file_or_directory);
     }
 
-    const fs::path absolute_source = fs::absolute(source).lexically_normal();
+    std::error_code absolute_error;
+    const fs::path absolute_source = fs::absolute(source, absolute_error).lexically_normal();
+    if (absolute_error) {
+        return failure(absolute_error);
+    }
     if (!absolute_source.has_relative_path()) {
         return failure(std::errc::invalid_argument);
     }

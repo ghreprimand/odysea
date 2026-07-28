@@ -28,6 +28,50 @@ workspaces, and ordinary contributor checkouts.
 Verified with `clang-tidy` 22 in both the primary checkout and a temporary clone
 whose directory name does not contain the project name, plus the release and
 ASan/UBSan CTest suites.
+## 2026-07-27 -- Correct destructive overwrite in copy, move, and rename
+
+An overwrite could destroy the entry it was asked to preserve. Copying or
+moving an entry into the directory it already occupies resolved the destination
+back to the source, and the destination was cleared before the transfer ran, so
+the operation deleted the file or the whole directory tree and then reported
+that nothing was there. The mutation APIs now compare source and destination by
+identity before anything is removed, using an equivalence test that sees through
+hard links, symlinks, and alternative spellings. An entry copied, moved, or
+renamed onto itself is a no-op that reports success.
+
+Replacement no longer clears the way ahead of time when it does not have to.
+Swapping one non-directory for another is left to the rename, which replaces
+atomically and leaves no window where neither copy exists; only combinations a
+rename cannot perform remove the destination first. Copies that replace an
+existing entry are assembled beside it under a staging name and moved into place
+once complete, so a copy that fails part-way leaves the existing destination
+untouched instead of deleting it first and failing afterwards. Staging entries
+are always cleaned up, including when a failed copy reproduced a directory that
+cannot be entered.
+
+Remaining no-throw gaps are closed: the path-classification and absolute-path
+calls inside the operation and trash APIs now use their error-reporting
+overloads, so a filesystem failure is reported rather than thrown out of an
+interface documented never to throw. A containment check that cannot reach a
+conclusion now refuses the transfer, because rejecting a legitimate operation is
+recoverable and copying a directory into itself is not.
+
+Static analysis is clean. An inotify buffer size is computed in the width it is
+stored in, two helper signatures no longer take transposable adjacent
+parameters, and a test helper no longer reaches into an optional it has not
+checked.
+
+New regression tests cover file and directory self-copy, self-move, rename to
+the current name, an entry reached through a hard link, replacement by atomic
+rename verified through the destination identity, and failed overwrites leaving
+both source and destination intact. The permission-dependent cases report a skip
+when run by a superuser, whose access ignores the bits they rely on.
+
+Verified with the release and sanitizer presets: warning-clean builds, the
+complete release suite of eight tests including the formatting, static-analysis,
+and publishing guards, the seven-test sanitizer suite under ASan and UBSan, the
+filesystem suites repeated to shake out timing and ordering flakiness, and a
+headless application smoke launch.
 
 ## 2026-07-27 -- Executable formatting, analysis, and publishing gates
 

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -69,7 +71,14 @@ std::optional<DirectoryChange> find_change(const std::vector<DirectoryChange>& c
 DirectoryWatcher make_watcher() {
     std::error_code ec;
     std::optional<DirectoryWatcher> watcher = DirectoryWatcher::create(ec);
-    check(!ec && watcher.has_value(), "a watcher should be creatable");
+    check(!ec, "creating a watcher should not report an error");
+    if (!watcher.has_value()) {
+        // Nothing below this point can run without a watcher, and a watcher
+        // cannot be default-constructed, so stop rather than reach into an
+        // empty optional.
+        std::fputs("FATAL: the platform refused an inotify watcher\n", stderr);
+        std::exit(1);
+    }
     return std::move(*watcher);
 }
 

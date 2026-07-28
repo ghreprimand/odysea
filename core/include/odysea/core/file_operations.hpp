@@ -15,7 +15,8 @@ namespace odysea::core {
 enum class ConflictPolicy {
     /// Change nothing and report std::errc::file_exists.
     Fail,
-    /// Replace the existing destination.
+    /// Replace the existing destination. Replacement, never a merge: a
+    /// destination directory is removed rather than written into.
     Overwrite,
     /// Pick the next free "name (2)" style variant next to the original.
     AutoRename,
@@ -52,6 +53,12 @@ struct OperationOutcome {
 /// Directories are copied recursively and symlinks are copied as symlinks
 /// rather than followed. Copying a directory into itself or into one of its own
 /// descendants is rejected with std::errc::invalid_argument.
+///
+/// When the resolved destination is the source itself the copy is a no-op that
+/// reports success, so an entry can never be destroyed by being copied over
+/// itself. When it replaces something else, the copy is assembled beside the
+/// destination and moved into place once complete, so a failure part-way
+/// through leaves the existing destination intact.
 [[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const OperationOptions& options);
@@ -62,6 +69,11 @@ struct OperationOutcome {
 /// recursive copy followed by removal of the source across filesystems. Moving
 /// a directory into itself or into one of its own descendants is rejected with
 /// std::errc::invalid_argument.
+///
+/// When the resolved destination is the source itself the move is a no-op that
+/// reports success. Replacing one non-directory with another is left to the
+/// rename, which swaps them atomically; only combinations a rename cannot
+/// perform remove the destination first.
 [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const OperationOptions& options);
@@ -71,6 +83,9 @@ struct OperationOutcome {
 /// `new_name` must be a bare file name: empty names, names containing a path
 /// separator, and the "." and ".." specials are rejected with
 /// std::errc::invalid_argument.
+///
+/// Renaming an entry to a name that already resolves to that same entry is a
+/// no-op that reports success, whether it matches by spelling or by identity.
 [[nodiscard]] OperationOutcome rename_entry(const std::filesystem::path& source,
                                             std::string_view new_name,
                                             const OperationOptions& options);

@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 namespace {
 
 /// Large enough that a busy directory drains in one read.
-constexpr std::size_t read_buffer_bytes = 64U * 1024U;
+constexpr std::size_t read_buffer_bytes = std::size_t{64} * 1024;
 
 constexpr std::uint32_t watch_mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_ATTRIB | IN_MOVED_FROM |
                                      IN_MOVED_TO | IN_DELETE_SELF | IN_MOVE_SELF | IN_EXCL_UNLINK;

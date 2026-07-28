@@ -66,8 +66,20 @@ class TemporaryTree {
         return path;
     }
 
-    std::filesystem::path file(std::string_view relative, std::string_view contents = "x") const {
-        const std::filesystem::path path = root_ / relative;
+    /// Create a file holding placeholder contents.
+    std::filesystem::path file(std::string_view relative) const {
+        return write_file(root_ / relative, "x");
+    }
+
+    /// Create a file holding the given contents. The parameter types differ so
+    /// the path and the payload cannot be transposed by accident.
+    std::filesystem::path file(std::string_view relative, const std::string& contents) const {
+        return write_file(root_ / relative, contents);
+    }
+
+  private:
+    static std::filesystem::path write_file(const std::filesystem::path& path,
+                                            std::string_view contents) {
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
         std::ofstream stream(path, std::ios::binary | std::ios::trunc);
@@ -75,7 +87,6 @@ class TemporaryTree {
         return path;
     }
 
-  private:
     std::filesystem::path root_;
 };
 
