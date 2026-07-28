@@ -54,8 +54,13 @@ void sort_entries(std::vector<Entry>& entries);
 ///
 /// Ordering is directories-first, then case-insensitively by name, matching the
 /// default presentation of most desktop file managers. Errors on individual
-/// entries are skipped rather than aborting the whole listing; a failure to open
-/// the directory itself is reported through `error`.
+/// entries are skipped rather than aborting the whole listing.
+///
+/// Never throws. A failure to open the directory reports through `error` and
+/// yields no entries. A failure part-way through iteration reports the first
+/// such failure through `error` and returns the entries read before it, so a
+/// caller can present a partial listing alongside the error rather than losing
+/// both.
 [[nodiscard]] std::vector<Entry> read_directory(const std::filesystem::path& path,
                                                 const ListOptions& options, std::error_code& error);
 

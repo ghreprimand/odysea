@@ -58,17 +58,34 @@ std::vector<Entry> read_directory(const fs::path& path, const ListOptions& optio
                                   std::error_code& error) {
     std::vector<Entry> entries;
 
-    fs::directory_iterator it(path, fs::directory_options::skip_permission_denied, error);
+    fs::directory_iterator element(path, fs::directory_options::skip_permission_denied, error);
     if (error) {
         return entries;
     }
 
-    for (const fs::directory_entry& dirent : it) {
-        const std::string name = dirent.path().filename().string();
-        if (!options.show_hidden && is_hidden_name(name)) {
-            continue;
+    // Advance explicitly rather than with a range-for: the range-for uses the
+    // throwing increment, which would let a mid-iteration failure escape a
+    // function whose contract reports errors through `error`. Whatever was read
+    // before the failure is kept, so a caller can still show a partial listing
+    // alongside the reported error.
+    //
+    // This branch has no automated coverage. Linux keeps a directory handle
+    // usable after the directory is removed or its permissions change, so a
+    // mid-iteration failure cannot be provoked from a test without privileged
+    // filesystem control. The tests cover every failure that can be provoked.
+    const fs::directory_iterator end;
+    while (element != end) {
+        const std::string name = element->path().filename().string();
+        if (options.show_hidden || !is_hidden_name(name)) {
+            entries.push_back(make_entry(*element));
         }
-        entries.push_back(make_entry(dirent));
+
+        std::error_code step_error;
+        element.increment(step_error);
+        if (step_error) {
+            error = step_error;
+            break;
+        }
     }
 
     sort_entries(entries);

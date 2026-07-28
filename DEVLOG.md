@@ -18,6 +18,39 @@ without compressing readable code or documentation.
 Verified against the complete tracked corpus and through the release and
 ASan/UBSan CTest suites.
 
+## 2026-07-27 -- Report listing failures instead of throwing
+
+Reading a directory advanced its iterator with a range-for, which uses the
+throwing increment. A failure part-way through an iteration therefore escaped
+as an exception from a function documented to report errors through an
+`std::error_code` out-parameter, bypassing every caller's error handling.
+Iteration now advances explicitly through the error-reporting increment: the
+first failure is recorded in the out-parameter and ends the walk, and the
+entries already read are kept and returned, so a caller can present a partial
+listing alongside the error rather than losing both.
+
+The documented contract now states plainly that the function never throws, that
+a directory it cannot open yields no entries, and that a failure part-way
+through yields the entries gathered before it.
+
+Coverage now exercises every listing failure that can be provoked without
+privileged filesystem control: a missing directory, a path naming a plain file,
+a symlink loop, and an empty path each report through the out-parameter with no
+exception escaping. A successful listing is confirmed to clear a stale error
+left by an earlier call, and a directory losing entries while it is being read
+is confirmed to degrade to a partial, correctly ordered result.
+
+The mid-iteration failure branch itself has no automated coverage, and the
+source says so at the branch. Linux keeps a directory handle usable after the
+directory is removed or its permissions change, so the underlying read cannot be
+made to fail from a test without privileged control of a filesystem.
+
+Verified with the release and sanitizer presets: warning-clean builds, the
+eight-test release suite including the formatting, static-analysis, and
+publishing guards, the seven-test sanitizer suite under ASan and UBSan, the
+listing suite repeated in both configurations, and a headless application smoke
+launch.
+
 ## 2026-07-27 -- Checkout-independent header analysis
 
 Static analysis now anchors its header filter to the detected source root
