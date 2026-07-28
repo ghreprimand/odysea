@@ -7,6 +7,50 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Interoperable thumbnail cache policy
+
+The core now decides which thumbnail is wanted, where it belongs, and whether a
+stored one still describes its source. Decoding is deliberately absent: a codec
+belongs with the presentation layer that already links one, while everything
+that has to be verified without a display server stays here.
+
+Cache layout follows the freedesktop.org Thumbnail Managing Standard. Source
+paths become `file://` URIs, cache files are named after the digest of those
+URIs, sizes map to the standard directories, and refused sources are recorded
+under a directory namespaced by application and version so a later version
+retries what an earlier one declined.
+
+URI escaping matters more than it appears. The trash specification and the
+thumbnail cache want different byte sets, and reusing the trash escaping would
+have escaped characters other desktops leave literal. Because the cache file
+name is the digest of those exact bytes, the result would have been a private
+cache invisible to every other application and blind to theirs, with no
+symptom. The escaping is therefore pinned by expectations taken from an
+established implementation rather than from this one.
+
+Validity is checked on inspection, not assumed from the file name. A digest
+carries no collision guarantee, so a stored thumbnail is accepted only when the
+source URI recorded inside it matches, the recorded modification time matches,
+and the recorded length matches whenever the writer recorded one. Stored
+thumbnails are themselves never thumbnailed.
+
+Describing a source resolves symbolic links for content metadata while still
+addressing the path as the caller named it, so a link appears under its own
+name yet its thumbnail goes stale when the contents it points at change. Listing
+metadata describes the link and cannot be reused for this, which the headers of
+both components now state.
+
+Verified with a headless policy suite covering the published digest vectors and
+every padding boundary, the escaping expectations, cache layout and fallbacks,
+key derivation across links and refused sources, and the validity rules.
+Reverting any single guard fails that suite: the trash escaping fails two URI
+expectations, a corrupted round constant fails eighteen checks, dropping the
+recorded-URI comparison fails the collision case, describing the link instead of
+its target fails four checks, and removing the cache exclusion fails two.
+
+Known gap: nothing consumes this yet. Scheduling, caching, and the decoding
+layer are still open, so the roadmap entry for thumbnails remains unchecked.
+
 ## 2026-07-28 -- Directory entries carry a modification timestamp
 
 Listings now expose the last content-modification time of every entry in whole
