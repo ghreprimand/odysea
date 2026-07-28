@@ -2,11 +2,12 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QtConcurrentRun>
 
 #include <algorithm>
-#include <system_error>
+#include <ranges>
 #include <utility>
+
+#include "odysea/core/file_operations.hpp"
 
 namespace {
 
@@ -14,13 +15,6 @@ constexpr int minimumSortMode = DirectoryListModel::SortByName;
 constexpr int maximumSortMode = DirectoryListModel::SortByType;
 
 } // namespace
-
-DirectoryListModel::DirectoryListModel(QObject* parent) : QAbstractListModel(parent) {
-    connect(&scanWatcher_, &QFutureWatcher<ScanResult>::finished, this, [this]() {
-        auto future = scanWatcher_.future();
-        applyScanResult(future.takeResult());
-    });
-}
 
 int DirectoryListModel::rowCount(const QModelIndex& parent) const {
     if (parent.isValid()) {
@@ -47,17 +41,18 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
         return QString::fromStdString(entry.path.string());
     case SelectedRole:
         return selectedRows_.contains(index.row());
+    case RecoveryEntryRole:
+        return odysea::core::classify_working_entry(entry.name) !=
+               odysea::core::WorkingEntryRole::None;
     default:
         return {};
     }
 }
 
 QHash<int, QByteArray> DirectoryListModel::roleNames() const {
-    return {{NameRole, "name"},
-            {IsDirRole, "isDir"},
-            {SizeRole, "size"},
-            {PathRole, "entryPath"},
-            {SelectedRole, "selected"}};
+    return {{NameRole, "name"},         {IsDirRole, "isDir"},
+            {SizeRole, "size"},         {PathRole, "entryPath"},
+            {SelectedRole, "selected"}, {RecoveryEntryRole, "recoveryEntry"}};
 }
 
 QString DirectoryListModel::path() const {
@@ -86,7 +81,7 @@ void DirectoryListModel::setShowHidden(bool showHidden) {
     }
     showHidden_ = showHidden;
     emit showHiddenChanged();
-    startScan();
+    applyPresentationSettings();
 }
 
 QString DirectoryListModel::filterText() const {
@@ -373,22 +368,6 @@ void DirectoryListModel::activatePane(int paneIndex) {
     setCurrentPath(currentTab().path);
 }
 
-void DirectoryListModel::requestCopy() {
-    requestOperation(QStringLiteral("copy"));
-}
-
-void DirectoryListModel::requestMove() {
-    requestOperation(QStringLiteral("move"));
-}
-
-void DirectoryListModel::requestRename() {
-    requestOperation(QStringLiteral("rename"));
-}
-
-void DirectoryListModel::requestTrash() {
-    requestOperation(QStringLiteral("trash"));
-}
-
 DirectoryListModel::TabState& DirectoryListModel::currentTab() {
     PaneState& pane = currentPane();
     return pane.tabs[static_cast<std::size_t>(pane.activeTab)];
@@ -428,6 +407,16 @@ QStringList DirectoryListModel::selectedPaths() const {
     return paths;
 }
 
+QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) const {
+    if (entry.device != 0 && entry.inode != 0) {
+        return QStringLiteral("inode:%1:%2")
+            .arg(static_cast<qulonglong>(entry.device))
+            .arg(static_cast<qulonglong>(entry.inode));
+    }
+    return QStringLiteral("path:%1").arg(
+        QString::fromStdString(entry.path.lexically_normal().string()));
+}
+
 void DirectoryListModel::navigateTo(const QString& path, bool recordHistory) {
     const QString target = normalizedPath(path);
     if (target.isEmpty() || target == path_) {
@@ -443,6 +432,11 @@ void DirectoryListModel::navigateTo(const QString& path, bool recordHistory) {
 }
 
 void DirectoryListModel::setCurrentPath(const QString& path) {
+    if (path_ != path) {
+        replaceSelection({});
+        setCurrentIndex(-1);
+        selectionAnchor_ = -1;
+    }
     path_ = path;
     currentTab().path = path;
     emit pathChanged();
@@ -451,51 +445,27 @@ void DirectoryListModel::setCurrentPath(const QString& path) {
     startScan();
 }
 
-void DirectoryListModel::startScan() {
-    if (path_.isEmpty()) {
-        return;
-    }
-
-    const std::uint64_t generation = ++scanGeneration_;
-    setBusy(true);
-    setErrorString({});
-
-    const std::string scanPath = path_.toStdString();
-    const odysea::core::ListOptions options{.show_hidden = showHidden_};
-    scanWatcher_.setFuture(QtConcurrent::run([scanPath, options, generation]() {
-        std::error_code error;
-        ScanResult result;
-        result.generation = generation;
-        result.entries = odysea::core::read_directory(scanPath, options, error);
-        if (error) {
-            result.errorMessage = error.message();
-        }
-        return result;
-    }));
-}
-
-void DirectoryListModel::applyScanResult(ScanResult result) {
-    if (result.generation != scanGeneration_) {
-        return;
-    }
-    scannedEntries_ = std::move(result.entries);
-    setErrorString(QString::fromStdString(result.errorMessage));
-    applyPresentationSettings();
-    setBusy(false);
-}
-
-void DirectoryListModel::applyPresentationSettings() {
+void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     const QString needle = filterText_.trimmed();
     std::vector<odysea::core::Entry> presented;
     presented.reserve(scannedEntries_.size());
     for (const odysea::core::Entry& entry : scannedEntries_) {
         const QString name = QString::fromStdString(entry.name);
+        if (!showHidden_ && odysea::core::is_hidden_name(entry.name)) {
+            continue;
+        }
+        if (operationBusy_ && odysea::core::classify_working_entry(entry.name) !=
+                                  odysea::core::WorkingEntryRole::None) {
+            continue;
+        }
         if (needle.isEmpty() || name.contains(needle, Qt::CaseInsensitive)) {
             presented.push_back(entry);
         }
     }
 
-    if (sortMode_ == SortBySize) {
+    if (sortMode_ == SortByName) {
+        odysea::core::sort_entries(presented);
+    } else if (sortMode_ == SortBySize) {
         std::ranges::stable_sort(presented, [](const auto& left, const auto& right) {
             if (left.is_directory() != right.is_directory()) {
                 return left.is_directory();
@@ -514,15 +484,45 @@ void DirectoryListModel::applyPresentationSettings() {
         });
     }
 
+    if (finalScanBatch) {
+        QSet<QString> availableIdentities;
+        availableIdentities.reserve(static_cast<qsizetype>(scannedEntries_.size()));
+        for (const odysea::core::Entry& entry : scannedEntries_) {
+            availableIdentities.insert(entryIdentity(entry));
+        }
+        selectedEntryPaths_.intersect(availableIdentities);
+        if (!currentEntryPath_.isEmpty() && !availableIdentities.contains(currentEntryPath_)) {
+            currentEntryPath_.clear();
+        }
+    }
+
+    const int previousCurrent = currentIndex_;
+    const int previousSelectedCount = selectedCount();
     beginResetModel();
     entries_ = std::move(presented);
-    selectedRows_.clear();
     rubberBandBase_.clear();
-    currentIndex_ = entries_.empty() ? -1 : 0;
+    rebuildSelectionRows();
+    currentIndex_ = -1;
+    if (!currentEntryPath_.isEmpty()) {
+        for (int row = 0; row < rowCount(); ++row) {
+            if (entryIdentity(entries_[static_cast<std::size_t>(row)]) == currentEntryPath_) {
+                currentIndex_ = row;
+                break;
+            }
+        }
+    }
+    if (currentIndex_ < 0 && finalScanBatch && !entries_.empty()) {
+        currentIndex_ = 0;
+        currentEntryPath_ = entryIdentity(entries_.front());
+    }
     selectionAnchor_ = currentIndex_;
     endResetModel();
-    emit currentIndexChanged();
-    emit selectedCountChanged();
+    if (previousCurrent != currentIndex_) {
+        emit currentIndexChanged();
+    }
+    if (previousSelectedCount != selectedCount()) {
+        emit selectedCountChanged();
+    }
 }
 
 void DirectoryListModel::setBusy(bool busy) {
@@ -554,16 +554,35 @@ void DirectoryListModel::setCurrentIndex(int row) {
         return;
     }
     currentIndex_ = row;
+    currentEntryPath_ = row >= 0 && row < rowCount()
+                            ? entryIdentity(entries_[static_cast<std::size_t>(row)])
+                            : QString{};
     emit currentIndexChanged();
 }
 
 void DirectoryListModel::replaceSelection(QSet<int> selection) {
-    if (selectedRows_ == selection) {
+    QSet<QString> identities;
+    for (const int row : selection) {
+        if (row >= 0 && row < rowCount()) {
+            identities.insert(entryIdentity(entries_[static_cast<std::size_t>(row)]));
+        }
+    }
+    if (selectedRows_ == selection && selectedEntryPaths_ == identities) {
         return;
     }
     selectedRows_ = std::move(selection);
+    selectedEntryPaths_ = std::move(identities);
     notifySelectionRoles();
     emit selectedCountChanged();
+}
+
+void DirectoryListModel::rebuildSelectionRows() {
+    selectedRows_.clear();
+    for (int row = 0; row < rowCount(); ++row) {
+        if (selectedEntryPaths_.contains(entryIdentity(entries_[static_cast<std::size_t>(row)]))) {
+            selectedRows_.insert(row);
+        }
+    }
 }
 
 void DirectoryListModel::selectRangeTo(int row) {
@@ -584,18 +603,4 @@ void DirectoryListModel::notifySelectionRoles() {
         return;
     }
     emit dataChanged(index(0), index(rowCount() - 1), {SelectedRole});
-}
-
-void DirectoryListModel::requestOperation(const QString& operation) {
-    const QStringList paths = selectedPaths();
-    if (paths.isEmpty()) {
-        setStatusMessage(tr("Select at least one item first."));
-        return;
-    }
-    if (operation == QStringLiteral("rename") && paths.size() != 1) {
-        setStatusMessage(tr("Rename requires exactly one selected item."));
-        return;
-    }
-    emit filesystemOperationRequested(operation, paths);
-    setStatusMessage(tr("%1 request is waiting for the core operation hookup.").arg(operation));
 }
