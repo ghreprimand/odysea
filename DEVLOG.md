@@ -7,6 +7,48 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Bounded, cancellable thumbnail scheduling
+
+Thumbnail work now runs on a small pool of core workers behind two interfaces
+the caller supplies: one that turns a file into pixels and one that reads and
+writes the persistent cache. Both are free of any toolkit type, so scheduling is
+verified headless with fakes, without a codec, an image file, or a display
+server. Results are delivered on a worker thread and never while a lock is held,
+matching the directory scanner so a consumer marshals both the same way.
+
+Four properties decide whether a grid of thumbnails stays usable, and each is
+enforced rather than assumed. Asking repeatedly for one source decodes it once
+while still answering every request separately. Entries the user can see are
+decoded before entries they cannot. Work belonging to a location the view has
+left is dropped: refused at the door, purged from the queue, skipped at the
+moment it would be claimed, and suppressed at delivery, so a decode already
+running still populates the cache but answers nobody. Decoded pixels are
+retained under a byte budget, evicting least-recently-used entries, and results
+are shared so an image already handed out survives its own eviction.
+
+Two smaller bounds keep pathological directories cheap. A source that cannot be
+decoded is remembered, so a directory full of files no codec understands is not
+attempted again on every pass, and forgetting that record makes the source
+eligible again. The queue itself is bounded, dropping the oldest background
+request rather than growing without limit.
+
+A stored thumbnail is used only after the recorded description is checked
+against the source, so an out-of-date file on disk is replaced instead of shown.
+Shutdown stops accepting work, suppresses delivery, and joins every worker
+before returning, so no result arrives after the service is gone.
+
+Verified with a headless scheduling suite built entirely on latches and
+counters, with no sleeps, repeated twenty-five times without variation.
+Reverting a guard fails it: removing deduplication, eviction, refusal memory,
+priority ordering, the queue bound, the stored-description check, or request
+withdrawal each fails checks, and replacing the joining shutdown with a
+detaching one crashes outright. Cancellation is deliberately defended at four
+points, so removing any one of them alone is caught by the others; removing the
+whole layer fails seven checks.
+
+Known gap: no view consumes this yet, and nothing here decodes an image, so the
+roadmap entry for thumbnails remains unchecked.
+
 ## 2026-07-28 -- Interoperable thumbnail cache policy
 
 The core now decides which thumbnail is wanted, where it belongs, and whether a

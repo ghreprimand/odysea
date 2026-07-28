@@ -62,11 +62,12 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
 
 - **`core/` (pure C++20, no Qt).** Directory reading, stable entry identity,
   cancellable scanning, incremental directory watching, transactional copy,
-  move, and rename, and freedesktop trash support. It has no GUI dependency and
-  is unit-tested headless. This is where the performance-critical work lives,
-  deliberately free of framework overhead.
+  move, and rename, freedesktop trash support, and thumbnail cache policy and
+  scheduling. It has no GUI dependency and is unit-tested headless. This is
+  where the performance-critical work lives, deliberately free of framework
+  overhead.
 - **`app/` (Qt Quick).** The GPU-rendered shell: the QML scene, input handling,
-  theming, and (later) thumbnail presentation. A thin adapter
+  theming, and thumbnail decoding and presentation. A thin adapter
   (`DirectoryListModel`, a `QAbstractListModel`) is the single boundary that
   exposes the core to QML. It marshals scanner and watcher callbacks onto the UI
   thread and schedules mutations away from it; the core itself never includes a
@@ -93,4 +94,9 @@ effects, or a custom RHI/Vulkan pass) for the visual identity.
 - Large directories use a virtualized view (`ListView`/`GridView` only realize
   visible delegates), so entry count does not gate frame time.
 - Thumbnails are generated lazily, cached, and cancellable when navigation moves
-  on.
+  on. Deciding what to thumbnail, in what order, and when a cached one is stale
+  is core work; turning a file into pixels is not, because that needs an image
+  codec the presentation layer already links. The two meet at a pair of
+  interfaces free of toolkit types, which is what keeps the scheduling, the
+  memory bound, and the cancellation behaviour verifiable without a display
+  server.

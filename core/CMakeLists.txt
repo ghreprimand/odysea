@@ -10,6 +10,7 @@ add_library(odysea_core
     src/directory_watcher.cpp
     src/file_operations.cpp
     src/thumbnail.cpp
+    src/thumbnail_service.cpp
     src/trash.cpp)
 
 target_include_directories(odysea_core
