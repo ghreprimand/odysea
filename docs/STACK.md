@@ -32,6 +32,10 @@ The graphical shell is built with Qt Quick:
   visuals.
 - **Native fit.** Qt is the toolkit of the KDE ecosystem, so the app integrates
   naturally on Plasma while remaining independent of any specific environment.
+- **Bounded image decoding.** `QImageReader` and `QImageWriter` supply the
+  application-layer codecs and freedesktop PNG metadata. Header dimensions and
+  decoded byte cost are bounded before decoding, while scheduling and cache
+  policy remain in the Qt-free core.
 
 The core (`core/`) has no Qt dependency; Qt is confined to the `app/` layer.
 

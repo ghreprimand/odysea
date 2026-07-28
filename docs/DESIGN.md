@@ -108,3 +108,8 @@ effects, or a custom RHI/Vulkan pass) for the visual identity.
   interfaces free of toolkit types, which is what keeps the scheduling, the
   memory bound, and the cancellation behaviour verifiable without a display
   server.
+- The application decoder accepts a conservative set of web image formats and
+  rejects oversized dimensions and decoded byte costs before allocating pixel
+  buffers. Worker results return through a thread-safe image provider only
+  after the current navigation generation, stable entry path, and full cache
+  key all match. Model row numbers are never asynchronous identity.

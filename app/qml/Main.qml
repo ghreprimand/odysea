@@ -20,6 +20,7 @@ ApplicationWindow {
     readonly property color secondaryTextColor: "#a99f91"
     readonly property color accentColor: "#ffb454"
     readonly property color selectionColor: "#49321f"
+    property bool gridMode: false
 
     width: 1100
     height: 720
@@ -122,7 +123,7 @@ ApplicationWindow {
         Rectangle {
             anchors.fill: parent
             color: root.backgroundColor
-            border.color: directoryList.activeFocus ? root.accentColor : root.borderColor
+            border.color: directoryList.activeFocus || directoryGrid.activeFocus ? root.accentColor : root.borderColor
             radius: 6
         }
 
@@ -134,7 +135,8 @@ ApplicationWindow {
             anchors.margins: 4
             model: root.shellModel
             clip: true
-            focus: true
+            focus: !root.gridMode
+            visible: !root.gridMode
             boundsBehavior: Flickable.StopAtBounds
             currentIndex: root.shellModel.currentIndex
             highlightMoveDuration: 60
@@ -322,6 +324,21 @@ ApplicationWindow {
                 width: 8
             }
         }
+
+        DirectoryGridView {
+            id: directoryGrid
+
+            anchors.fill: parent
+            visible: root.gridMode
+            shellModel: root.shellModel
+            backgroundColor: root.backgroundColor
+            panelColor: root.panelColor
+            borderColor: root.borderColor
+            primaryTextColor: root.primaryTextColor
+            secondaryTextColor: root.secondaryTextColor
+            accentColor: root.accentColor
+            selectionColor: root.selectionColor
+        }
     }
 
     function formatSize(bytes) {
@@ -368,6 +385,14 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+H"
         onActivated: root.shellModel.showHidden = !root.shellModel.showHidden
+    }
+    Shortcut {
+        sequence: "Ctrl+1"
+        onActivated: root.gridMode = false
+    }
+    Shortcut {
+        sequence: "Ctrl+2"
+        onActivated: root.gridMode = true
     }
     Shortcut {
         sequence: "Ctrl+Shift+S"
@@ -512,6 +537,22 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Toggle pane workspace (Ctrl+Shift+P)")
                     onClicked: root.shellModel.setDualPaneEnabled(root.shellModel.paneCount === 1)
+                }
+                ShellButton {
+                    objectName: "listViewButton"
+                    text: qsTr("List")
+                    enabled: root.gridMode
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("List view (Ctrl+1)")
+                    onClicked: root.gridMode = false
+                }
+                ShellButton {
+                    objectName: "gridViewButton"
+                    text: qsTr("Grid")
+                    enabled: !root.gridMode
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Grid view (Ctrl+2)")
+                    onClicked: root.gridMode = true
                 }
             }
         }

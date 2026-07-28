@@ -53,6 +53,8 @@ TestCase {
         property int requestMoveCalls: 0
         property int requestRenameCalls: 0
         property int requestTrashCalls: 0
+        property int requestThumbnailCalls: 0
+        property int releaseThumbnailCalls: 0
         property int performCopyCalls: 0
         property int performMoveCalls: 0
         property int performRenameCalls: 0
@@ -118,6 +120,12 @@ TestCase {
         function requestTrash() {
             requestTrashCalls += 1;
             filesystemOperationRequested("trash", ["/sample/sample-0.txt"]);
+        }
+        function requestThumbnail(row) {
+            requestThumbnailCalls += 1;
+        }
+        function releaseThumbnail(entryPath) {
+            releaseThumbnailCalls += 1;
         }
         function performCopy(destination, conflictMode) {
             performCopyCalls += 1;
@@ -186,6 +194,8 @@ TestCase {
             requestMoveCalls = 0;
             requestRenameCalls = 0;
             requestTrashCalls = 0;
+            requestThumbnailCalls = 0;
+            releaseThumbnailCalls = 0;
             performCopyCalls = 0;
             performMoveCalls = 0;
             performRenameCalls = 0;
@@ -217,6 +227,7 @@ TestCase {
         fakeModel.tabCount = 1;
         fakeModel.activeTab = 0;
         fakeModel.operationErrorString = "";
+        shellWindow.gridMode = false;
         populateRows(4);
         fakeModel.resetTelemetry();
     }
@@ -237,13 +248,17 @@ TestCase {
                 "isDir": false,
                 "size": 12 + index,
                 "selected": false,
-                "recoveryEntry": false
+                "recoveryEntry": false,
+                "entryPath": "/sample/sample-" + index + ".txt",
+                "thumbnailSource": "",
+                "thumbnailLoading": false
             });
         }
         fakeModel.currentIndex = count > 0 ? 0 : -1;
         fakeModel.selectedCount = 0;
 
         tryCompare(list, "count", count);
+        tryCompare(child("directoryGrid"), "count", count);
         list.positionViewAtBeginning();
         list.interactive = true;
         waitForRendering(shellWindow.contentItem);
@@ -274,6 +289,19 @@ TestCase {
     function clickRow(index, button, modifiers) {
         let row = rowAt(index);
         mouseClick(row, row.width / 2, row.height / 2, button, modifiers);
+    }
+
+    function cellAt(index) {
+        let cell = child("entryCell-" + index);
+        tryVerify(function () {
+            return cell.width > 0 && cell.height > 0;
+        });
+        return cell;
+    }
+
+    function clickCell(index, button, modifiers) {
+        let cell = cellAt(index);
+        mouseClick(cell, cell.width / 2, cell.height / 2, button, modifiers);
     }
 
     function verifyBandDrag(area, expectRows) {
@@ -424,6 +452,138 @@ TestCase {
         compare(fakeModel.moveCursorDelta, 1);
         compare(fakeModel.toggleCurrentCalls, 1);
         compare(fakeModel.clearSelectionCalls, 1);
+    }
+
+    function test_gridDelegatesAreVirtualizedAndRequestThumbnails() {
+        populateRows(200);
+        fakeModel.resetTelemetry();
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        keyClick(Qt.Key_2, Qt.ControlModifier);
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        tryVerify(function () {
+            return fakeModel.requestThumbnailCalls > 0;
+        });
+        verify(fakeModel.requestThumbnailCalls < fakeModel.count);
+        verify(cellAt(0) !== null);
+    }
+
+    function test_gridPointerActivationAndSelection() {
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+
+        clickCell(1, Qt.LeftButton, Qt.ControlModifier);
+        tryCompare(fakeModel, "selectedRow", 1);
+        verify((fakeModel.selectedModifiers & Qt.ControlModifier) !== 0);
+
+        let cell = cellAt(2);
+        mouseDoubleClickSequence(cell, cell.width / 2, cell.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activatedRow", 2);
+
+        clickCell(3, Qt.RightButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectedRow", 3);
+        keyClick(Qt.Key_Escape);
+    }
+
+    function test_gridRubberBandUsesTwoDimensionalRows() {
+        populateRows(40);
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        fakeModel.resetTelemetry();
+
+        let gutter = child("gridRubberBandGutter");
+        tryVerify(function () {
+            return gutter.width > 4 && gutter.height > 200;
+        });
+        mouseDrag(gutter, gutter.width / 2, 20, -220, 190, Qt.LeftButton, Qt.NoModifier, 10);
+        tryCompare(fakeModel, "beginRubberBandCalls", 1);
+        verify(fakeModel.updateRubberBandCalls > 0);
+        compare(fakeModel.endRubberBandCalls, 1);
+        verify(fakeModel.rubberBandRows.length > 2);
+        let containsGap = false;
+        for (let index = 1; index < fakeModel.rubberBandRows.length; ++index) {
+            if (fakeModel.rubberBandRows[index] - fakeModel.rubberBandRows[index - 1] > 1) {
+                containsGap = true;
+            }
+        }
+        verify(containsGap);
+    }
+
+    function test_gridCellDragScrollsWithoutSelecting() {
+        populateRows(60);
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        grid.interactive = false;
+        grid.contentY = 154;
+        grid.interactive = true;
+        tryCompare(grid, "contentY", 154);
+        fakeModel.resetTelemetry();
+
+        let cell = cellAt(14);
+        const initialContentY = grid.contentY;
+        mouseDrag(cell, cell.width / 2, cell.height / 2, 0, -100, Qt.LeftButton, Qt.NoModifier, 10);
+        tryVerify(function () {
+            return grid.contentY !== initialContentY;
+        });
+        compare(fakeModel.selectRowCalls, 0);
+        compare(fakeModel.beginRubberBandCalls, 0);
+    }
+
+    function test_gridKeyboardNavigationAfterShortcutSwitch() {
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        keyClick(Qt.Key_2, Qt.ControlModifier);
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        fakeModel.resetTelemetry();
+        keyClick(Qt.Key_Right);
+        tryCompare(fakeModel, "moveCursorCalls", 1);
+        compare(fakeModel.moveCursorDelta, 1);
+    }
+
+    function test_viewSwitchingKeyboardAndMousePreservesSelection() {
+        populateRows(60);
+        let list = child("directoryList");
+        list.interactive = false;
+        list.contentY = 204;
+        list.interactive = true;
+        tryCompare(list, "contentY", 204);
+        clickRow(10, Qt.LeftButton, Qt.NoModifier);
+        list.forceActiveFocus();
+        keyClick(Qt.Key_2, Qt.ControlModifier);
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        compare(fakeModel.currentIndex, 10);
+        compare(fakeModel.selectedRow, 10);
+        grid.interactive = false;
+        grid.contentY = 154;
+        grid.interactive = true;
+        tryCompare(grid, "contentY", 154);
+
+        mouseClick(child("listViewButton"));
+        tryCompare(list, "visible", true);
+        compare(fakeModel.currentIndex, 10);
+        compare(fakeModel.selectedRow, 10);
+        compare(list.contentY, 204);
+
+        mouseClick(child("gridViewButton"));
+        tryCompare(grid, "visible", true);
+        compare(fakeModel.currentIndex, 10);
+        compare(fakeModel.selectedRow, 10);
+        compare(grid.contentY, 154);
     }
 
     function test_moveDialogKeyboardAndMouseParity() {

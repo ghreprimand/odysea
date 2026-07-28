@@ -104,27 +104,28 @@ void ThumbnailBackendTest::storeRoundTripsAndExposesStaleMetadata() {
     const std::optional<odysea::core::StoredThumbnail> loaded = store.load(key, error);
     QVERIFY(!error);
     QVERIFY(loaded.has_value());
-    QCOMPARE(loaded->uri, key.uri);
-    QCOMPARE(loaded->modified_seconds, key.modified_seconds);
-    QCOMPARE(loaded->size, key.size);
-    QVERIFY(loaded->size_recorded);
-    QVERIFY(odysea::core::thumbnail_matches(*loaded, key));
-    QCOMPARE(loaded->image.width, image.width);
-    QCOMPARE(loaded->image.height, image.height);
+    const odysea::core::StoredThumbnail loadedValue = loaded.value_or({});
+    QCOMPARE(loadedValue.uri, key.uri);
+    QCOMPARE(loadedValue.modified_seconds, key.modified_seconds);
+    QCOMPARE(loadedValue.size, key.size);
+    QVERIFY(loadedValue.size_recorded);
+    QVERIFY(odysea::core::thumbnail_matches(loadedValue, key));
+    QCOMPARE(loadedValue.image.width, image.width);
+    QCOMPARE(loadedValue.image.height, image.height);
 
     odysea::core::ThumbnailKey stale = key;
     ++stale.modified_seconds;
     const std::optional<odysea::core::StoredThumbnail> staleRecord = store.load(stale, error);
     QVERIFY(!error);
     QVERIFY(staleRecord.has_value());
-    QVERIFY(!odysea::core::thumbnail_matches(*staleRecord, stale));
+    QVERIFY(!odysea::core::thumbnail_matches(staleRecord.value_or({}), stale));
 
     odysea::core::ThumbnailKey resized = key;
     ++resized.size;
     const std::optional<odysea::core::StoredThumbnail> resizedRecord = store.load(resized, error);
     QVERIFY(!error);
     QVERIFY(resizedRecord.has_value());
-    QVERIFY(!odysea::core::thumbnail_matches(*resizedRecord, resized));
+    QVERIFY(!odysea::core::thumbnail_matches(resizedRecord.value_or({}), resized));
 }
 
 QTEST_GUILESS_MAIN(ThumbnailBackendTest)

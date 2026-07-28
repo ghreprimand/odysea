@@ -33,6 +33,7 @@ qt_add_qml_module(odysea
     URI OdySea
     VERSION 1.0
     QML_FILES
+        qml/DirectoryGridView.qml
         qml/Main.qml
         qml/FilesystemDialogs.qml)
 
