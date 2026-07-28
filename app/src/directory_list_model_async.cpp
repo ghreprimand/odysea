@@ -26,6 +26,7 @@ void DirectoryListModel::startScan() {
     if (path_.isEmpty()) {
         scanner_.cancel();
         watchService_.replace({}, ++watchToken_);
+        scannedPath_.clear();
         scannedEntries_.clear();
         scanEntries_.clear();
         applyPresentationSettings(true);
@@ -33,10 +34,15 @@ void DirectoryListModel::startScan() {
         return;
     }
 
+    if (scannedPath_ != path_) {
+        scannedPath_ = path_;
+        scannedEntries_.clear();
+        applyPresentationSettings();
+    }
+
     setBusy(true);
     setErrorString({});
     scanEntries_.clear();
-    scanReceivedBatch_ = false;
 
     odysea::core::DirectoryScanner::Request request;
     request.directory = path_.toStdString();
@@ -85,10 +91,19 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token,
     if (token != activeScanToken_) {
         return;
     }
-    scanReceivedBatch_ = true;
-    scanEntries_.insert(scanEntries_.end(), std::make_move_iterator(entries.begin()),
-                        std::make_move_iterator(entries.end()));
-    scannedEntries_ = scanEntries_;
+    for (odysea::core::Entry& entry : entries) {
+        const QString key = entryKey(entry);
+        const auto existing =
+            std::ranges::find_if(scannedEntries_, [this, &key](const auto& candidate) {
+                return entryKey(candidate) == key;
+            });
+        if (existing == scannedEntries_.end()) {
+            scannedEntries_.push_back(entry);
+        } else {
+            *existing = entry;
+        }
+        scanEntries_.push_back(std::move(entry));
+    }
     applyPresentationSettings();
 }
 
@@ -97,9 +112,6 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
         return;
     }
 
-    if (!scanReceivedBatch_) {
-        scanEntries_.clear();
-    }
     scannedEntries_ = std::move(scanEntries_);
     setErrorString(summary.error ? QString::fromStdString(summary.error.message()) : QString{});
     applyPresentationSettings(true);
@@ -159,6 +171,7 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         if (currentEntryKey_ == oldKey) {
             currentEntryKey_ = newKey;
         }
+        pendingEntryKeyRemaps_.insert(oldKey, newKey);
     };
 
     for (const DirectoryEntryRename& rename : update.renamedEntries) {

@@ -4,6 +4,8 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QPersistentModelIndex>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThreadPool>
@@ -111,6 +113,7 @@ class DirectoryListModelTest : public QObject {
   private slots:
     void rapidNavigationCancelsStaleBatches();
     void incrementalScannerPublishesBatches();
+    void watchAndPresentationUpdatesUseGranularSignals();
     void watcherBurstPreservesRenamedSelection();
     void hardLinksRemainDistinctAcrossRefreshAndRename();
     void uniqueInodeFallbackPreservesRename();
@@ -156,7 +159,8 @@ void DirectoryListModelTest::incrementalScannerPublishesBatches() {
 
     DirectoryListModel model;
     bool sawIncrementalBatch = false;
-    connect(&model, &QAbstractItemModel::modelReset, &model, [&] {
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, [&] {
         if (model.busy() && model.rowCount() > 0 && model.rowCount() < entryCount) {
             sawIncrementalBatch = true;
         }
@@ -166,6 +170,88 @@ void DirectoryListModelTest::incrementalScannerPublishesBatches() {
     QTRY_VERIFY_WITH_TIMEOUT(sawIncrementalBatch, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.rowCount(), entryCount);
+    QCOMPARE(resetSpy.count(), 0);
+}
+
+void DirectoryListModelTest::watchAndPresentationUpdatesUseGranularSignals() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "alpha.txt", "a");
+    writeFile(root / "charlie.txt", "ccc");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy insertedSpy(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removedSpy(&model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy layoutSpy(&model, &QAbstractItemModel::layoutChanged);
+
+    const int alphaRow = rowForName(model, QStringLiteral("alpha.txt"));
+    QVERIFY(alphaRow >= 0);
+    model.selectRow(alphaRow, Qt::NoModifier);
+    const QPersistentModelIndex persistentAlpha = model.index(alphaRow);
+
+    writeFile(root / "bravo.txt", "bb");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "bravo.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(insertedSpy.count(), 1);
+    QVERIFY(layoutSpy.count() >= 1);
+    QVERIFY(rowForName(model, QStringLiteral("bravo.txt")) >= 0);
+
+    writeFile(root / "bravo.txt", "larger metadata");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "bravo.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+    QVERIFY(changedSpy.count() >= 1);
+
+    fs::rename(root / "alpha.txt", root / "delta.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {"alpha.txt"},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "delta.txt"))},
+        .renamedEntries = {DirectoryEntryRename{.oldName = "alpha.txt", .newName = "delta.txt"}},
+        .error = {},
+        .rescanRequired = false});
+    QVERIFY(persistentAlpha.isValid());
+    QCOMPARE(persistentAlpha.data(DirectoryListModel::NameRole).toString(),
+             QStringLiteral("delta.txt"));
+    QCOMPARE(selectedName(model), QStringLiteral("delta.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("delta.txt"));
+
+    fs::remove(root / "charlie.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"charlie.txt"},
+                                                .updatedEntries = {},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+    QCOMPARE(removedSpy.count(), 1);
+
+    model.setFilterText(QStringLiteral("bravo"));
+    QCOMPARE(model.rowCount(), 1);
+    model.setFilterText({});
+    QCOMPARE(model.rowCount(), 2);
+    model.setSortMode(DirectoryListModel::SortBySize);
+    QVERIFY(layoutSpy.count() >= 2);
+    QCOMPARE(resetSpy.count(), 0);
 }
 
 void DirectoryListModelTest::watcherBurstPreservesRenamedSelection() {

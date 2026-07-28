@@ -14,6 +14,11 @@ namespace {
 constexpr int minimumSortMode = DirectoryListModel::SortByName;
 constexpr int maximumSortMode = DirectoryListModel::SortByType;
 
+bool entriesMatch(const odysea::core::Entry& left, const odysea::core::Entry& right) {
+    return left.name == right.name && left.path == right.path && left.kind == right.kind &&
+           left.size == right.size && left.device == right.device && left.inode == right.inode;
+}
+
 } // namespace
 
 int DirectoryListModel::rowCount(const QModelIndex& parent) const {
@@ -497,25 +502,160 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
 
     const int previousCurrent = currentIndex_;
     const int previousSelectedCount = selectedCount();
-    beginResetModel();
-    entries_ = std::move(presented);
-    rubberBandBase_.clear();
-    rebuildSelectionRows();
-    currentIndex_ = -1;
-    if (!currentEntryKey_.isEmpty()) {
-        for (int row = 0; row < rowCount(); ++row) {
-            if (entryKey(entries_[static_cast<std::size_t>(row)]) == currentEntryKey_) {
-                currentIndex_ = row;
-                break;
-            }
+    const QSet<int> previousSelectedRows = selectedRows_;
+
+    QSet<QString> targetKeys;
+    QHash<QString, int> targetIdentityCounts;
+    QHash<QString, QString> targetIdentityKeys;
+    targetKeys.reserve(static_cast<qsizetype>(presented.size()));
+    for (const odysea::core::Entry& entry : presented) {
+        const QString key = entryKey(entry);
+        targetKeys.insert(key);
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++targetIdentityCounts[identity];
+            targetIdentityKeys[identity] = key;
         }
     }
+
+    QHash<QString, int> currentIdentityCounts;
+    for (const odysea::core::Entry& entry : entries_) {
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty()) {
+            ++currentIdentityCounts[identity];
+        }
+    }
+
+    QHash<QString, QString> resolvedKeyRemaps = pendingEntryKeyRemaps_;
+    for (const odysea::core::Entry& entry : entries_) {
+        const QString oldKey = entryKey(entry);
+        if (targetKeys.contains(oldKey) || resolvedKeyRemaps.contains(oldKey)) {
+            continue;
+        }
+        const QString identity = entryIdentity(entry);
+        if (!identity.isEmpty() && currentIdentityCounts.value(identity) == 1 &&
+            targetIdentityCounts.value(identity) == 1) {
+            resolvedKeyRemaps.insert(oldKey, targetIdentityKeys.value(identity));
+        }
+    }
+
+    const auto resolvedKey = [this, &resolvedKeyRemaps](const odysea::core::Entry& entry) {
+        const QString key = entryKey(entry);
+        return resolvedKeyRemaps.value(key, key);
+    };
+
+    for (int end = rowCount() - 1; end >= 0;) {
+        if (targetKeys.contains(resolvedKey(entries_[static_cast<std::size_t>(end)]))) {
+            --end;
+            continue;
+        }
+        int first = end;
+        while (first > 0 &&
+               !targetKeys.contains(resolvedKey(entries_[static_cast<std::size_t>(first - 1)]))) {
+            --first;
+        }
+        beginRemoveRows({}, first, end);
+        entries_.erase(entries_.begin() + first, entries_.begin() + end + 1);
+        rebuildSelectionRows();
+        endRemoveRows();
+        end = first - 1;
+    }
+
+    QSet<QString> existingKeys;
+    existingKeys.reserve(static_cast<qsizetype>(entries_.size()));
+    for (const odysea::core::Entry& entry : entries_) {
+        existingKeys.insert(resolvedKey(entry));
+    }
+
+    std::vector<odysea::core::Entry> insertedEntries;
+    for (const odysea::core::Entry& entry : presented) {
+        const QString key = entryKey(entry);
+        if (!existingKeys.contains(key)) {
+            insertedEntries.push_back(entry);
+            existingKeys.insert(key);
+        }
+    }
+    if (!insertedEntries.empty()) {
+        const int first = rowCount();
+        const int last = first + static_cast<int>(insertedEntries.size()) - 1;
+        beginInsertRows({}, first, last);
+        entries_.insert(entries_.end(), std::make_move_iterator(insertedEntries.begin()),
+                        std::make_move_iterator(insertedEntries.end()));
+        rebuildSelectionRows();
+        endInsertRows();
+    }
+
+    QHash<QString, int> targetRows;
+    QStringList targetOrder;
+    targetOrder.reserve(static_cast<qsizetype>(presented.size()));
+    for (int row = 0; row < static_cast<int>(presented.size()); ++row) {
+        const QString key = entryKey(presented[static_cast<std::size_t>(row)]);
+        targetRows.insert(key, row);
+        targetOrder.push_back(key);
+    }
+
+    QStringList currentOrder;
+    currentOrder.reserve(static_cast<qsizetype>(entries_.size()));
+    for (const odysea::core::Entry& entry : entries_) {
+        currentOrder.push_back(resolvedKey(entry));
+    }
+
+    QSet<int> changedRows;
+    for (int row = 0; row < static_cast<int>(presented.size()); ++row) {
+        const QString key = entryKey(presented[static_cast<std::size_t>(row)]);
+        const auto current =
+            std::ranges::find_if(entries_, [&resolvedKey, &key](const auto& entry) {
+                return resolvedKey(entry) == key;
+            });
+        if (current != entries_.end() &&
+            !entriesMatch(*current, presented[static_cast<std::size_t>(row)])) {
+            changedRows.insert(row);
+        }
+    }
+
+    if (currentOrder != targetOrder) {
+        const QModelIndexList oldPersistentIndexes = persistentIndexList();
+        QStringList persistentKeys;
+        persistentKeys.reserve(oldPersistentIndexes.size());
+        for (const QModelIndex& persistent : oldPersistentIndexes) {
+            persistentKeys.push_back(
+                resolvedKey(entries_[static_cast<std::size_t>(persistent.row())]));
+        }
+
+        emit layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
+        entries_ = presented;
+        rebuildSelectionRows();
+
+        QModelIndexList newPersistentIndexes;
+        newPersistentIndexes.reserve(oldPersistentIndexes.size());
+        for (qsizetype offset = 0; offset < oldPersistentIndexes.size(); ++offset) {
+            const int row = targetRows.value(persistentKeys[offset], -1);
+            newPersistentIndexes.push_back(
+                row >= 0 ? index(row, oldPersistentIndexes[offset].column()) : QModelIndex{});
+        }
+        changePersistentIndexList(oldPersistentIndexes, newPersistentIndexes);
+        emit layoutChanged({}, QAbstractItemModel::VerticalSortHint);
+    } else {
+        entries_ = presented;
+        rebuildSelectionRows();
+    }
+
+    currentIndex_ = currentEntryKey_.isEmpty() ? -1 : targetRows.value(currentEntryKey_, -1);
     if (currentIndex_ < 0 && finalScanBatch && !entries_.empty()) {
         currentIndex_ = 0;
         currentEntryKey_ = entryKey(entries_.front());
     }
     selectionAnchor_ = currentIndex_;
-    endResetModel();
+    rubberBandBase_.clear();
+    pendingEntryKeyRemaps_.clear();
+
+    for (const int row : changedRows) {
+        emit dataChanged(index(row), index(row),
+                         {NameRole, IsDirRole, SizeRole, PathRole, RecoveryEntryRole});
+    }
+    if (previousSelectedRows != selectedRows_) {
+        notifySelectionRoles();
+    }
     if (previousCurrent != currentIndex_) {
         emit currentIndexChanged();
     }

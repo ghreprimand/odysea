@@ -7,6 +7,7 @@
 
 #include <QAbstractListModel>
 #include <QFutureWatcher>
+#include <QHash>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -196,11 +197,13 @@ class DirectoryListModel : public QAbstractListModel {
     QString statusMessage_;
     QString operationErrorString_;
     QString currentEntryKey_;
+    QString scannedPath_;
     std::vector<odysea::core::Entry> scannedEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
     QSet<int> selectedRows_;
     QSet<QString> selectedEntryKeys_;
+    QHash<QString, QString> pendingEntryKeyRemaps_;
     QSet<int> rubberBandBase_;
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
     odysea::core::DirectoryScanner scanner_;
@@ -218,6 +221,5 @@ class DirectoryListModel : public QAbstractListModel {
     bool operationBusy_ = false;
     bool showHidden_ = false;
     bool rubberBandActive_ = false;
-    bool scanReceivedBatch_ = false;
     bool watchRefreshPending_ = false;
 };
