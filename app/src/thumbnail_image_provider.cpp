@@ -1,11 +1,28 @@
 #include "thumbnail_image_provider.hpp"
 
 #include <QMutexLocker>
+#include <QQmlEngine>
 
+#include <memory>
 #include <utility>
 
 ThumbnailImageProvider::ThumbnailImageProvider(std::size_t byteBudget)
     : QQuickImageProvider(QQuickImageProvider::Image), byteBudget_(byteBudget) {}
+
+QString ThumbnailImageProvider::providerName() {
+    return QStringLiteral("odysea-thumbnail");
+}
+
+QString ThumbnailImageProvider::sourceUrl(const QString& id) {
+    return QStringLiteral("image://") + providerName() + QStringLiteral("/") + id;
+}
+
+ThumbnailImageProvider& installThumbnailProvider(QQmlEngine& engine) {
+    auto owned = std::make_unique<ThumbnailImageProvider>();
+    ThumbnailImageProvider& provider = *owned;
+    engine.addImageProvider(ThumbnailImageProvider::providerName(), owned.release());
+    return provider;
+}
 
 QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
                                             const QSize& requestedSize) {

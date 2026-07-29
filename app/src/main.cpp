@@ -10,8 +10,6 @@
 #include <QUrl>
 #include <QVariant>
 
-#include <memory>
-
 #include "directory_list_model.hpp"
 #include "thumbnail_image_provider.hpp"
 
@@ -24,9 +22,7 @@ int main(int argc, char* argv[]) {
     const QString start = args.size() > 1 ? args.at(1) : QDir::homePath();
 
     QQmlApplicationEngine engine;
-    auto ownedThumbnailProvider = std::make_unique<ThumbnailImageProvider>();
-    ThumbnailImageProvider& thumbnailProvider = *ownedThumbnailProvider;
-    engine.addImageProvider(QStringLiteral("odysea-thumbnail"), ownedThumbnailProvider.release());
+    ThumbnailImageProvider& thumbnailProvider = installThumbnailProvider(engine);
 
     DirectoryListModel model(thumbnailProvider);
     model.setPath(start);

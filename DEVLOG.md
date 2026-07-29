@@ -87,6 +87,93 @@ offscreen release and sanitizer smoke launches. The adapter and rendered-shell
 tests also passed fifteen consecutive release runs and five consecutive
 sanitizer runs.
 
+---
+
+## 2026-07-28 -- Cover the rendered thumbnail path end to end
+
+Thumbnail source URLs address the image provider by name, and the engine
+resolves them by the name the provider was registered under. If those two ever
+disagree, every thumbnail silently resolves to nothing: the grid shows
+placeholders, no diagnostic appears, and the existing tests stay green, because
+they either stop at the model role or start from an image already inside the
+provider.
+
+The name and the URL it produces now come from the provider itself, and one
+function creates the provider and registers it, so the application and the
+tests cannot disagree about it. A new test loads the real scene from the shell
+module, decodes a real image file through the real decoder with the disk cache
+replaced by an in-memory one, and requires the grid delegate's image to reach
+`Image.Ready` with a non-zero painted size. It also requires the same
+identifier to fail when addressed to a different provider name, so reaching
+`Image.Ready` cannot be an accident.
+
+Registering the provider under a name one letter different from the one the
+model builds fails two checks in this test and leaves every other suite
+passing, which is the gap it was written to close.
+
+Grid cells expose their image by object name for this purpose. Realized
+delegates have a visual parent but no object parent, so the test walks the
+visual tree rather than the object hierarchy.
+
+Verified with release and sanitizer builds, the full test suites, the QML and
+module gates, and an offscreen application launch.
+
+---
+
+## 2026-07-28 -- Hold the QML module to the tracked scene corpus
+
+A scene can be well formed, formatted, and lint-clean while remaining
+unreachable, because reachability depends on the module's file list rather than
+on the file itself. Nothing in the compiler or the QML tooling notices that.
+
+The module manifest gate closes that. It derives one side of the comparison
+from the tracked scenes under `app/qml` and the other from the manifest the
+build produced, then requires the two to agree in both directions. A scene left
+out of the module fails the gate, and so does a manifest entry that no longer
+names a tracked scene, which is what a rename leaves behind. Scene file names
+must begin with a capital letter, since the file stem is the type name the
+application instantiates.
+
+The gate's own self-test builds throwaway repositories and manifests covering
+an omitted scene, a renamed entry, a renamed file, a stale entry, an absent
+manifest, an empty corpus, and a scene that cannot become a type. Seven of the
+eight scenarios require rejection and one requires acceptance, so neither a
+gate that always passes nor one that always fails can satisfy it.
+
+Verified with release and sanitizer builds, the full test suites, the QML
+gates, and an offscreen application launch.
+
+---
+
+## 2026-07-28 -- Load the shell through a linkable QML module
+
+The declarative shell is now a linkable static QML module rather than a module
+attached to the application executable. The application and the rendered-shell
+tests both link it, so `import OdySea` resolves through the generated `qmldir`
+in either case.
+
+This closes a real gap between the two. The rendered-shell tests previously
+imported `../qml` as a directory, which reads source files straight from the
+working tree and never consults the module. A scene omitted from the module's
+file list therefore kept its tests green while the application could not start.
+With the module linked, omitting `Main.qml` from the module fails the shell
+tests with `Main is not a type`, which is the same failure the application
+reports.
+
+The tests run from a dedicated executable that links the module, because the
+generic QML test runner only ever sees a source directory. The scenes, the
+fixtures, and the assertions are unchanged.
+
+Linting a scene that imports the module requires the built module directory on
+the import path, so the QML lint gate now accepts import roots and CMake passes
+the build tree's application directory. Import roots containing whitespace are
+refused rather than silently word-split.
+
+Verified with release and sanitizer builds, the full test suites, the QML
+formatting and lint gates, and an offscreen application launch.
+
+---
+
 ## 2026-07-28 -- Add a virtualized thumbnail grid
 
 The shell now offers list and grid presentations over the same incremental

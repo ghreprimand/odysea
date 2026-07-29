@@ -11,6 +11,7 @@
 
 #include "entry_launcher.hpp"
 #include "odysea/core/file_operations.hpp"
+#include "thumbnail_image_provider.hpp"
 
 namespace {
 
@@ -55,7 +56,7 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
                odysea::core::WorkingEntryRole::None;
     case ThumbnailSourceRole: {
         const QString id = thumbnailIds_.value(entryKey(entry));
-        return id.isEmpty() ? QString{} : QStringLiteral("image://odysea-thumbnail/") + id;
+        return id.isEmpty() ? QString{} : ThumbnailImageProvider::sourceUrl(id);
     }
     case ThumbnailLoadingRole:
         return thumbnailLoadingKeys_.contains(entryKey(entry));

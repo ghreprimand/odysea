@@ -11,6 +11,34 @@ case "$mode" in
         exit 2
         ;;
 esac
+shift || true
+
+# Remaining arguments are QML import roots. A scene that imports the shell
+# module only resolves when the built module directory is on the import path,
+# so lint runs against the same module the application links rather than
+# against loose source files.
+#
+# Pathname expansion is disabled for the whole script and roots containing
+# whitespace are refused, so the collected flags stay a safe unquoted word list.
+set -f
+import_flags=""
+while (($# > 0)); do
+    import_root="$1"
+    shift
+    case "$import_root" in
+        *[[:space:]]*)
+            printf 'qml_quality_guard: import path may not contain whitespace\n' \
+                >&2
+            exit 1
+            ;;
+    esac
+    if [[ ! -d "$import_root" ]]; then
+        printf 'qml_quality_guard: import path %s does not exist\n' \
+            "$import_root" >&2
+        exit 1
+    fi
+    import_flags="$import_flags -I $import_root"
+done
 
 if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
     printf 'qml_quality_guard: SKIP (Git metadata unavailable)\n'
@@ -76,7 +104,9 @@ if [[ "$mode" == "all" || "$mode" == "lint" ]]; then
 
     linted_count=0
     while IFS= read -r -d '' source_file; do
-        qmllint --ignore-settings --max-warnings 0 "$source_file"
+        # shellcheck disable=SC2086 # deliberate word split of the import flags
+        qmllint --ignore-settings --max-warnings 0 \
+            $import_flags "$source_file"
         linted_count=$((linted_count + 1))
     done < <(git ls-files -z -- '*.qml')
 
