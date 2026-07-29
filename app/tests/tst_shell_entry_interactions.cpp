@@ -75,6 +75,8 @@ class ShellEntryInteractionsTest : public QObject {
 
   private slots:
     void dragPayloadTracksRealModelSelectionInBothViews();
+    void dragPayloadTracksRenames_data();
+    void dragPayloadTracksRenames();
 };
 
 void ShellEntryInteractionsTest::dragPayloadTracksRealModelSelectionInBothViews() {
@@ -165,6 +167,72 @@ void ShellEntryInteractionsTest::dragPayloadTracksRealModelSelectionInBothViews(
         visualChild(window->contentItem(), QStringLiteral("gridEntryDropTarget-%1").arg(linkRow));
     QTRY_VERIFY(gridDropTarget != nullptr);
     QVERIFY(gridDropTarget->isEnabled());
+}
+
+void ShellEntryInteractionsTest::dragPayloadTracksRenames_data() {
+    QTest::addColumn<bool>("gridMode");
+    QTest::addColumn<bool>("externalRename");
+
+    QTest::newRow("list-in-app") << false << false;
+    QTest::newRow("list-watcher") << false << true;
+    QTest::newRow("grid-in-app") << true << false;
+    QTest::newRow("grid-watcher") << true << true;
+}
+
+void ShellEntryInteractionsTest::dragPayloadTracksRenames() {
+    QFETCH(bool, gridMode);
+    QFETCH(bool, externalRename);
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const fs::path root = directory.path().toStdString();
+    const fs::path original = root / "before.txt";
+    const fs::path renamed = root / "after.txt";
+    writeFile(original);
+
+    DirectoryListModel model;
+    model.setPath(directory.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    const int originalRow = rowForName(model, QStringLiteral("before.txt"));
+    QVERIFY(originalRow >= 0);
+    model.selectRow(originalRow, Qt::NoModifier);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine);
+    component.loadFromModule("OdySea", "Main");
+    QVERIFY2(!component.isError(), qPrintable(component.errorString()));
+    const QScopedPointer<QObject> rootObject(component.createWithInitialProperties(
+        {{QStringLiteral("shellModel"), QVariant::fromValue(&model)},
+         {QStringLiteral("gridMode"), gridMode}}));
+    QVERIFY2(!rootObject.isNull(), qPrintable(component.errorString()));
+
+    auto* window = qobject_cast<QQuickWindow*>(rootObject.data());
+    QVERIFY(window != nullptr);
+    QTRY_VERIFY(window->isVisible());
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    const QString delegateName =
+        QStringLiteral("%1-%2")
+            .arg(gridMode ? QStringLiteral("entryCell") : QStringLiteral("entryRow"))
+            .arg(originalRow);
+    QQuickItem* delegate = visualChild(window->contentItem(), delegateName);
+    QTRY_VERIFY(delegate != nullptr);
+    bool evaluated = false;
+    QTRY_COMPARE(dragPayload(delegate, evaluated), encodedUrl(original) + QStringLiteral("\r\n"));
+    QVERIFY(evaluated);
+
+    if (externalRename) {
+        QTest::qWait(50);
+        fs::rename(original, renamed);
+    } else {
+        model.performRename(QStringLiteral("after.txt"), DirectoryListModel::ConflictFail);
+        QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
+    }
+
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("after.txt")) >= 0, 5000);
+    QCOMPARE(model.selectedCount(), 1);
+    QTRY_COMPARE(dragPayload(delegate, evaluated), encodedUrl(renamed) + QStringLiteral("\r\n"));
+    QVERIFY(evaluated);
 }
 
 QTEST_MAIN(ShellEntryInteractionsTest)

@@ -38,6 +38,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_PROPERTY(int sortMode READ sortMode WRITE setSortMode NOTIFY sortModeChanged)
     Q_PROPERTY(int currentIndex READ currentIndex NOTIFY currentIndexChanged)
     Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectedCountChanged)
+    Q_PROPERTY(QStringList selectedFileUrls READ selectedFileUrls NOTIFY selectedFileUrlsChanged)
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY navigationChanged)
     Q_PROPERTY(bool canGoForward READ canGoForward NOTIFY navigationChanged)
     Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY navigationChanged)
@@ -116,7 +117,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void activateCurrent();
     Q_INVOKABLE void navigateToPath(const QString& path);
     Q_INVOKABLE QVariantList breadcrumbSegments() const;
-    Q_INVOKABLE QStringList selectedFileUrls() const;
+    [[nodiscard]] QStringList selectedFileUrls() const;
     Q_INVOKABLE bool rowSelected(int row) const;
     Q_INVOKABLE bool rowIsDirectory(int row) const;
     Q_INVOKABLE bool canDropSelection(const QString& destinationDirectory) const;
@@ -161,6 +162,7 @@ class DirectoryListModel : public QAbstractListModel {
     void sortModeChanged();
     void currentIndexChanged();
     void selectedCountChanged();
+    void selectedFileUrlsChanged();
     void navigationChanged();
     void tabsChanged();
     void panesChanged();

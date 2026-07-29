@@ -178,18 +178,34 @@ void test_entries_carry_their_own_modification_time(const fs::path& root) {
 }
 
 void test_directory_symlinks_keep_identity_and_directory_behavior(const fs::path& root) {
-    const fs::path target = root / "subdir";
-    const fs::path link = root / "subdir-link";
+    const fs::path directory_target = root / "subdir";
+    const fs::path directory_link = root / "subdir-link";
+    const fs::path file_target = root / "Alpha.txt";
+    const fs::path file_link = root / "file-link";
+    const fs::path broken_link = root / "broken-link";
     std::error_code link_ec;
-    fs::create_directory_symlink(target, link, link_ec);
+    fs::create_directory_symlink(directory_target, directory_link, link_ec);
     check(!link_ec, "the fixture can create a directory symlink");
     if (link_ec) {
+        return;
+    }
+    fs::create_symlink(file_target, file_link, link_ec);
+    check(!link_ec, "the fixture can create a file symlink");
+    if (link_ec) {
+        fs::remove(directory_link, link_ec);
+        return;
+    }
+    fs::create_symlink(root / "missing-target", broken_link, link_ec);
+    check(!link_ec, "the fixture can create a broken symlink");
+    if (link_ec) {
+        fs::remove(directory_link, link_ec);
+        fs::remove(file_link, link_ec);
         return;
     }
 
     std::error_code ec;
     const auto entries = odysea::core::read_directory(root, {.show_hidden = true}, ec);
-    check(!ec, "a directory containing a directory symlink lists without error");
+    check(!ec, "a directory containing symlinks lists without error");
     const auto linked_directory = std::ranges::find_if(
         entries, [](const auto& entry) { return entry.name == "subdir-link"; });
     check(linked_directory != entries.end(), "a directory symlink appears in the listing");
@@ -200,7 +216,29 @@ void test_directory_symlinks_keep_identity_and_directory_behavior(const fs::path
               "a directory symlink exposes directory navigation behavior");
     }
 
-    fs::remove(link, link_ec);
+    const auto linked_file =
+        std::ranges::find_if(entries, [](const auto& entry) { return entry.name == "file-link"; });
+    check(linked_file != entries.end(), "a file symlink appears in the listing");
+    if (linked_file != entries.end()) {
+        check(linked_file->kind == odysea::core::EntryKind::Symlink,
+              "a file symlink keeps its symlink kind");
+        check(!linked_file->is_directory(),
+              "a file symlink does not expose directory navigation behavior");
+    }
+
+    const auto broken = std::ranges::find_if(
+        entries, [](const auto& entry) { return entry.name == "broken-link"; });
+    check(broken != entries.end(), "a broken symlink appears in the listing");
+    if (broken != entries.end()) {
+        check(broken->kind == odysea::core::EntryKind::Symlink,
+              "a broken symlink keeps its symlink kind");
+        check(!broken->is_directory(),
+              "a broken symlink does not expose directory navigation behavior");
+    }
+
+    fs::remove(directory_link, link_ec);
+    fs::remove(file_link, link_ec);
+    fs::remove(broken_link, link_ec);
 }
 
 } // namespace

@@ -152,6 +152,7 @@ class DirectoryListModelTest : public QObject {
     void explicitGeometricSelectionUsesRowSet();
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
     void activationBreadcrumbsAndDropContracts();
+    void symlinkTargetDirectoryChangesRefreshRole();
     void operationsReachCoreAndReportFailures();
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
@@ -565,12 +566,17 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     const fs::path folder = source / "folder";
     const fs::path descendant = folder / "descendant";
     const fs::path folderLink = source / "folder-link";
+    const fs::path remoteTarget = destination / "faraway";
+    const fs::path remoteLink = source / "remote-link";
     const fs::path document = source / "document.txt";
     fs::create_directories(descendant);
-    fs::create_directories(destination);
+    fs::create_directories(remoteTarget);
     writeFile(document);
+    writeFile(remoteTarget / "remote-document.txt");
     std::error_code linkError;
     fs::create_directory_symlink(folder, folderLink, linkError);
+    QVERIFY2(!linkError, linkError.message().c_str());
+    fs::create_directory_symlink(remoteTarget, remoteLink, linkError);
     QVERIFY2(!linkError, linkError.message().c_str());
 
     FakeEntryLauncher launcher;
@@ -618,6 +624,11 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     QVERIFY(fs::exists(destination / "document.txt"));
 
     QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder-link")) >= 0, 5000);
+    const int remoteLinkRow = rowForName(model, QStringLiteral("remote-link"));
+    QVERIFY(remoteLinkRow >= 0);
+    model.selectRow(remoteLinkRow, Qt::NoModifier);
+    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string())));
+
     const int folderLinkRow = rowForName(model, QStringLiteral("folder-link"));
     QVERIFY(model.rowIsDirectory(folderLinkRow));
     QVERIFY(model.data(model.index(folderLinkRow), DirectoryListModel::IsDirRole).toBool());
@@ -644,6 +655,50 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.path(), QString::fromStdString(folder.string()));
     QCOMPARE(launcher.callCount, 2);
+
+    model.navigateToPath(QString::fromStdString(remoteTarget.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    const int remoteDocumentRow = rowForName(model, QStringLiteral("remote-document.txt"));
+    QVERIFY(remoteDocumentRow >= 0);
+    model.selectRow(remoteDocumentRow, Qt::NoModifier);
+    QVERIFY(!model.canDropSelection(QString::fromStdString(remoteLink.string())));
+}
+
+void DirectoryListModelTest::symlinkTargetDirectoryChangesRefreshRole() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path link = root / "changing-link";
+    std::error_code linkError;
+    fs::create_symlink(root / "missing-target", link, linkError);
+    QVERIFY2(!linkError, linkError.message().c_str());
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+
+    const int linkRow = rowForName(model, QStringLiteral("changing-link"));
+    QVERIFY(linkRow >= 0);
+    QVERIFY(!model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
+
+    const auto scannedLink = std::ranges::find(model.scannedEntries_, std::string{"changing-link"},
+                                               &odysea::core::Entry::name);
+    QVERIFY(scannedLink != model.scannedEntries_.end());
+    odysea::core::Entry updated = *scannedLink;
+    updated.target_is_directory = true;
+
+    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {},
+                                                .updatedEntries = {std::move(updated)},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(changedSpy.count(), 1);
+    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {

@@ -25,6 +25,7 @@ TestCase {
         property int sortMode: 0
         property int currentIndex: 0
         property int selectedCount: 0
+        property var selectedFileUrls: collectSelectedFileUrls()
         property int tabCount: 1
         property int activeTab: 0
         property int paneCount: 1
@@ -144,7 +145,7 @@ TestCase {
             navigatedPath = destination;
             path = destination;
         }
-        function selectedFileUrls() {
+        function collectSelectedFileUrls() {
             const urls = [];
             for (let row = 0; row < count; ++row) {
                 if (get(row).selected) {

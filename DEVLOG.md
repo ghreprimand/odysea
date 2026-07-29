@@ -29,9 +29,12 @@ or busy selections, non-directory destinations, transfers to the current
 parent, self-targets, and directory descendants before work begins. Operation
 requests capture paths synchronously so model-row reuse cannot retarget them.
 Vertical flicks and rubber-band gestures remain separate from the horizontal
-drag threshold. The exported MIME payload depends on the adapter's notifying
-selection count, so already-realized list and grid delegates update whenever
-the selection changes.
+drag threshold. The exported MIME payload is a notifying adapter property, so
+already-realized list and grid delegates update after selection changes,
+in-application renames, and watcher-observed external renames. Drop validation
+compares unresolved source identities before canonical containment checks,
+preventing a symlink from bypassing the same-parent guard when its target lives
+elsewhere.
 
 The breadcrumb strip includes the filesystem root and every absolute path
 segment. It scrolls horizontally, provides accessible location names, supports
@@ -47,7 +50,9 @@ keyboard and pointer activation, both context-menu keyboard paths, focus and
 selection rules, copy/move negotiation, target mapping, rejection, and scroll
 and band arbitration. A separate rendered test uses the real adapter and both
 production views to require `Drag.mimeData` to follow selection changes and
-directory-symlink drop targets to remain enabled.
+both rename paths, and requires directory-symlink drop targets to remain
+enabled. Core and adapter coverage distinguishes directory, file, and broken
+symlinks and requires target-directory changes to refresh the directory role.
 
 Verified with all twenty-two release tests and all twenty-one enabled ASan/UBSan
 tests, including warning-clean builds, scoped static analysis, C++ and QML

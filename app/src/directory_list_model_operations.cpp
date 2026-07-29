@@ -126,16 +126,24 @@ bool DirectoryListModel::canDropSelection(const QString& destinationDirectory) c
     }
 
     std::error_code error;
-    const fs::path destination =
-        fs::weakly_canonical(normalizedPath(destinationDirectory).toStdString(), error);
+    const fs::path destinationIdentity =
+        fs::path(normalizedPath(destinationDirectory).toStdString()).lexically_normal();
+    const fs::path destination = fs::weakly_canonical(destinationIdentity, error);
     if (error || !fs::is_directory(destination, error) || error) {
         return false;
     }
 
     for (const QString& sourceText : sources) {
+        const fs::path sourceIdentity =
+            fs::path(normalizedPath(sourceText).toStdString()).lexically_normal();
+        if (sourceIdentity == destinationIdentity ||
+            sourceIdentity.parent_path() == destinationIdentity || sourceIdentity == destination ||
+            sourceIdentity.parent_path() == destination) {
+            return false;
+        }
         error.clear();
-        const fs::path source = fs::weakly_canonical(sourceText.toStdString(), error);
-        if (error || source == destination || source.parent_path() == destination) {
+        const fs::path source = fs::weakly_canonical(sourceIdentity, error);
+        if (error) {
             return false;
         }
         error.clear();

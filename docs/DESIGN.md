@@ -68,11 +68,14 @@ terminal file manager. Achieving both at once is a deliberate design target.
   selection preserves that selection and restores focus to its directory view
   when the menu closes. Directory symlinks retain their symlink metadata but
   navigate and accept drops as directories when their targets resolve.
-- **Transfers and breadcrumbs.** Drags carry fully encoded local file URLs and
-  negotiate copy or move explicitly. Internal directory and breadcrumb targets
-  reuse the asynchronous filesystem-operation path with fail-on-collision
-  behavior, reject no-op and recursive targets before scheduling, and capture
-  stable paths rather than model rows. Breadcrumbs expose every absolute path
+- **Transfers and breadcrumbs.** Drags carry fully encoded local file URLs,
+  refresh those URLs when selected paths are renamed, and negotiate copy or
+  move explicitly. Internal directory and breadcrumb targets reuse the
+  asynchronous filesystem-operation path with fail-on-collision behavior,
+  reject no-op and recursive targets before scheduling, and capture stable
+  paths rather than model rows. Same-parent checks use the unresolved source
+  identity so symlink targets elsewhere cannot bypass them; canonical paths are
+  reserved for containment checks. Breadcrumbs expose every absolute path
   segment, including the filesystem root, through pointer and keyboard paths in
   a horizontally scrollable strip.
 - **Parity rule for contributors.** No primary action may be keyboard-only or

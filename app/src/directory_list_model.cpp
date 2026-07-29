@@ -564,6 +564,7 @@ void DirectoryListModel::setCurrentPath(const QString& path) {
 }
 
 void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
+    const QStringList previousSelectedFileUrls = selectedFileUrls();
     const QString needle = filterText_.trimmed();
     std::vector<odysea::core::Entry> presented;
     presented.reserve(scannedEntries_.size());
@@ -749,6 +750,9 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     if (previousSelectedCount != selectedCount()) {
         emit selectedCountChanged();
     }
+    if (previousSelectedFileUrls != selectedFileUrls()) {
+        emit selectedFileUrlsChanged();
+    }
 }
 
 void DirectoryListModel::setBusy(bool busy) {
@@ -830,6 +834,7 @@ void DirectoryListModel::replaceSelectionKeys(QSet<QString> keys) {
     selectedEntryKeys_ = std::move(keys);
     notifySelectionRoles();
     emit selectedCountChanged();
+    emit selectedFileUrlsChanged();
 }
 
 void DirectoryListModel::rebuildSelectionRows() {
