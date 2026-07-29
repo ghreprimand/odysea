@@ -66,7 +66,8 @@ terminal file manager. Achieving both at once is a deliberate design target.
   pass through an injectable desktop-launcher boundary. Right-click, Menu, and
   Shift+F10 open the same context actions. Opening a menu on an existing
   selection preserves that selection and restores focus to its directory view
-  when the menu closes.
+  when the menu closes. Directory symlinks retain their symlink metadata but
+  navigate and accept drops as directories when their targets resolve.
 - **Transfers and breadcrumbs.** Drags carry fully encoded local file URLs and
   negotiate copy or move explicitly. Internal directory and breadcrumb targets
   reuse the asynchronous filesystem-operation path with fail-on-collision

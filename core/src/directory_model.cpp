@@ -40,6 +40,10 @@ Entry make_entry(const fs::directory_entry& element) {
     entry.name = element.path().filename().string();
     entry.path = element.path();
     entry.kind = classify(element, ec);
+    if (entry.kind == EntryKind::Symlink) {
+        std::error_code target_ec;
+        entry.target_is_directory = element.is_directory(target_ec) && !target_ec;
+    }
     entry.size = (entry.kind == EntryKind::File) ? element.file_size(ec) : 0;
     struct ::stat metadata{};
     if (::lstat(entry.path.c_str(), &metadata) == 0) {

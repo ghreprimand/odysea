@@ -21,7 +21,8 @@ constexpr int maximumSortMode = DirectoryListModel::SortByType;
 bool entriesMatch(const odysea::core::Entry& left, const odysea::core::Entry& right) {
     return left.name == right.name && left.path == right.path && left.kind == right.kind &&
            left.size == right.size && left.device == right.device && left.inode == right.inode &&
-           left.modified_seconds == right.modified_seconds;
+           left.modified_seconds == right.modified_seconds &&
+           left.target_is_directory == right.target_is_directory;
 }
 
 } // namespace

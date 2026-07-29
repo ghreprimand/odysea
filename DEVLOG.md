@@ -13,7 +13,8 @@ List and grid entries now share activation and context-menu behavior. Return
 and double-click both use the model activation path: directories navigate in
 the current tab, while files use an injectable application-layer desktop
 launcher. Launcher tests record requests and failures without starting external
-programs.
+programs. A symbolic link keeps its symlink identity while a link whose target
+is a directory navigates and accepts drops like a directory.
 
 Right-click, Menu, and Shift+F10 expose the same Open, Copy, Move, Rename, and
 Move to Trash actions with selection- and operation-aware enablement. Context
@@ -28,7 +29,9 @@ or busy selections, non-directory destinations, transfers to the current
 parent, self-targets, and directory descendants before work begins. Operation
 requests capture paths synchronously so model-row reuse cannot retarget them.
 Vertical flicks and rubber-band gestures remain separate from the horizontal
-drag threshold.
+drag threshold. The exported MIME payload depends on the adapter's notifying
+selection count, so already-realized list and grid delegates update whenever
+the selection changes.
 
 The breadcrumb strip includes the filesystem root and every absolute path
 segment. It scrolls horizontally, provides accessible location names, supports
@@ -41,15 +44,16 @@ context-menu components before adding these interactions. Adapter tests cover
 launcher success and failure, encoded URLs, breadcrumb segment construction,
 copy scheduling, and invalid or recursive targets. Rendered-shell tests cover
 keyboard and pointer activation, both context-menu keyboard paths, focus and
-selection rules, MIME payloads, copy/move negotiation, target mapping,
-rejection, and scroll and band arbitration.
+selection rules, copy/move negotiation, target mapping, rejection, and scroll
+and band arbitration. A separate rendered test uses the real adapter and both
+production views to require `Drag.mimeData` to follow selection changes and
+directory-symlink drop targets to remain enabled.
 
-Verified with all eighteen release tests and all seventeen enabled ASan/UBSan
+Verified with all twenty-two release tests and all twenty-one enabled ASan/UBSan
 tests, including warning-clean builds, scoped static analysis, C++ and QML
 formatting, zero-warning QML linting, public-repository and file-length guards,
-and offscreen release and sanitizer smoke launches. The adapter and
-rendered-shell interaction tests also passed fifteen consecutive release runs
-and five consecutive sanitizer runs.
+the QML module guards, and eight-second offscreen release and sanitizer smoke
+launches.
 
 ## 2026-07-28 -- Add spatial navigation and bounded type-ahead
 

@@ -35,8 +35,14 @@ struct Entry {
     /// target's metadata, such as a cache keyed on file contents, resolves it
     /// separately instead of reinterpreting this field.
     std::int64_t modified_seconds = 0;
+    /// Whether a symbolic link resolves to a directory. The entry kind and
+    /// identity still describe the link itself, while navigation consumers can
+    /// treat a directory target as a directory.
+    bool target_is_directory = false;
 
-    [[nodiscard]] bool is_directory() const noexcept { return kind == EntryKind::Directory; }
+    [[nodiscard]] bool is_directory() const noexcept {
+        return kind == EntryKind::Directory || target_is_directory;
+    }
 };
 
 /// Options controlling how a directory is read.

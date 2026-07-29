@@ -564,10 +564,14 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     const fs::path destination = root / "destination";
     const fs::path folder = source / "folder";
     const fs::path descendant = folder / "descendant";
+    const fs::path folderLink = source / "folder-link";
     const fs::path document = source / "document.txt";
     fs::create_directories(descendant);
     fs::create_directories(destination);
     writeFile(document);
+    std::error_code linkError;
+    fs::create_directory_symlink(folder, folderLink, linkError);
+    QVERIFY2(!linkError, linkError.message().c_str());
 
     FakeEntryLauncher launcher;
     DirectoryListModel model(launcher);
@@ -613,6 +617,19 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
     QVERIFY(fs::exists(destination / "document.txt"));
 
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder-link")) >= 0, 5000);
+    const int folderLinkRow = rowForName(model, QStringLiteral("folder-link"));
+    QVERIFY(model.rowIsDirectory(folderLinkRow));
+    QVERIFY(model.data(model.index(folderLinkRow), DirectoryListModel::IsDirRole).toBool());
+    model.selectRow(documentRow, Qt::NoModifier);
+    QVERIFY(model.canDropSelection(QString::fromStdString(folderLink.string())));
+    model.activate(folderLinkRow);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.path(), QString::fromStdString(folderLink.string()));
+    QCOMPARE(launcher.callCount, 2);
+
+    model.navigateToPath(QString::fromStdString(source.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder")) >= 0, 5000);
     const int folderRow = rowForName(model, QStringLiteral("folder"));
     QVERIFY(model.rowIsDirectory(folderRow));

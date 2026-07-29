@@ -134,6 +134,17 @@ target_link_libraries(odysea_shell_render_tests
 
 add_test(NAME shell_thumbnail_render COMMAND odysea_shell_render_tests)
 
+qt_add_executable(odysea_shell_entry_interaction_tests
+    tests/tst_shell_entry_interactions.cpp)
+
+target_link_libraries(odysea_shell_entry_interaction_tests
+    PRIVATE
+        odysea_app_adapter odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_tests)
+
 set_tests_properties(
-    shell_input_parity shell_thumbnail_render
+    shell_input_parity shell_thumbnail_render shell_entry_interactions
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

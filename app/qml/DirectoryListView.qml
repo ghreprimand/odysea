@@ -176,7 +176,7 @@ FocusScope {
             required property string entryPath
             readonly property var entryContextMenu: entryMenu
             readonly property var dragMimeData: ({
-                    "text/uri-list": pane.shellModel.selectedFileUrls().join("\r\n") + "\r\n"
+                    "text/uri-list": pane.shellModel.selectedCount > 0 ? pane.shellModel.selectedFileUrls().join("\r\n") + "\r\n" : ""
                 })
             readonly property int dragProposedAction: Drag.proposedAction
 

@@ -177,6 +177,32 @@ void test_entries_carry_their_own_modification_time(const fs::path& root) {
     fs::remove_all(directory);
 }
 
+void test_directory_symlinks_keep_identity_and_directory_behavior(const fs::path& root) {
+    const fs::path target = root / "subdir";
+    const fs::path link = root / "subdir-link";
+    std::error_code link_ec;
+    fs::create_directory_symlink(target, link, link_ec);
+    check(!link_ec, "the fixture can create a directory symlink");
+    if (link_ec) {
+        return;
+    }
+
+    std::error_code ec;
+    const auto entries = odysea::core::read_directory(root, {.show_hidden = true}, ec);
+    check(!ec, "a directory containing a directory symlink lists without error");
+    const auto linked_directory = std::ranges::find_if(
+        entries, [](const auto& entry) { return entry.name == "subdir-link"; });
+    check(linked_directory != entries.end(), "a directory symlink appears in the listing");
+    if (linked_directory != entries.end()) {
+        check(linked_directory->kind == odysea::core::EntryKind::Symlink,
+              "a directory symlink keeps its symlink kind");
+        check(linked_directory->is_directory(),
+              "a directory symlink exposes directory navigation behavior");
+    }
+
+    fs::remove(link, link_ec);
+}
+
 } // namespace
 
 int main() {
@@ -215,6 +241,7 @@ int main() {
     check(missing.empty(), "missing directory should yield no entries");
 
     test_entries_carry_their_own_modification_time(root);
+    test_directory_symlinks_keep_identity_and_directory_behavior(root);
     test_hostile_inputs_report_instead_of_throwing(root);
     test_a_successful_listing_clears_a_stale_error(root);
     test_listing_a_directory_being_modified_never_throws(root);
