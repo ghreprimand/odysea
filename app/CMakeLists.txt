@@ -115,6 +115,20 @@ target_link_libraries(odysea_shell_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME shell_input_parity COMMAND odysea_shell_tests)
+
+# Renders the real scene from the module against the real decoder, so the
+# thumbnail path is covered from a file on disk to a loaded Image.
+qt_add_executable(odysea_shell_render_tests
+    tests/tst_shell_thumbnail_render.cpp)
+
+target_link_libraries(odysea_shell_render_tests
+    PRIVATE
+        odysea_app_adapter odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_thumbnail_render COMMAND odysea_shell_render_tests)
+
 set_tests_properties(
-    shell_input_parity
+    shell_input_parity shell_thumbnail_render
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

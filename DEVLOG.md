@@ -45,6 +45,37 @@ sanitizer runs.
 
 ---
 
+## 2026-07-28 -- Cover the rendered thumbnail path end to end
+
+Thumbnail source URLs address the image provider by name, and the engine
+resolves them by the name the provider was registered under. If those two ever
+disagree, every thumbnail silently resolves to nothing: the grid shows
+placeholders, no diagnostic appears, and the existing tests stay green, because
+they either stop at the model role or start from an image already inside the
+provider.
+
+The name and the URL it produces now come from the provider itself, and one
+function creates the provider and registers it, so the application and the
+tests cannot disagree about it. A new test loads the real scene from the shell
+module, decodes a real image file through the real decoder with the disk cache
+replaced by an in-memory one, and requires the grid delegate's image to reach
+`Image.Ready` with a non-zero painted size. It also requires the same
+identifier to fail when addressed to a different provider name, so reaching
+`Image.Ready` cannot be an accident.
+
+Registering the provider under a name one letter different from the one the
+model builds fails two checks in this test and leaves every other suite
+passing, which is the gap it was written to close.
+
+Grid cells expose their image by object name for this purpose. Realized
+delegates have a visual parent but no object parent, so the test walks the
+visual tree rather than the object hierarchy.
+
+Verified with release and sanitizer builds, the full test suites, the QML and
+module gates, and an offscreen application launch.
+
+---
+
 ## 2026-07-28 -- Hold the QML module to the tracked scene corpus
 
 A scene can be well formed, formatted, and lint-clean while remaining

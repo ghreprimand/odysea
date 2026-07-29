@@ -257,6 +257,7 @@ FocusScope {
                     Image {
                         id: thumbnail
 
+                        objectName: "entryThumbnail-" + entryCell.index
                         anchors.fill: parent
                         source: entryCell.thumbnailSource
                         sourceSize.width: 112
