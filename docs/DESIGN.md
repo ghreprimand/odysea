@@ -61,6 +61,19 @@ terminal file manager. Achieving both at once is a deliberate design target.
   rubber-band (drag-rectangle) multi-select, internal and drag-out
   drag-and-drop, right-click context menus, hover states, back/forward buttons,
   scroll, resizable columns/panes, and clickable breadcrumbs.
+- **Entry activation and menus.** Return and double-click share the same model
+  activation path. Directories navigate within the current tab; regular files
+  pass through an injectable desktop-launcher boundary. Right-click, Menu, and
+  Shift+F10 open the same context actions. Opening a menu on an existing
+  selection preserves that selection and restores focus to its directory view
+  when the menu closes.
+- **Transfers and breadcrumbs.** Drags carry fully encoded local file URLs and
+  negotiate copy or move explicitly. Internal directory and breadcrumb targets
+  reuse the asynchronous filesystem-operation path with fail-on-collision
+  behavior, reject no-op and recursive targets before scheduling, and capture
+  stable paths rather than model rows. Breadcrumbs expose every absolute path
+  segment, including the filesystem root, through pointer and keyboard paths in
+  a horizontally scrollable strip.
 - **Parity rule for contributors.** No primary action may be keyboard-only or
   mouse-only. When a feature adds an interaction, it is wired for both paths.
 - **Views.** Planned view models include a single-pane list/grid, a dual-pane
@@ -88,7 +101,9 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   exposes the core to QML. It marshals scanner and watcher callbacks onto the UI
   thread, schedules mutations away from it, and reconciles presentation changes
   through incremental row, data, and layout signals keyed by directory-entry
-  identity; the core itself never includes a Qt header.
+  identity. Default-application launching is an injectable application-layer
+  service, so tests record launch requests without invoking desktop programs;
+  the core itself never includes a Qt header.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

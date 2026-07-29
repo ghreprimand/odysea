@@ -1,5 +1,6 @@
 #include "directory_list_model.hpp"
 
+#include "entry_launcher.hpp"
 #include "file_operations_internal.hpp"
 
 #include <QByteArray>
@@ -9,6 +10,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThreadPool>
+#include <QUrl>
 
 #include <filesystem>
 #include <fstream>
@@ -115,6 +117,24 @@ class EnvironmentRestore {
     QByteArray value_;
 };
 
+class FakeEntryLauncher final : public EntryLauncher {
+  public:
+    bool open(const fs::path& path, std::error_code& error) override {
+        ++callCount;
+        openedPath = path;
+        if (fail) {
+            error = std::make_error_code(std::errc::permission_denied);
+            return false;
+        }
+        error.clear();
+        return true;
+    }
+
+    int callCount = 0;
+    fs::path openedPath;
+    bool fail = false;
+};
+
 } // namespace
 
 class DirectoryListModelTest : public QObject {
@@ -131,6 +151,7 @@ class DirectoryListModelTest : public QObject {
     void selectionSurvivesSortFilterAndRefresh();
     void explicitGeometricSelectionUsesRowSet();
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
+    void activationBreadcrumbsAndDropContracts();
     void operationsReachCoreAndReportFailures();
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
@@ -533,6 +554,79 @@ void DirectoryListModelTest::cursorMovementAndPrefixSearchPreserveSelectionContr
     QCOMPARE(selectedNames(model),
              QStringList({QStringLiteral("alpha.txt"), QStringLiteral("Alpine.md"),
                           QStringLiteral("beta.txt")}));
+}
+
+void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path source = root / "source space";
+    const fs::path destination = root / "destination";
+    const fs::path folder = source / "folder";
+    const fs::path descendant = folder / "descendant";
+    const fs::path document = source / "document.txt";
+    fs::create_directories(descendant);
+    fs::create_directories(destination);
+    writeFile(document);
+
+    FakeEntryLauncher launcher;
+    DirectoryListModel model(launcher);
+    model.setPath(QString::fromStdString(source.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+
+    const QVariantList breadcrumbs = model.breadcrumbSegments();
+    QVERIFY(breadcrumbs.size() >= 2);
+    QCOMPARE(breadcrumbs.front().toMap().value(QStringLiteral("path")).toString(),
+             QStringLiteral("/"));
+    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("label")).toString(),
+             QStringLiteral("source space"));
+    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("path")).toString(),
+             QString::fromStdString(source.string()));
+    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("url")).toString(),
+             QUrl::fromLocalFile(QString::fromStdString(source.string())).toString());
+
+    const int documentRow = rowForName(model, QStringLiteral("document.txt"));
+    QVERIFY(documentRow >= 0);
+    model.selectRow(documentRow, Qt::NoModifier);
+    QVERIFY(model.rowSelected(documentRow));
+    QVERIFY(!model.rowIsDirectory(documentRow));
+    QCOMPARE(model.selectedFileUrls(),
+             QStringList{QUrl::fromLocalFile(QString::fromStdString(document.string()))
+                             .toString(QUrl::FullyEncoded)});
+    QSignalSpy openSpy(&model, &DirectoryListModel::openRequested);
+    model.activateCurrent();
+    QCOMPARE(launcher.callCount, 1);
+    QCOMPARE(launcher.openedPath, document);
+    QCOMPARE(openSpy.count(), 1);
+    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Opened ")));
+
+    launcher.fail = true;
+    model.activate(documentRow);
+    QCOMPARE(launcher.callCount, 2);
+    QCOMPARE(openSpy.count(), 2);
+    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Could not open ")));
+
+    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string())));
+    QVERIFY(model.canDropSelection(QString::fromStdString(destination.string())));
+    QVERIFY(model.dropSelection(QString::fromStdString(destination.string()), false,
+                                DirectoryListModel::ConflictFail));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
+    QVERIFY(fs::exists(destination / "document.txt"));
+
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder")) >= 0, 5000);
+    const int folderRow = rowForName(model, QStringLiteral("folder"));
+    QVERIFY(model.rowIsDirectory(folderRow));
+    model.selectRow(folderRow, Qt::NoModifier);
+    QVERIFY(!model.canDropSelection(QString::fromStdString(folder.string())));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(descendant.string())));
+    QVERIFY(!model.dropSelection(QString::fromStdString(descendant.string()), true,
+                                 DirectoryListModel::ConflictFail));
+    QVERIFY(model.statusMessage().contains(QStringLiteral("cannot be transferred")));
+
+    model.navigateToPath(QString::fromStdString(folder.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
+    QCOMPARE(launcher.callCount, 2);
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {

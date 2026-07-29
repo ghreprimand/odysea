@@ -2,11 +2,14 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QUrl>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <ranges>
 #include <utility>
 
+#include "entry_launcher.hpp"
 #include "odysea/core/file_operations.hpp"
 
 namespace {
@@ -215,7 +218,62 @@ void DirectoryListModel::activate(int row) {
         return;
     }
     emit openRequested(entryPath);
-    setStatusMessage(tr("Opening files is waiting for the platform launcher hookup."));
+    std::error_code error;
+    if (entryLauncher_ == nullptr || !entryLauncher_->open(entry.path, error)) {
+        setStatusMessage(tr("Could not open %1 with the default application.").arg(entryPath));
+        return;
+    }
+    setStatusMessage(tr("Opened %1.").arg(entryPath));
+}
+
+void DirectoryListModel::activateCurrent() {
+    activate(currentIndex_);
+}
+
+void DirectoryListModel::navigateToPath(const QString& path) {
+    navigateTo(path, true);
+}
+
+QVariantList DirectoryListModel::breadcrumbSegments() const {
+    QVariantList segments;
+    const QString clean = QDir::cleanPath(path_);
+    if (clean.isEmpty() || !QDir::isAbsolutePath(clean)) {
+        return segments;
+    }
+
+    QVariantMap root;
+    root.insert(QStringLiteral("label"), QStringLiteral("/"));
+    root.insert(QStringLiteral("path"), QStringLiteral("/"));
+    root.insert(QStringLiteral("url"), QUrl::fromLocalFile(QStringLiteral("/")).toString());
+    segments.push_back(root);
+
+    QString accumulated;
+    const QStringList names = clean.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (const QString& name : names) {
+        accumulated += QLatin1Char('/') + name;
+        QVariantMap segment;
+        segment.insert(QStringLiteral("label"), name);
+        segment.insert(QStringLiteral("path"), accumulated);
+        segment.insert(QStringLiteral("url"), QUrl::fromLocalFile(accumulated).toString());
+        segments.push_back(segment);
+    }
+    return segments;
+}
+
+QStringList DirectoryListModel::selectedFileUrls() const {
+    QStringList urls;
+    for (const QString& selectedPath : selectedPaths()) {
+        urls.push_back(QUrl::fromLocalFile(selectedPath).toString(QUrl::FullyEncoded));
+    }
+    return urls;
+}
+
+bool DirectoryListModel::rowSelected(int row) const {
+    return row >= 0 && row < rowCount() && selectedRows_.contains(row);
+}
+
+bool DirectoryListModel::rowIsDirectory(int row) const {
+    return row >= 0 && row < rowCount() && entries_[static_cast<std::size_t>(row)].is_directory();
 }
 
 void DirectoryListModel::selectRow(int row, Qt::KeyboardModifiers modifiers) {

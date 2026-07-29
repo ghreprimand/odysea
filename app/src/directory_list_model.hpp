@@ -26,6 +26,7 @@
 #include "odysea/core/thumbnail_service.hpp"
 
 class ThumbnailImageProvider;
+class EntryLauncher;
 
 class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
@@ -68,6 +69,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_ENUM(ConflictMode)
 
     explicit DirectoryListModel(QObject* parent = nullptr);
+    explicit DirectoryListModel(EntryLauncher& entryLauncher, QObject* parent = nullptr);
     explicit DirectoryListModel(ThumbnailImageProvider& thumbnailProvider,
                                 QObject* parent = nullptr);
     DirectoryListModel(ThumbnailImageProvider& thumbnailProvider,
@@ -111,6 +113,15 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void goForward();
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void activate(int row);
+    Q_INVOKABLE void activateCurrent();
+    Q_INVOKABLE void navigateToPath(const QString& path);
+    Q_INVOKABLE QVariantList breadcrumbSegments() const;
+    Q_INVOKABLE QStringList selectedFileUrls() const;
+    Q_INVOKABLE bool rowSelected(int row) const;
+    Q_INVOKABLE bool rowIsDirectory(int row) const;
+    Q_INVOKABLE bool canDropSelection(const QString& destinationDirectory) const;
+    Q_INVOKABLE bool dropSelection(const QString& destinationDirectory, bool move,
+                                   int conflictMode);
     Q_INVOKABLE void requestThumbnail(int row);
     Q_INVOKABLE void releaseThumbnail(const QString& entryPath);
 
@@ -245,6 +256,8 @@ class DirectoryListModel : public QAbstractListModel {
     DirectoryWatchService watchService_;
     QFutureWatcher<FilesystemOperationResult> operationWatcher_;
     ThumbnailImageProvider* thumbnailProvider_ = nullptr;
+    EntryLauncher* entryLauncher_ = nullptr;
+    std::unique_ptr<EntryLauncher> ownedEntryLauncher_;
     std::unique_ptr<odysea::core::ThumbnailProducer> ownedThumbnailProducer_;
     std::unique_ptr<odysea::core::ThumbnailStore> ownedThumbnailStore_;
     std::unique_ptr<odysea::core::ThumbnailService> thumbnailService_;

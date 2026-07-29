@@ -25,7 +25,7 @@ graphical shell grows around it.
 - [x] Grid view with asynchronous, cached thumbnails.
 - [x] Off-thread directory scanning so the UI never stalls.
 - [x] Keyboard navigation and type-ahead.
-- [ ] Mouse interaction parity: double-click open, context menus,
+- [x] Mouse interaction parity: double-click open, context menus,
       drag-and-drop (internal + drag-out), clickable breadcrumbs.
 - [ ] Command palette.
 

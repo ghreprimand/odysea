@@ -36,6 +36,13 @@ TestCase {
         property int selectedModifiers: Qt.NoModifier
         property int activateCalls: 0
         property int activatedRow: -1
+        property int navigateToPathCalls: 0
+        property string navigatedPath: ""
+        property int dropSelectionCalls: 0
+        property string dropDestination: ""
+        property bool dropMove: false
+        property int dropConflictMode: -1
+        property bool dropAccepted: true
         property int moveCursorCalls: 0
         property int moveCursorDelta: 0
         property int moveCursorToCalls: 0
@@ -77,6 +84,9 @@ TestCase {
             activateCalls += 1;
             activatedRow = row;
         }
+        function activateCurrent() {
+            activate(currentIndex);
+        }
         function activatePane(pane) {
         }
         function activateTab(tab) {
@@ -104,6 +114,60 @@ TestCase {
         function goForward() {
         }
         function goUp() {
+        }
+        function breadcrumbSegments() {
+            const segments = [
+                {
+                    "label": "/",
+                    "path": "/",
+                    "url": "file:///"
+                }
+            ];
+            if (path !== "/") {
+                const names = path.split("/").filter(function (name) {
+                    return name.length > 0;
+                });
+                let accumulated = "";
+                for (let index = 0; index < names.length; ++index) {
+                    accumulated += "/" + names[index];
+                    segments.push({
+                        "label": names[index],
+                        "path": accumulated,
+                        "url": "file://" + accumulated
+                    });
+                }
+            }
+            return segments;
+        }
+        function navigateToPath(destination) {
+            navigateToPathCalls += 1;
+            navigatedPath = destination;
+            path = destination;
+        }
+        function selectedFileUrls() {
+            const urls = [];
+            for (let row = 0; row < count; ++row) {
+                if (get(row).selected) {
+                    urls.push("file://" + get(row).entryPath);
+                }
+            }
+            return urls;
+        }
+        function rowSelected(row) {
+            return row >= 0 && row < count && get(row).selected;
+        }
+        function rowIsDirectory(row) {
+            return row >= 0 && row < count && get(row).isDir;
+        }
+        function canDropSelection(destination) {
+            return selectedCount > 0 && destination.length > 0;
+        }
+        function dropSelection(destination, move, conflictMode) {
+            dropSelectionCalls += 1;
+            dropDestination = destination;
+            dropMove = move;
+            dropConflictMode = conflictMode;
+            return dropAccepted;
         }
         function moveCursor(delta, extendSelection, preserveSelection) {
             moveCursorCalls += 1;
@@ -260,6 +324,13 @@ TestCase {
             selectedModifiers = Qt.NoModifier;
             activateCalls = 0;
             activatedRow = -1;
+            navigateToPathCalls = 0;
+            navigatedPath = "";
+            dropSelectionCalls = 0;
+            dropDestination = "";
+            dropMove = false;
+            dropConflictMode = -1;
+            dropAccepted = true;
             moveCursorCalls = 0;
             moveCursorDelta = 0;
             moveCursorToCalls = 0;
@@ -314,6 +385,7 @@ TestCase {
     }
 
     function init() {
+        fakeModel.path = "/sample";
         fakeModel.tabCount = 1;
         fakeModel.activeTab = 0;
         fakeModel.operationErrorString = "";
@@ -452,6 +524,7 @@ TestCase {
         tryCompare(fakeModel, "beginRubberBandCalls", 1);
         verify(fakeModel.updateRubberBandCalls > 0);
         compare(fakeModel.endRubberBandCalls, 1);
+        compare(fakeModel.dropSelectionCalls, 0);
         if (expectRows) {
             verify(fakeModel.rubberBandRows.length > 0);
             verify(fakeModel.rubberBandCurrentRow >= 0);
@@ -520,6 +593,121 @@ TestCase {
         mouseDoubleClickSequence(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.NoModifier);
         tryCompare(fakeModel, "activateCalls", 1);
         compare(fakeModel.activatedRow, 2);
+    }
+
+    function test_enterAndDoubleClickShareActivationPath() {
+        let list = child("directoryList");
+        fakeModel.selectRow(1, Qt.NoModifier);
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "activateCalls", 1);
+        compare(fakeModel.activatedRow, 1);
+
+        let row = rowAt(1);
+        mouseDoubleClickSequence(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activateCalls", 2);
+        compare(fakeModel.activatedRow, 1);
+    }
+
+    function test_breadcrumbPointerAndKeyboardNavigation() {
+        let rootCrumb = child("breadcrumb-0");
+        let sampleCrumb = child("breadcrumb-1");
+        compare(rootCrumb.segmentPath, "/");
+        compare(rootCrumb.segmentUrl, "file:///");
+        compare(sampleCrumb.segmentPath, "/sample");
+        compare(sampleCrumb.segmentUrl, "file:///sample");
+
+        rootCrumb.forceActiveFocus();
+        keyClick(Qt.Key_Right);
+        tryVerify(function () {
+            return sampleCrumb.activeFocus;
+        });
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "navigateToPathCalls", 1);
+        compare(fakeModel.navigatedPath, "/sample");
+        tryVerify(function () {
+            return child("directoryList").activeFocus;
+        });
+
+        mouseClick(rootCrumb);
+        tryCompare(fakeModel, "navigateToPathCalls", 2);
+        compare(fakeModel.navigatedPath, "/");
+        tryVerify(function () {
+            return child("directoryList").activeFocus;
+        });
+    }
+
+    function test_contextMenuKeyboardPathsPreserveSelectionAndRestoreFocus() {
+        let list = child("directoryList");
+        fakeModel.selectRow(2, Qt.NoModifier);
+        fakeModel.selectRow(1, Qt.ControlModifier);
+        compare(selectedRows().join(","), "1,2");
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+
+        keyClick(Qt.Key_Menu);
+        let menu = child("listKeyboardContextMenu");
+        tryCompare(menu, "opened", true);
+        compare(selectedRows().join(","), "1,2");
+        compare(fakeModel.movedToRow, 1);
+        compare(fakeModel.movedPreservingSelection, true);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+
+        keyClick(Qt.Key_F10, Qt.ShiftModifier);
+        tryCompare(menu, "opened", true);
+        compare(selectedRows().join(","), "1,2");
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+    }
+
+    function test_dragMimeUrlsModifiersAndDirectoryTargets() {
+        fakeModel.selectRow(0, Qt.NoModifier);
+        fakeModel.selectRow(1, Qt.ControlModifier);
+        fakeModel.setProperty(3, "isDir", true);
+        fakeModel.setProperty(3, "entryPath", "/sample/folder");
+        waitForRendering(shellWindow.contentItem);
+
+        let row = rowAt(0);
+        compare(row.dragMimeData["text/uri-list"], "file:///sample/sample-0.txt\r\nfile:///sample/sample-1.txt\r\n");
+        compare(row.dragProposedAction, Qt.MoveAction);
+        mousePress(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ControlModifier);
+        compare(row.dragProposedAction, Qt.CopyAction);
+        mouseRelease(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ControlModifier);
+
+        compare(child("entryDropTarget-0").enabled, false);
+        compare(child("entryDropTarget-3").enabled, true);
+        verify(child("breadcrumbDropTarget-0").enabled);
+        verify(rowAt(3).dropSelectedEntries(Qt.CopyAction));
+        compare(fakeModel.dropSelectionCalls, 1);
+        compare(fakeModel.dropDestination, "/sample/folder");
+        compare(fakeModel.dropMove, false);
+        compare(fakeModel.dropConflictMode, 0);
+        verify(child("breadcrumb-0").dropSelectedEntries(Qt.MoveAction));
+        compare(fakeModel.dropSelectionCalls, 2);
+        compare(fakeModel.dropDestination, "/");
+        compare(fakeModel.dropMove, true);
+        compare(fakeModel.dropConflictMode, 0);
+        fakeModel.dropAccepted = false;
+        verify(!rowAt(3).dropSelectedEntries(Qt.MoveAction));
+        compare(fakeModel.dropSelectionCalls, 3);
+    }
+
+    function test_verticalRowScrollDoesNotStartTransfer() {
+        let list = prepareScrollableRows(300);
+        let row = rowAt(10);
+        const initialContentY = list.contentY;
+        mouseDrag(row, row.width / 2, row.height / 2, 0, -100, Qt.LeftButton, Qt.NoModifier, 10);
+        tryVerify(function () {
+            return list.contentY !== initialContentY;
+        });
+        compare(fakeModel.dropSelectionCalls, 0);
+        compare(fakeModel.beginRubberBandCalls, 0);
     }
 
     function test_filledViewportRubberBand() {
@@ -782,6 +970,7 @@ TestCase {
         });
         compare(fakeModel.selectRowCalls, 0);
         compare(fakeModel.beginRubberBandCalls, 0);
+        compare(fakeModel.dropSelectionCalls, 0);
     }
 
     function test_gridKeyboardNavigationAfterShortcutSwitch() {
@@ -800,6 +989,25 @@ TestCase {
         compare(fakeModel.movedToRow, 1);
         compare(fakeModel.currentIndex, 1);
         compare(selectedRows().join(","), "1");
+    }
+
+    function test_gridKeyboardContextMenuRestoresViewFocus() {
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        fakeModel.selectRow(2, Qt.NoModifier);
+        fakeModel.resetTelemetry();
+        keyClick(Qt.Key_Menu);
+        let menu = child("gridKeyboardContextMenu");
+        tryCompare(menu, "opened", true);
+        compare(fakeModel.movedToRow, 2);
+        compare(fakeModel.movedPreservingSelection, true);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
     }
 
     function test_gridNavigationUsesColumnsAndPreservesSelection() {

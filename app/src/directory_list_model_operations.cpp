@@ -5,6 +5,8 @@
 
 #include <utility>
 
+namespace fs = std::filesystem;
+
 namespace {
 
 std::vector<std::filesystem::path> toPaths(const QStringList& paths) {
@@ -28,6 +30,15 @@ QString operationName(FilesystemOperationKind kind) {
         return QStringLiteral("Move to Trash");
     }
     return QStringLiteral("Filesystem operation");
+}
+
+bool isSameOrDescendant(const fs::path& candidate, const fs::path& ancestor) {
+    const fs::path relative = candidate.lexically_relative(ancestor);
+    if (relative.empty()) {
+        return false;
+    }
+    const auto first = relative.begin();
+    return relative == "." || (first != relative.end() && *first != "..");
 }
 
 } // namespace
@@ -103,6 +114,54 @@ void DirectoryListModel::performMove(const QString& destinationDirectory, int co
         .options = operationOptions(conflictMode),
     };
     startOperation(std::move(request));
+}
+
+bool DirectoryListModel::canDropSelection(const QString& destinationDirectory) const {
+    if (operationBusy_) {
+        return false;
+    }
+    const QStringList sources = selectedPaths();
+    if (sources.isEmpty()) {
+        return false;
+    }
+
+    std::error_code error;
+    const fs::path destination =
+        fs::weakly_canonical(normalizedPath(destinationDirectory).toStdString(), error);
+    if (error || !fs::is_directory(destination, error) || error) {
+        return false;
+    }
+
+    for (const QString& sourceText : sources) {
+        error.clear();
+        const fs::path source = fs::weakly_canonical(sourceText.toStdString(), error);
+        if (error || source == destination || source.parent_path() == destination) {
+            return false;
+        }
+        error.clear();
+        const fs::file_status status = fs::status(source, error);
+        if (error) {
+            return false;
+        }
+        if (fs::is_directory(status) && isSameOrDescendant(destination, source)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DirectoryListModel::dropSelection(const QString& destinationDirectory, bool move,
+                                       int conflictMode) {
+    if (!canDropSelection(destinationDirectory)) {
+        setStatusMessage(tr("The selected entries cannot be transferred to that location."));
+        return false;
+    }
+    if (move) {
+        performMove(destinationDirectory, conflictMode);
+    } else {
+        performCopy(destinationDirectory, conflictMode);
+    }
+    return true;
 }
 
 void DirectoryListModel::performRename(const QString& newName, int conflictMode) {

@@ -163,6 +163,19 @@ FocusScope {
             }
         }
 
+        function openCurrentContextMenu() {
+            const row = pane.shellModel.currentIndex;
+            if (row < 0) {
+                return;
+            }
+            if (pane.shellModel.rowSelected(row)) {
+                pane.shellModel.moveCursorTo(row, false, true);
+            } else {
+                pane.shellModel.selectRow(row, Qt.NoModifier);
+            }
+            keyboardContextMenu.openFor(row, pane.shellModel.rowIsDirectory(row));
+        }
+
         Keys.onPressed: event => {
             if (pane.navigationController.handleTypeAhead(event, directoryGrid)) {
                 event.accepted = true;
@@ -189,7 +202,9 @@ FocusScope {
             } else if (event.key === Qt.Key_Space) {
                 pane.shellModel.toggleCurrent();
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                pane.shellModel.activate(pane.shellModel.currentIndex);
+                pane.shellModel.activateCurrent();
+            } else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier) !== 0)) {
+                directoryGrid.openCurrentContextMenu();
             } else if (event.key === Qt.Key_Escape) {
                 pane.shellModel.clearSelection();
             } else {
@@ -213,6 +228,10 @@ FocusScope {
             required property string thumbnailSource
             required property bool thumbnailLoading
             readonly property var entryContextMenu: entryMenu
+            readonly property var dragMimeData: ({
+                    "text/uri-list": pane.shellModel.selectedFileUrls().join("\r\n") + "\r\n"
+                })
+            readonly property int dragProposedAction: Drag.proposedAction
 
             width: pane.cellWidth
             height: pane.cellHeight
@@ -224,6 +243,23 @@ FocusScope {
                 }
             }
             Component.onDestruction: pane.shellModel.releaseThumbnail(entryPath)
+
+            function openContextMenu() {
+                entryMenu.openFor(index, isDir);
+            }
+
+            function dropSelectedEntries(action) {
+                return pane.shellModel.dropSelection(entryPath, action === Qt.MoveAction, 0);
+            }
+
+            Drag.active: cellPointer.fileDragging
+            Drag.dragType: Drag.Automatic
+            Drag.keys: ["odysea-entry"]
+            Drag.mimeData: dragMimeData
+            Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+            Drag.proposedAction: (cellPointer.pressModifiers & Qt.ControlModifier) !== 0 ? Qt.CopyAction : Qt.MoveAction
+            Drag.hotSpot.x: width / 2
+            Drag.hotSpot.y: height / 2
 
             Connections {
                 target: pane
@@ -306,17 +342,62 @@ FocusScope {
             MouseArea {
                 id: cellPointer
 
+                property point pressPosition
+                property int pressModifiers: Qt.NoModifier
+                property bool fileDragging: false
+                property bool suppressClick: false
+
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 hoverEnabled: true
 
+                onPressed: mouse => {
+                    pressPosition = Qt.point(mouse.x, mouse.y);
+                    pressModifiers = mouse.modifiers;
+                    suppressClick = false;
+                }
+                onPositionChanged: mouse => {
+                    if (!pressed || fileDragging) {
+                        return;
+                    }
+                    const dx = mouse.x - pressPosition.x;
+                    const dy = mouse.y - pressPosition.y;
+                    if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy)) {
+                        if (!entryCell.selected) {
+                            pane.shellModel.selectRow(entryCell.index, Qt.NoModifier);
+                        }
+                        fileDragging = true;
+                        suppressClick = true;
+                        preventStealing = true;
+                    }
+                }
+                onReleased: {
+                    if (fileDragging) {
+                        entryCell.Drag.drop();
+                    }
+                    fileDragging = false;
+                    preventStealing = false;
+                }
+                onCanceled: {
+                    fileDragging = false;
+                    suppressClick = false;
+                    preventStealing = false;
+                }
                 onClicked: mouse => {
+                    if (suppressClick) {
+                        suppressClick = false;
+                        return;
+                    }
                     pane.navigationController.clearTypeAhead();
                     directoryGrid.forceActiveFocus();
-                    pane.shellModel.selectRow(entryCell.index, mouse.modifiers);
+                    if (mouse.button === Qt.RightButton && entryCell.selected) {
+                        pane.shellModel.moveCursorTo(entryCell.index, false, true);
+                    } else {
+                        pane.shellModel.selectRow(entryCell.index, mouse.modifiers);
+                    }
                     directoryGrid.revealCurrent();
                     if (mouse.button === Qt.RightButton) {
-                        entryMenu.popup();
+                        entryCell.openContextMenu();
                     }
                 }
 
@@ -327,31 +408,23 @@ FocusScope {
                 }
             }
 
-            Menu {
+            EntryContextMenu {
                 id: entryMenu
 
                 objectName: "gridEntryMenu-" + entryCell.index
+                shellModel: pane.shellModel
+                focusTarget: directoryGrid
+            }
 
-                MenuItem {
-                    text: entryCell.isDir ? qsTr("Open folder") : qsTr("Open")
-                    onTriggered: pane.shellModel.activate(entryCell.index)
-                }
-                MenuSeparator {}
-                MenuItem {
-                    text: qsTr("Copy")
-                    onTriggered: pane.shellModel.requestCopy()
-                }
-                MenuItem {
-                    text: qsTr("Move")
-                    onTriggered: pane.shellModel.requestMove()
-                }
-                MenuItem {
-                    text: qsTr("Rename")
-                    onTriggered: pane.shellModel.requestRename()
-                }
-                MenuItem {
-                    text: qsTr("Move to Trash")
-                    onTriggered: pane.shellModel.requestTrash()
+            DropArea {
+                objectName: "gridEntryDropTarget-" + entryCell.index
+                anchors.fill: parent
+                enabled: entryCell.isDir
+                keys: ["odysea-entry"]
+                onDropped: drop => {
+                    if (entryCell.dropSelectedEntries(drop.proposedAction)) {
+                        drop.acceptProposedAction();
+                    }
                 }
             }
         }
@@ -397,5 +470,13 @@ FocusScope {
         color: "#335f87b2"
         border.color: pane.accentColor
         radius: 3
+    }
+
+    EntryContextMenu {
+        id: keyboardContextMenu
+
+        objectName: "gridKeyboardContextMenu"
+        shellModel: pane.shellModel
+        focusTarget: directoryGrid
     }
 }

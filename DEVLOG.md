@@ -7,6 +7,50 @@ and architecture decisions.
 
 ---
 
+## 2026-07-28 -- Complete entry interaction and transfer parity
+
+List and grid entries now share activation and context-menu behavior. Return
+and double-click both use the model activation path: directories navigate in
+the current tab, while files use an injectable application-layer desktop
+launcher. Launcher tests record requests and failures without starting external
+programs.
+
+Right-click, Menu, and Shift+F10 expose the same Open, Copy, Move, Rename, and
+Move to Trash actions with selection- and operation-aware enablement. Context
+invocation preserves an existing multi-selection, selects an unselected target,
+and returns focus to the originating list or grid after closing.
+
+Selected entries drag as standards-compliant, fully encoded local file URLs.
+Control requests copy and the default requests move. Directory cells and every
+breadcrumb accept internal transfers through the existing asynchronous
+operation adapter with fail-on-collision behavior. Validation rejects missing
+or busy selections, non-directory destinations, transfers to the current
+parent, self-targets, and directory descendants before work begins. Operation
+requests capture paths synchronously so model-row reuse cannot retarget them.
+Vertical flicks and rubber-band gestures remain separate from the horizontal
+drag threshold.
+
+The breadcrumb strip includes the filesystem root and every absolute path
+segment. It scrolls horizontally, provides accessible location names, supports
+pointer activation and Left/Right plus Return keyboard traversal, accepts
+internal drops, and returns focus to the active directory view after
+navigation.
+
+The shell was split into dedicated breadcrumb, list-view, grid-view, and shared
+context-menu components before adding these interactions. Adapter tests cover
+launcher success and failure, encoded URLs, breadcrumb segment construction,
+copy scheduling, and invalid or recursive targets. Rendered-shell tests cover
+keyboard and pointer activation, both context-menu keyboard paths, focus and
+selection rules, MIME payloads, copy/move negotiation, target mapping,
+rejection, and scroll and band arbitration.
+
+Verified with all eighteen release tests and all seventeen enabled ASan/UBSan
+tests, including warning-clean builds, scoped static analysis, C++ and QML
+formatting, zero-warning QML linting, public-repository and file-length guards,
+and offscreen release and sanitizer smoke launches. The adapter and
+rendered-shell interaction tests also passed fifteen consecutive release runs
+and five consecutive sanitizer runs.
+
 ## 2026-07-28 -- Add spatial navigation and bounded type-ahead
 
 List navigation now moves by rows, while grid navigation respects the rendered

@@ -53,80 +53,14 @@ ApplicationWindow {
         }
     }
 
-    component RubberBandArea: MouseArea {
-        id: bandPointer
-
-        required property var listView
-        required property var selectionRectangle
-        required property var selectionModel
-        required property int selectionRowHeight
-        property real originX: 0
-        property real originContentY: 0
-
-        acceptedButtons: Qt.LeftButton
-        cursorShape: Qt.CrossCursor
-        preventStealing: true
-
-        function rowsIntersectingBand(firstContentY, secondContentY) {
-            const rows = [];
-            const contentTop = Math.min(firstContentY, secondContentY);
-            const contentBottom = Math.max(firstContentY, secondContentY);
-            const entriesBottom = listView.count * selectionRowHeight;
-            if (listView.count === 0 || contentBottom <= 0 || contentTop >= entriesBottom) {
-                return rows;
-            }
-            const firstRow = Math.max(0, Math.floor(contentTop / selectionRowHeight));
-            const lastRow = Math.min(listView.count - 1, Math.ceil(contentBottom / selectionRowHeight) - 1);
-            for (let row = firstRow; row <= lastRow; ++row) {
-                rows.push(row);
-            }
-            return rows;
-        }
-
-        onPressed: mouse => {
-            originX = mouse.x;
-            originContentY = listView.contentY + bandPointer.y + mouse.y;
-            selectionRectangle.visible = false;
-            selectionModel.beginRubberBand((mouse.modifiers & Qt.ControlModifier) !== 0);
-            listView.forceActiveFocus();
-        }
-
-        onPositionChanged: mouse => {
-            if (!pressed) {
-                return;
-            }
-            const pointerContentY = listView.contentY + bandPointer.y + mouse.y;
-            selectionRectangle.visible = true;
-            selectionRectangle.x = bandPointer.x + Math.min(originX, mouse.x);
-            selectionRectangle.y = Math.min(originContentY, pointerContentY) - listView.contentY;
-            selectionRectangle.width = Math.abs(mouse.x - originX);
-            selectionRectangle.height = Math.abs(pointerContentY - originContentY);
-            const rows = rowsIntersectingBand(originContentY, pointerContentY);
-            const currentRow = rows.length === 0 ? -1 : (pointerContentY >= originContentY ? rows[rows.length - 1] : rows[0]);
-            selectionModel.updateRubberBandSelection(rows, currentRow);
-        }
-
-        onReleased: {
-            selectionRectangle.visible = false;
-            selectionModel.endRubberBand();
-        }
-
-        onCanceled: {
-            selectionRectangle.visible = false;
-            selectionModel.endRubberBand();
-        }
-    }
-
     component DirectoryPane: FocusScope {
         id: pane
-
-        readonly property int selectionGutterWidth: 28
 
         function focusCurrentView() {
             if (root.gridMode) {
                 directoryGrid.forceViewFocus();
             } else {
-                directoryList.forceActiveFocus();
+                directoryList.focusView();
             }
         }
 
@@ -145,219 +79,18 @@ ApplicationWindow {
             radius: 6
         }
 
-        ListView {
+        DirectoryListView {
             id: directoryList
 
-            objectName: "directoryList"
             anchors.fill: parent
-            anchors.margins: 4
-            model: root.shellModel
-            clip: true
-            focus: !root.gridMode
             visible: !root.gridMode
-            boundsBehavior: Flickable.StopAtBounds
-            currentIndex: root.shellModel.currentIndex
-            highlightMoveDuration: 60
-
-            function revealCurrent() {
-                if (root.shellModel.currentIndex >= 0) {
-                    directoryList.positionViewAtIndex(root.shellModel.currentIndex, ListView.Contain);
-                }
-            }
-
-            Keys.onPressed: event => {
-                if (root.handleTypeAhead(event, directoryList)) {
-                    event.accepted = true;
-                    return;
-                }
-                const extend = (event.modifiers & Qt.ShiftModifier) !== 0;
-                const preserve = (event.modifiers & Qt.ControlModifier) !== 0;
-                if (event.key === Qt.Key_Up) {
-                    root.shellModel.moveCursor(-1, extend, preserve);
-                } else if (event.key === Qt.Key_Down) {
-                    root.shellModel.moveCursor(1, extend, preserve);
-                } else if (event.key === Qt.Key_PageUp) {
-                    root.shellModel.moveCursor(-Math.max(1, Math.floor(directoryList.height / root.rowHeight)), extend, preserve);
-                } else if (event.key === Qt.Key_PageDown) {
-                    root.shellModel.moveCursor(Math.max(1, Math.floor(directoryList.height / root.rowHeight)), extend, preserve);
-                } else if (event.key === Qt.Key_Home) {
-                    root.shellModel.moveCursorTo(0, extend, preserve);
-                } else if (event.key === Qt.Key_End) {
-                    root.shellModel.moveCursorTo(directoryList.count - 1, extend, preserve);
-                } else if (event.key === Qt.Key_Space) {
-                    root.shellModel.toggleCurrent();
-                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.shellModel.activate(root.shellModel.currentIndex);
-                } else if (event.key === Qt.Key_Escape) {
-                    root.shellModel.clearSelection();
-                } else {
-                    return;
-                }
-                root.clearTypeAhead();
-                event.accepted = true;
-                directoryList.revealCurrent();
-            }
-
-            delegate: Item {
-                id: entryRow
-
-                objectName: "entryRow-" + index
-                required property int index
-                required property string name
-                required property bool isDir
-                required property double size
-                required property bool selected
-                required property bool recoveryEntry
-                readonly property var entryContextMenu: entryMenu
-
-                width: directoryList.width - pane.selectionGutterWidth
-                height: root.rowHeight
-                z: 1
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: entryRow.selected ? root.selectionColor : (rowPointer.containsMouse ? "#28211b" : "transparent")
-                    border.color: root.shellModel.currentIndex === entryRow.index ? root.accentColor : "transparent"
-                    radius: 4
-                }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    spacing: 10
-
-                    Text {
-                        text: entryRow.isDir ? "\u25B8" : "\u2022"
-                        color: entryRow.isDir ? root.accentColor : "#7a7266"
-                        font.pixelSize: 14
-                    }
-
-                    Text {
-                        visible: entryRow.recoveryEntry
-                        text: qsTr("RECOVERY")
-                        color: "#ff8f7a"
-                        font.bold: true
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: entryRow.name
-                        color: root.primaryTextColor
-                        elide: Text.ElideRight
-                        font.family: "monospace"
-                        font.pixelSize: 14
-                    }
-
-                    Text {
-                        visible: !entryRow.isDir
-                        text: root.formatSize(entryRow.size)
-                        color: root.secondaryTextColor
-                        font.pixelSize: 12
-                    }
-                }
-
-                MouseArea {
-                    id: rowPointer
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    hoverEnabled: true
-
-                    onClicked: mouse => {
-                        root.clearTypeAhead();
-                        directoryList.forceActiveFocus();
-                        root.shellModel.selectRow(entryRow.index, mouse.modifiers);
-                        directoryList.revealCurrent();
-                        if (mouse.button === Qt.RightButton) {
-                            entryMenu.popup();
-                        }
-                    }
-
-                    onDoubleClicked: mouse => {
-                        if (mouse.button === Qt.LeftButton) {
-                            root.shellModel.activate(entryRow.index);
-                        }
-                    }
-                }
-
-                Menu {
-                    id: entryMenu
-
-                    objectName: "entryMenu-" + entryRow.index
-
-                    MenuItem {
-                        text: entryRow.isDir ? qsTr("Open folder") : qsTr("Open")
-                        onTriggered: root.shellModel.activate(entryRow.index)
-                    }
-                    MenuSeparator {}
-                    MenuItem {
-                        objectName: "contextCopyAction-" + entryRow.index
-                        text: qsTr("Copy")
-                        onTriggered: root.shellModel.requestCopy()
-                    }
-                    MenuItem {
-                        objectName: "contextMoveAction-" + entryRow.index
-                        text: qsTr("Move")
-                        onTriggered: root.shellModel.requestMove()
-                    }
-                    MenuItem {
-                        objectName: "contextRenameAction-" + entryRow.index
-                        text: qsTr("Rename")
-                        onTriggered: root.shellModel.requestRename()
-                    }
-                    MenuItem {
-                        objectName: "contextTrashAction-" + entryRow.index
-                        text: qsTr("Move to Trash")
-                        onTriggered: root.shellModel.requestTrash()
-                    }
-                }
-            }
-
-            RubberBandArea {
-                id: blankBandPointer
-
-                objectName: "rubberBandBlankArea"
-                listView: directoryList
-                selectionRectangle: rubberBand
-                selectionModel: root.shellModel
-                selectionRowHeight: root.rowHeight
-                x: 0
-                y: Math.max(0, Math.min(directoryList.height, directoryList.count * root.rowHeight - directoryList.contentY))
-                width: directoryList.width - verticalBar.width
-                height: Math.max(0, directoryList.height - y)
-                z: 0
-            }
-
-            RubberBandArea {
-                id: gutterBandPointer
-
-                objectName: "rubberBandGutter"
-                listView: directoryList
-                selectionRectangle: rubberBand
-                selectionModel: root.shellModel
-                selectionRowHeight: root.rowHeight
-                x: directoryList.width - pane.selectionGutterWidth
-                y: 0
-                width: pane.selectionGutterWidth - verticalBar.width
-                height: blankBandPointer.y
-                z: 2
-            }
-
-            Rectangle {
-                id: rubberBand
-                visible: false
-                z: 3
-                color: "#335f87b2"
-                border.color: root.accentColor
-                radius: 3
-            }
-
-            ScrollBar.vertical: ScrollBar {
-                id: verticalBar
-
-                width: 8
-            }
+            shellModel: root.shellModel
+            navigationController: root
+            rowHeight: root.rowHeight
+            accentColor: root.accentColor
+            primaryTextColor: root.primaryTextColor
+            secondaryTextColor: root.secondaryTextColor
+            selectionColor: root.selectionColor
         }
 
         DirectoryGridView {
@@ -720,6 +453,16 @@ ApplicationWindow {
                     onClicked: root.switchView(true)
                 }
             }
+        }
+
+        BreadcrumbBar {
+            Layout.fillWidth: true
+            shellModel: root.shellModel
+            navigationController: root
+            backgroundColor: root.panelColor
+            borderColor: root.borderColor
+            primaryTextColor: root.primaryTextColor
+            accentColor: root.accentColor
         }
 
         Rectangle {

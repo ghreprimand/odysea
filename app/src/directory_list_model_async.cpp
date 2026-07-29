@@ -5,15 +5,24 @@
 #include <algorithm>
 #include <utility>
 
+#include "entry_launcher.hpp"
 #include "thumbnail_image_provider.hpp"
 
 DirectoryListModel::DirectoryListModel(QObject* parent)
     : QAbstractListModel(parent),
       watchService_([this](DirectoryWatchUpdate update) { postWatchUpdate(std::move(update)); }) {
+    ownedEntryLauncher_ = std::make_unique<DesktopEntryLauncher>();
+    entryLauncher_ = ownedEntryLauncher_.get();
     connect(&operationWatcher_, &QFutureWatcher<FilesystemOperationResult>::finished, this, [this] {
         auto future = operationWatcher_.future();
         finishOperation(future.takeResult());
     });
+}
+
+DirectoryListModel::DirectoryListModel(EntryLauncher& entryLauncher, QObject* parent)
+    : DirectoryListModel(parent) {
+    ownedEntryLauncher_.reset();
+    entryLauncher_ = &entryLauncher;
 }
 
 DirectoryListModel::~DirectoryListModel() {

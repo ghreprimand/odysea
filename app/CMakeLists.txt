@@ -17,6 +17,8 @@ qt_add_library(odysea_app_adapter STATIC
     src/directory_list_model_operations.cpp
     src/directory_list_model_thumbnails.cpp
     src/directory_list_model.hpp
+    src/entry_launcher.cpp
+    src/entry_launcher.hpp
     src/directory_watch_service.cpp
     src/directory_watch_service.hpp
     src/filesystem_operation_job.cpp
@@ -33,7 +35,10 @@ qt_add_qml_module(odysea
     URI OdySea
     VERSION 1.0
     QML_FILES
+        qml/BreadcrumbBar.qml
         qml/DirectoryGridView.qml
+        qml/DirectoryListView.qml
+        qml/EntryContextMenu.qml
         qml/Main.qml
         qml/FilesystemDialogs.qml)
 
