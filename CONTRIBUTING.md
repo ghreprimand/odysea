@@ -65,6 +65,10 @@ These are not optional; they are how the project stays safe in C++:
   `.clang-tidy`) are the verified tool versions. Static analysis runs from the
   Clang release compilation database; the GCC sanitizer preset provides the
   separate ASan/UBSan runtime gate.
+- The formatting, static-analysis, privacy, file-length, and QML gates derive
+  their inputs from tracked files. A new file is invisible to them until it is
+  staged, so stage new files before running the gates; a gate run over unstaged
+  additions proves nothing about them.
 - Formatting covers every conventional C and C++ source and header extension,
   not only `.cpp` and `.hpp`, so a file cannot skip the gate by being named
   differently. `formatting_guard_self_test` holds the gate to that: it builds a
@@ -73,13 +77,20 @@ These are not optional; they are how the project stays safe in C++:
 - `qmlformat` and `qmllint` 6.10 enforce the declarative shell baseline. The
   tracked `.qmlformat.ini` is canonical, and lint warnings fail the gate. Lint
   needs the built shell module on its import path, so pass the build tree's
-  `app` directory as an import root; `ctest` does this automatically.
+  `app` directory as an import root; `ctest` does this automatically. Build
+  before linting: the import root only carries type descriptions once the module
+  has been built, and `qml_lint_guard` fails on a configure-only tree while
+  `qml_module_guard` does not.
 - The declarative shell is a linkable QML module. Application code and tests
   load scenes through `OdySea`, never by relative source-directory import, so a
-  scene missing from the module fails both instead of only the application.
+  scene missing from the module fails both instead of only the application. A
+  failed load is reported on the standard error stream naming the module and the
+  type, so a broken install explains itself instead of exiting silently.
 - `qml_module_guard` compares the tracked scene corpus under `app/qml` against
-  the manifest the build produced. Adding a scene without listing it in
-  `QML_FILES`, or leaving an entry behind after a rename, fails the gate.
+  the manifest the build produced. Scenes live in `app/qml`: the gate derives
+  the tracked side from that directory, so a scene placed elsewhere fails the
+  gate even when `QML_FILES` lists it correctly. Adding a scene without listing
+  it in `QML_FILES`, or leaving an entry behind after a rename, fails the gate.
   Scene file names start with a capital letter, because the file stem is the
   type name the application instantiates. `qml_module_guard_self_test` holds
   the gate to that with throwaway repositories and manifests covering an

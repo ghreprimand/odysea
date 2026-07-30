@@ -7,6 +7,71 @@ and architecture decisions.
 
 ---
 
+## 2026-07-30 -- Report why the shell scene failed to load
+
+Startup now explains a shell that cannot be loaded. The scene is reachable only
+through the `OdySea` QML module, so a packaging, install, or resource fault that
+drops it leaves the application unable to start; previously that produced a
+process which exited non-zero having written nothing a caller could capture.
+Measured with the scene omitted from the module's file list, a captured launch
+recorded zero bytes on both output streams. The same measurement now records a
+single line naming the module, the type, the scene URL when the engine supplies
+one, and the engine's own explanation when it has one, followed by the same
+non-zero exit.
+
+The report is written directly to the standard error stream rather than through
+a logging category. Qt's default handler may route categorized output to the
+platform's system log when the stream is not a terminal, which is precisely the
+case for a packaging script, a service unit, or any captured launch — the
+situations where a startup failure most needs an explanation. Routing the report
+through a logging category was measured first and left the captured launch
+silent, so the stream is addressed directly. Engine errors are composed from the
+individual error records rather than from the aggregate string, which prefixes a
+placeholder location for an error that has none, and are joined onto one line so
+the report stays greppable.
+
+The load path, its module and type names, and the composed diagnostic are shared
+between the application and the tests, so a test cannot pass against a module or
+scene name the application does not use. Coverage requires the real scene to
+load from the module without a report, an absent type and an absent module each
+to be reported, a scene that cannot compile to be reported with the file and
+line the engine located, the scene URL to appear only when supplied, engine
+errors to be folded onto one line, and the message to explain itself when the
+engine offers nothing. The uncompilable-scene fixture is generated at run time
+rather than tracked, so a deliberately invalid scene cannot reach the QML
+formatting and lint gates. The stream test redirects the process's error
+descriptor and reads back what arrived, so it measures delivery to the stream a
+caller captures rather than delivery to a message handler; the descriptor and
+the write target are both owned by scope-bound types, because a descriptor
+leaked out of a failing check would silence every later check.
+
+The entry point is covered as a process, not only as a function. A second
+executable is built from the application's own entry point against a scene name
+the module does not contain, and the test runs it, requiring a non-empty standard
+error stream carrying the diagnostic, an empty standard output stream, and exit
+status 1. The shipped binary is launched in the same test with its scene intact
+and must start without producing the diagnostic, so a passing failure check
+cannot come from a report written unconditionally. The scene name is a
+compile-time choice with no runtime override, so the shipped binary's behavior is
+unchanged. Removing the write fails both the stream check and the process check,
+and returns the captured launch to zero bytes; restoring the aggregate error
+string in place of the composed one fails the located-error check.
+
+Two gate clarifications ride along. `qml_lint_guard` needs the shell module
+built before it can lint a scene that imports it; the failure previously
+surfaced as a missing type-description path with nothing said about ordering, so
+the gate now checks each import root's manifest for its declared type
+descriptions and states the requirement. The manifest scan reads a final line
+that carries no trailing newline, which a generated or hand-written manifest may;
+without that, a manifest ending mid-line hid the very declaration the check
+exists to read. A manifest that declares no type descriptions at all, such as a
+plugin-only module, passes the ordering check and is left to `qmllint`.
+Contributor documentation records that ordering, records that scenes live in
+`app/qml` because the module gate derives its tracked side from that directory
+and rejects a scene placed elsewhere even when the module file list names it
+correctly, and records that the corpus-derived gates read tracked files, so a
+new file must be staged before those gates can see it.
+
 ## 2026-07-29 -- Harden shell navigation and type-ahead coverage
 
 Rendered-shell tests now require handled list and grid navigation keys to clear

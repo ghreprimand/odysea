@@ -23,6 +23,8 @@ qt_add_library(odysea_app_adapter STATIC
     src/directory_watch_service.hpp
     src/filesystem_operation_job.cpp
     src/filesystem_operation_job.hpp
+    src/shell_loader.cpp
+    src/shell_loader.hpp
     src/thumbnail_backend.cpp
     src/thumbnail_backend.hpp
     src/thumbnail_image_provider.cpp
@@ -134,6 +136,42 @@ target_link_libraries(odysea_shell_render_tests
 
 add_test(NAME shell_thumbnail_render COMMAND odysea_shell_render_tests)
 
+# The application's entry point, built against a scene name the module does not
+# contain. Nothing links this into a shipped artifact: it exists so the startup
+# failure branch is measured as a real process with real output streams and a
+# real exit status, which is the only form in which a user or packager meets it.
+qt_add_executable(odysea_broken_startup
+    src/main.cpp)
+
+target_compile_definitions(odysea_broken_startup
+    PRIVATE ODYSEA_STARTUP_SCENE_TYPE_NAME="NoSuchStartupScene")
+
+target_link_libraries(odysea_broken_startup
+    PRIVATE
+        odysea_app_adapter odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
+        odysea_warnings odysea_sanitizers)
+
+# Loads the shell exactly as the application does, so the failure report that
+# stands between a broken install and a silent non-zero exit stays covered.
+qt_add_executable(odysea_shell_loader_tests
+    tests/tst_shell_loader.cpp)
+
+target_compile_definitions(odysea_shell_loader_tests
+    PRIVATE
+        ODYSEA_STARTUP_BINARY="$<TARGET_FILE:odysea>"
+        ODYSEA_BROKEN_STARTUP_BINARY="$<TARGET_FILE:odysea_broken_startup>")
+
+target_link_libraries(odysea_shell_loader_tests
+    PRIVATE
+        odysea_app_adapter odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_dependencies(odysea_shell_loader_tests odysea odysea_broken_startup)
+
+add_test(NAME shell_load_diagnostic COMMAND odysea_shell_loader_tests)
+
 qt_add_executable(odysea_shell_entry_interaction_tests
     tests/tst_shell_entry_interactions.cpp)
 
@@ -147,4 +185,5 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 
 set_tests_properties(
     shell_input_parity shell_thumbnail_render shell_entry_interactions
+    shell_load_diagnostic
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

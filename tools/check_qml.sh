@@ -35,8 +35,36 @@ while (($# > 0)); do
     if [[ ! -d "$import_root" ]]; then
         printf 'qml_quality_guard: import path %s does not exist\n' \
             "$import_root" >&2
+        printf 'qml_quality_guard: build the shell module before linting\n' >&2
         exit 1
     fi
+
+    # A module manifest names its type description file. Linting a scene that
+    # imports the module fails on the missing description with wording that
+    # points at a build path and says nothing about ordering, so the gate states
+    # the requirement itself: the module has to be built before it can be linted.
+    #
+    # A manifest that declares no type descriptions at all — a plugin-only module,
+    # or one built with NO_GENERATE_QMLTYPES — passes this check and is left to
+    # qmllint, which is the only tool that can judge whether such a module
+    # resolves. The check is about ordering, not about module completeness.
+    while IFS= read -r manifest; do
+        module_directory="${manifest%/qmldir}"
+        # The `|| [[ -n ... ]]` continuation reads a final line that carries no
+        # trailing newline, which a hand-written or generated manifest may.
+        while read -r keyword value remainder || [[ -n "$keyword" ]]; do
+            if [[ "$keyword" != "typeinfo" || -n "$remainder" || -z "$value" ]]; then
+                continue
+            fi
+            if [[ ! -f "$module_directory/$value" ]]; then
+                printf 'qml_quality_guard: %s declares missing type descriptions %s\n' \
+                    "$manifest" "$value" >&2
+                printf 'qml_quality_guard: build the shell module before linting\n' >&2
+                exit 1
+            fi
+        done <"$manifest"
+    done < <(find "$import_root" -maxdepth 2 -name qmldir -type f)
+
     import_flags="$import_flags -I $import_root"
 done
 
