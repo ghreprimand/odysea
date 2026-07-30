@@ -7,6 +7,58 @@ and architecture decisions.
 
 ---
 
+## 2026-07-30 -- Appearance-state hardening: input safety, override semantics
+
+Hardening pass over the new appearance system, closing correctness gaps in the
+behavior it promises.
+
+Non-finite input can no longer corrupt the state or the layout. The persisted
+format's number parser now rejects `nan` and `inf` spellings — a NaN defeats
+every clamp comparison, so such values count as malformed and keep their
+defaults — and the clamp helpers pin any non-finite in-memory value to the low
+bound of its range. Previously a `scale=nan` line survived parsing, round-
+tripped through saves, and rendered the shell at one-pixel rows and type until
+a reset. Serialization clamps first, so a written file never carries a
+non-finite number. Stored strings are sanitized of control characters: the
+format is line-oriented with no escaping, so a font-family value containing a
+newline could previously rewrite any key serialized after it.
+
+Effect levels now exist in two views with distinct consumers. The plain
+properties are the stored preference the controls display and edit; the new
+`effective*` properties are what the rendering pipeline consumes — the stored
+levels after the reduced-motion and high-contrast overrides. Previously one
+property served both roles, so with an override active an enabled slider read
+back zero, snapped back on drag, and silently switched the profile to
+`Custom` while appearing to do nothing. Now the slider keeps showing and
+accepting the user's value while the override pins only what renders, and
+lifting the override renders the adjustments made under it.
+
+Reset now rewrites the settings file unconditionally: a damaged file parses to
+the defaults, so the live state could already equal them while the file on
+disk stayed wrong and the visible reset action did nothing. Startup is covered
+by a test that reproduces the application's exact load sequence against a
+pre-existing settings file and asserts the scene's bound surfaces — window
+ground, row metrics — render the stored state consistently; removing the
+load-time change notification fails it. Combo boxes' follow-direction bindings
+(profile reporting `Custom` after a slider write, palette following state
+changes) are now tested, appearance controls carry accessible names for
+assistive technology, and the leak-checker suppression for fontconfig's
+one-time configuration parse now travels with the tests themselves, so direct
+`ctest --test-dir` invocations behave the same as preset runs while a
+deliberate project leak on the same code path stays fatal.
+
+Documented limits were narrowed to what the code does: unknown keys in a
+newer build's file load but are not preserved by the next write, and the
+atomic-rename save guarantees readers a complete file rather than durability
+across power loss or coordination between concurrent writers.
+
+Verification: 25 release and 24 sanitizer tests pass, including new core
+coverage for non-finite and injection inputs and new controller, scene-load,
+and control tests; formatting, QML, privacy, and file-length gates pass; a
+headless smoke launch stays healthy.
+
+---
+
 ## 2026-07-30 -- Live appearance state, palettes, profiles, and settings
 
 The shell now has a real appearance system: one live state object that every

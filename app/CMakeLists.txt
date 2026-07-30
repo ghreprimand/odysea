@@ -208,7 +208,14 @@ target_link_libraries(odysea_shell_entry_interaction_tests
 
 add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_tests)
 
+# The leak-checker suppression travels with the tests that need it — the ones
+# whose font resolution makes fontconfig parse its configuration, a one-time
+# third-party allocation that never frees. Attaching it here means a direct
+# `ctest --test-dir` invocation inherits it exactly as `ctest --preset asan`
+# does, while a deliberate project leak in the same code path stays fatal: the
+# suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
     shell_input_parity shell_thumbnail_render shell_entry_interactions
     shell_load_diagnostic app_theme_controller
-    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")

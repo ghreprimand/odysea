@@ -11,10 +11,13 @@
 // calls.
 #include "directory_list_model.hpp"
 #include "shell_loader.hpp"
+#include "theme_controller.hpp"
+#include "theme_palettes.hpp"
 #include "thumbnail_backend.hpp"
 #include "thumbnail_image_provider.hpp"
 
 #include <QByteArray>
+#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -210,6 +213,7 @@ class ShellLoaderTest : public QObject {
 
   private slots:
     void theShellSceneLoadsFromTheModule();
+    void theShellSceneReflectsStoredAppearanceOnLoad();
     void anAbsentSceneTypeReachesTheStandardErrorStream();
     void anAbsentModuleIsReported();
     void anUncompilableSceneReportsItsLocatedEngineErrors();
@@ -240,6 +244,65 @@ void ShellLoaderTest::theShellSceneLoadsFromTheModule() {
     QVERIFY2(outcome.loaded, qPrintable(outcome.diagnostic));
     QCOMPARE(outcome.diagnostic, QString());
     QVERIFY(!engine->rootObjects().isEmpty());
+    engine.reset();
+}
+
+void ShellLoaderTest::theShellSceneReflectsStoredAppearanceOnLoad() {
+    // The exact startup sequence the entry point performs: pre-existing
+    // settings file, initial properties, then the scene load. The pass is
+    // consistency — the scene's bound surfaces must render the stored state,
+    // not only hold it in the theme object. This is what breaks when the
+    // storage-path load stops notifying: direct reads stay correct while
+    // every binding evaluated during instantiation keeps the defaults.
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    const QString settingsPath = directory.filePath(QStringLiteral("appearance.conf"));
+    QFile settings(settingsPath);
+    QVERIFY(settings.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    settings.write("palette=odyssey-amber\n"
+                   "profile=strong\n"
+                   "density=comfortable\n"
+                   "scale=1.5\n");
+    settings.close();
+
+    QtThumbnailProducer producer;
+    MemoryThumbnailStore store;
+
+    auto engine = std::make_unique<QQmlApplicationEngine>();
+    ThumbnailImageProvider& provider = installThumbnailProvider(*engine);
+    DirectoryListModel model(provider, producer, store, {});
+    model.setPath(directory.path());
+
+    engine->setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)},
+                                  {QStringLiteral("themeStoragePath"), settingsPath}});
+
+    const ShellLoadOutcome outcome = loadShellScene(*engine, shellModuleUri(), shellSceneType());
+    QVERIFY2(outcome.loaded, qPrintable(outcome.diagnostic));
+    QVERIFY(!engine->rootObjects().isEmpty());
+    QObject* const window = engine->rootObjects().constFirst();
+
+    auto* const theme = window->property("shellTheme").value<odysea::app::ThemeController*>();
+    QVERIFY(theme != nullptr);
+
+    // The theme object holds the stored state...
+    QCOMPARE(theme->paletteId(), QStringLiteral("odyssey-amber"));
+    QCOMPARE(theme->profile(), odysea::app::ThemeController::Strong);
+    QCOMPARE(theme->uiScale(), 1.5);
+    QCOMPARE(theme->density(), odysea::app::ThemeController::Comfortable);
+
+    // ...and the scene's bindings render it. The window ground is the bound
+    // surface most visibly wrong when the load fails to notify, and the row
+    // height proves the metric chain followed density and scale. The lookup
+    // key is an lvalue for the same reason as in the controller: the palette
+    // reference has static storage and this keeps that visible to compilers.
+    const QString amberId = QStringLiteral("odyssey-amber");
+    const QColor amberSheet = odysea::app::shellPalette(amberId).sheet;
+    QCOMPARE(window->property("color").value<QColor>(), amberSheet);
+    QCOMPARE(window->property("color").value<QColor>(), theme->background());
+    QCOMPARE(window->property("rowHeight").toInt(), theme->rowHeight());
+    QCOMPARE(window->property("rowHeight").toInt(), 60);
+
     engine.reset();
 }
 

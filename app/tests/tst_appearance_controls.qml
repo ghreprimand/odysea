@@ -66,10 +66,13 @@ Item {
         }
 
         function test_reducedMotionAppliesOnClick() {
-            verify(theme.persistence > 0);
+            verify(theme.effectivePersistence > 0);
             mouseClick(control("reducedMotionCheck"));
             verify(theme.reducedMotion);
-            compare(theme.persistence, 0);
+            // The override pins what gets rendered; the stored preference the
+            // slider shows survives untouched.
+            compare(theme.effectivePersistence, 0);
+            verify(theme.persistence > 0);
         }
 
         function test_effectSliderMovesToCustomImmediately() {
@@ -135,6 +138,62 @@ Item {
             fontSource.activated(1);
             compare(theme.fontSource, ShellTheme.System);
             verify(theme.fontFamily.length > 0);
+        }
+
+        function test_slidersStayLiveUnderHighContrast() {
+            mouseClick(control("highContrastCheck"));
+            verify(theme.highContrast);
+            compare(theme.effectiveScanline, 0);
+
+            // The slider still shows the stored preference and still accepts
+            // a drag: the handle keeps the written value instead of snapping
+            // back, while the effective level stays pinned by the override.
+            const slider = control("scanlineSlider");
+            verify(slider.enabled);
+            verify(slider.value > 0);
+            mousePress(slider, slider.width * 0.5, slider.height / 2);
+            mouseMove(slider, slider.width * 0.95, slider.height / 2);
+            mouseRelease(slider, slider.width * 0.95, slider.height / 2);
+
+            compare(theme.profile, ShellTheme.Custom);
+            verify(theme.scanline > 0.2);
+            tryVerify(function () {
+                return Math.abs(slider.value - theme.scanline) < 0.001;
+            });
+            compare(theme.effectiveScanline, 0);
+
+            // Lifting the override renders the adjustment made under it.
+            mouseClick(control("highContrastCheck"));
+            verify(!theme.highContrast);
+            compare(theme.effectiveScanline, theme.scanline);
+        }
+
+        function test_profileComboFollowsThemeChanges() {
+            const combo = control("profileBox");
+            compare(combo.currentIndex, ShellTheme.Balanced);
+
+            // A slider write abandons the preset for Custom; the combo must
+            // report that without being touched itself.
+            theme.scanline = 0.3;
+            tryCompare(combo, "currentIndex", ShellTheme.Custom);
+
+            theme.profile = ShellTheme.Minimal;
+            tryCompare(combo, "currentIndex", ShellTheme.Minimal);
+        }
+
+        function test_paletteComboFollowsThemeChanges() {
+            const combo = control("paletteBox");
+            const target = theme.availablePalettes.indexOf("odyssey-aurora");
+            verify(target >= 0);
+            theme.paletteId = "odyssey-aurora";
+            tryCompare(combo, "currentIndex", target);
+        }
+
+        function test_controlsCarryAccessibleNames() {
+            verify(control("scanlineSlider").Accessible.name.length > 0);
+            verify(control("uiScaleSlider").Accessible.name.length > 0);
+            verify(control("paletteBox").Accessible.name.length > 0);
+            verify(control("profileBox").Accessible.name.length > 0);
         }
 
         function test_resetButtonRestoresShippedState() {

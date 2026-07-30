@@ -47,9 +47,14 @@ class ThemeController : public QObject {
         bool reducedMotion READ reducedMotion WRITE setReducedMotion NOTIFY appearanceChanged)
     Q_PROPERTY(bool highContrast READ highContrast WRITE setHighContrast NOTIFY appearanceChanged)
 
-    // Effect levels. Reads give the levels the active profile renders; writes
-    // adjust the custom profile and make it active, which is what a user
-    // dragging a slider means.
+    // Effect levels, in two views with distinct consumers.
+    //
+    // The plain properties are the stored preference: reads resolve the
+    // active profile (preset table, or the stored custom levels) without the
+    // accessibility overrides, and writes adjust the custom profile and make
+    // it active, which is what a user dragging a slider means. The controls
+    // bind these, so a slider keeps showing and accepting the user's value
+    // even while an override is pinning what gets rendered.
     Q_PROPERTY(qreal bloomCore READ bloomCore WRITE setBloomCore NOTIFY appearanceChanged)
     Q_PROPERTY(qreal bloomWide READ bloomWide WRITE setBloomWide NOTIFY appearanceChanged)
     Q_PROPERTY(qreal scanline READ scanline WRITE setScanline NOTIFY appearanceChanged)
@@ -57,6 +62,17 @@ class ThemeController : public QObject {
     Q_PROPERTY(qreal persistence READ persistence WRITE setPersistence NOTIFY appearanceChanged)
     Q_PROPERTY(qreal deepField READ deepField WRITE setDeepField NOTIFY appearanceChanged)
     Q_PROPERTY(qreal textLift READ textLift WRITE setTextLift NOTIFY appearanceChanged)
+
+    // The effective properties are what the rendering pipeline consumes: the
+    // stored levels after the reduced-motion and high-contrast overrides.
+    // Rendering surfaces bind these and nothing writes them.
+    Q_PROPERTY(qreal effectiveBloomCore READ effectiveBloomCore NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectiveBloomWide READ effectiveBloomWide NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectiveScanline READ effectiveScanline NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectiveVignette READ effectiveVignette NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectivePersistence READ effectivePersistence NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectiveDeepField READ effectiveDeepField NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal effectiveTextLift READ effectiveTextLift NOTIFY appearanceChanged)
 
     // Metrics derived from density and scale.
     Q_PROPERTY(int rowHeight READ rowHeight NOTIFY appearanceChanged)
@@ -153,6 +169,14 @@ class ThemeController : public QObject {
     [[nodiscard]] qreal textLift() const;
     void setTextLift(qreal value);
 
+    [[nodiscard]] qreal effectiveBloomCore() const;
+    [[nodiscard]] qreal effectiveBloomWide() const;
+    [[nodiscard]] qreal effectiveScanline() const;
+    [[nodiscard]] qreal effectiveVignette() const;
+    [[nodiscard]] qreal effectivePersistence() const;
+    [[nodiscard]] qreal effectiveDeepField() const;
+    [[nodiscard]] qreal effectiveTextLift() const;
+
     [[nodiscard]] int rowHeight() const;
     [[nodiscard]] int gridCellWidth() const;
     [[nodiscard]] int gridCellHeight() const;
@@ -183,7 +207,9 @@ class ThemeController : public QObject {
     [[nodiscard]] QColor warning() const;
     [[nodiscard]] QColor success() const;
 
-    /// Restores the shipped configuration and persists it.
+    /// Restores the shipped configuration and persists it. The settings file
+    /// is rewritten even when the live state already equals the defaults, so
+    /// resetting also repairs a damaged file that parsed to the defaults.
     Q_INVOKABLE void resetToDefaults();
 
   signals:
@@ -196,6 +222,7 @@ class ThemeController : public QObject {
     void mutate(Change&& change);
     void persist();
     [[nodiscard]] const struct ShellPalette& activePalette() const;
+    [[nodiscard]] core::EffectLevels stored() const;
     [[nodiscard]] core::EffectLevels effective() const;
     [[nodiscard]] qreal metricScale() const;
 

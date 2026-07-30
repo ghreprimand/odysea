@@ -72,6 +72,9 @@ Popup {
         Slider {
             id: control
 
+            // The visible FieldLabel is a sibling, so assistive technology
+            // needs the association made explicitly.
+            Accessible.name: sliderRow.label
             Layout.fillWidth: true
             from: sliderRow.from
             to: sliderRow.to
@@ -104,6 +107,7 @@ Popup {
         ComboBox {
             id: control
 
+            Accessible.name: comboRow.label
             Layout.fillWidth: true
             onActivated: index => comboRow.picked(index)
 
@@ -253,6 +257,7 @@ Popup {
                         id: namedFamilyField
 
                         objectName: "namedFamilyField"
+                        Accessible.name: qsTr("Family name")
                         Layout.fillWidth: true
                         text: panel.theme.namedFontFamily
                         color: panel.theme.text

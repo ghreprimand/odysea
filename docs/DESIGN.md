@@ -135,23 +135,34 @@ there is no apply step.
   the selection bed remains distinct from the ground. An unknown family
   identifier resolves to the default rather than rendering nothing.
 - **Screen-effect profiles.** `Off`, `Minimal`, `Balanced` (shipped default),
-  and `Strong` are fixed presets over the effect levels the rendering pipeline
-  consumes: core and wide bloom, scanlines, vignette, persistence, ground
-  depth, and text lift. `Custom` renders the user's own stored levels; moving
-  any effect control switches to it and the adjustments survive preset
-  round-trips. Reduced motion zeroes persistence; high contrast zeroes the
-  gains that modulate legibility, pins text lift, and promotes the muted and
-  hairline roles to stronger inks.
+  and `Strong` are fixed presets over the effect levels: core and wide bloom,
+  scanlines, vignette, persistence, ground depth, and text lift. `Custom`
+  renders the user's own stored levels; moving any effect control switches to
+  it and the adjustments survive preset round-trips. The levels exist in two
+  views with distinct consumers: the controls display and edit the *stored*
+  preference, while the rendering pipeline consumes the *effective* levels —
+  the stored ones after the accessibility overrides. Reduced motion zeroes
+  effective persistence; high contrast zeroes the effective gains that
+  modulate legibility, pins effective text lift, and promotes the muted and
+  hairline roles to stronger inks. Because the overrides act on the effective
+  view only, an active override never makes an enabled control discard or
+  misreport a write, and lifting the override renders the adjustments made
+  while it was on.
 - **Typography roles.** The bundled default body face is Victor Mono, resolved
   through a fixed-width fallback chain so metrics stay stable when it is
   absent; the system's fixed-width face and a directly named family are the
   other sources, and a named family that does not exist falls back rather than
   failing.
-- **Versioned persistence.** Preferences serialize to a small key=value file
-  written atomically. Parsing is tolerant: unknown keys are ignored, malformed
-  values keep their defaults, out-of-range values clamp, and a missing file is
-  the first-run default state, so a newer build's file never breaks an older
-  one.
+- **Versioned persistence.** Preferences serialize to a small key=value file.
+  The write goes through a sibling temporary file and a rename, so a reader
+  never observes a partially written file; durability across power loss and
+  coordination between concurrent writers are out of scope for appearance
+  state. Parsing is tolerant: unknown keys are ignored on load — and are not
+  preserved by the next write — malformed and non-finite values keep their
+  defaults, out-of-range values clamp, control characters never enter a
+  stored string, and a missing file is the first-run default state, so a
+  newer build's file still loads on an older one. Resetting to defaults
+  rewrites the file unconditionally, which also repairs a damaged one.
 
 ## Rendering
 

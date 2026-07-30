@@ -216,12 +216,21 @@ void ThemeController::setHighContrast(bool high) {
     mutate([&](core::AppearanceSettings& s) { s.high_contrast = high; });
 }
 
+core::EffectLevels ThemeController::stored() const {
+    // The stored view: what the active profile says, before the accessibility
+    // overrides. This is what the controls display and edit, so an override
+    // never makes an enabled slider discard or misreport a write.
+    return settings_.profile == core::EffectProfile::Custom
+               ? core::clamp_effect_levels(settings_.custom)
+               : core::effect_profile_levels(settings_.profile);
+}
+
 core::EffectLevels ThemeController::effective() const {
     return core::effective_effect_levels(settings_);
 }
 
 qreal ThemeController::bloomCore() const {
-    return effective().bloom_core;
+    return stored().bloom_core;
 }
 
 void ThemeController::setBloomCore(qreal value) {
@@ -232,7 +241,7 @@ void ThemeController::setBloomCore(qreal value) {
 }
 
 qreal ThemeController::bloomWide() const {
-    return effective().bloom_wide;
+    return stored().bloom_wide;
 }
 
 void ThemeController::setBloomWide(qreal value) {
@@ -243,7 +252,7 @@ void ThemeController::setBloomWide(qreal value) {
 }
 
 qreal ThemeController::scanline() const {
-    return effective().scanline;
+    return stored().scanline;
 }
 
 void ThemeController::setScanline(qreal value) {
@@ -254,7 +263,7 @@ void ThemeController::setScanline(qreal value) {
 }
 
 qreal ThemeController::vignette() const {
-    return effective().vignette;
+    return stored().vignette;
 }
 
 void ThemeController::setVignette(qreal value) {
@@ -265,7 +274,7 @@ void ThemeController::setVignette(qreal value) {
 }
 
 qreal ThemeController::persistence() const {
-    return effective().persistence;
+    return stored().persistence;
 }
 
 void ThemeController::setPersistence(qreal value) {
@@ -276,7 +285,7 @@ void ThemeController::setPersistence(qreal value) {
 }
 
 qreal ThemeController::deepField() const {
-    return effective().deep_field;
+    return stored().deep_field;
 }
 
 void ThemeController::setDeepField(qreal value) {
@@ -287,7 +296,7 @@ void ThemeController::setDeepField(qreal value) {
 }
 
 qreal ThemeController::textLift() const {
-    return effective().text_lift;
+    return stored().text_lift;
 }
 
 void ThemeController::setTextLift(qreal value) {
@@ -295,6 +304,34 @@ void ThemeController::setTextLift(qreal value) {
         s.custom.text_lift = value;
         s.profile = core::EffectProfile::Custom;
     });
+}
+
+qreal ThemeController::effectiveBloomCore() const {
+    return effective().bloom_core;
+}
+
+qreal ThemeController::effectiveBloomWide() const {
+    return effective().bloom_wide;
+}
+
+qreal ThemeController::effectiveScanline() const {
+    return effective().scanline;
+}
+
+qreal ThemeController::effectiveVignette() const {
+    return effective().vignette;
+}
+
+qreal ThemeController::effectivePersistence() const {
+    return effective().persistence;
+}
+
+qreal ThemeController::effectiveDeepField() const {
+    return effective().deep_field;
+}
+
+qreal ThemeController::effectiveTextLift() const {
+    return effective().text_lift;
 }
 
 qreal ThemeController::metricScale() const {
@@ -425,12 +462,15 @@ QColor ThemeController::success() const {
 
 void ThemeController::resetToDefaults() {
     core::AppearanceSettings defaults;
-    if (settings_ == defaults) {
-        return;
-    }
+    const bool changed = !(settings_ == defaults);
     settings_ = defaults;
+    // The write is unconditional: a damaged settings file parses to the
+    // defaults, so the live state can already equal them while the file on
+    // disk is still wrong. Reset promises a clean file either way.
     persist();
-    emit appearanceChanged();
+    if (changed) {
+        emit appearanceChanged();
+    }
 }
 
 template <typename Change>
