@@ -7,6 +7,24 @@ and architecture decisions.
 
 ---
 
+## 2026-07-29 -- Harden shell navigation and type-ahead coverage
+
+Rendered-shell tests now require handled list and grid navigation keys to clear
+an active type-ahead buffer, require unbound modified keys to leave type-ahead
+and the cursor untouched, and verify that numbered tab shortcuts beyond the
+open tab count stay disabled and inactive.
+
+The shell-model stub now returns fixed scripted prefix-search rows while
+recording the requested prefix and cycling mode. This keeps the rendered suite
+focused on the shell contract instead of duplicating the adapter's prefix-match
+algorithm.
+
+Verified with all twenty-two release tests and all twenty-one enabled
+ASan/UBSan tests, including warning-clean builds, static analysis, C++ and QML
+formatting, zero-warning QML linting, public-repository and file-length guards,
+the QML module guards, and eight-second offscreen release and sanitizer smoke
+launches. Replaying each covered mutation makes the rendered-shell suite fail.
+
 ## 2026-07-28 -- Complete entry interaction and transfer parity
 
 List and grid entries now share activation and context-menu behavior. Return

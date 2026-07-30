@@ -54,6 +54,7 @@ TestCase {
         property int prefixSearchCalls: 0
         property string searchedPrefix: ""
         property bool searchedWithCycling: false
+        property var scriptedPrefixRows: []
         property int toggleCurrentCalls: 0
         property int clearSelectionCalls: 0
         property int beginRubberBandCalls: 0
@@ -299,18 +300,16 @@ TestCase {
             prefixSearchCalls += 1;
             searchedPrefix = prefix;
             searchedWithCycling = cycle;
-            if (prefix.length === 0 || count === 0) {
+            if (scriptedPrefixRows.length === 0) {
                 return false;
             }
-            const first = cycle ? (currentIndex + 1 + count) % count : Math.max(0, currentIndex);
-            for (let offset = 0; offset < count; ++offset) {
-                const row = (first + offset) % count;
-                if (get(row).name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())) {
-                    moveCursorTo(row, false, false);
-                    return true;
-                }
+            const row = scriptedPrefixRows[0];
+            scriptedPrefixRows = scriptedPrefixRows.slice(1);
+            if (row < 0) {
+                return false;
             }
-            return false;
+            moveCursorTo(row, false, false);
+            return true;
         }
 
         function selectOnly(row) {
@@ -341,6 +340,7 @@ TestCase {
             prefixSearchCalls = 0;
             searchedPrefix = "";
             searchedWithCycling = false;
+            scriptedPrefixRows = [];
             toggleCurrentCalls = 0;
             clearSelectionCalls = 0;
             beginRubberBandCalls = 0;
@@ -469,6 +469,16 @@ TestCase {
             return item !== null;
         });
         return item;
+    }
+
+    function shortcutForSequence(sequence) {
+        for (let index = 0; index < shellWindow.contentData.length; ++index) {
+            const candidate = shellWindow.contentData[index];
+            if (candidate !== null && candidate.sequence !== undefined && candidate.sequence.toString() === sequence) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     function rowAt(index) {
@@ -826,25 +836,36 @@ TestCase {
         populateNamedRows(["alpha.txt", "beta.txt", "bravo.txt", "berry.txt"]);
         let list = child("directoryList");
         list.forceActiveFocus();
+        fakeModel.scriptedPrefixRows = [1, 2, 2, 2, 1, 79];
 
         keyClick(Qt.Key_B);
         compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedWithCycling, true);
         compare(fakeModel.currentIndex, 1);
         compare(selectedRows().join(","), "1");
 
         keyClick(Qt.Key_B);
         compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedWithCycling, true);
         compare(fakeModel.currentIndex, 2);
         keyClick(Qt.Key_R);
         compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "br");
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "br");
+        compare(fakeModel.searchedWithCycling, false);
         compare(fakeModel.currentIndex, 2);
         keyClick(Qt.Key_Backspace);
         compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedWithCycling, false);
         keyClick(Qt.Key_Escape);
         compare(shellWindow.typeAheadBuffer, "");
 
         fakeModel.selectRow(3, Qt.NoModifier);
         keyClick(Qt.Key_B);
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "b");
+        compare(fakeModel.searchedWithCycling, true);
         compare(fakeModel.currentIndex, 1);
         wait(shellWindow.typeAheadTimeoutMs + 100);
         compare(shellWindow.typeAheadBuffer, "");
@@ -858,6 +879,8 @@ TestCase {
         list = child("directoryList");
         list.forceActiveFocus();
         keyClick(Qt.Key_Z);
+        compare(fakeModel.searchedPrefix.toLocaleLowerCase(), "z");
+        compare(fakeModel.searchedWithCycling, true);
         compare(fakeModel.currentIndex, 79);
         compare(selectedRows().join(","), "79");
         tryVerify(function () {
@@ -885,6 +908,50 @@ TestCase {
         compare(fakeModel.currentIndex, currentBeforeEditing);
         compare(renameField.text.toLocaleLowerCase(), "b");
         renameDialog.close();
+    }
+
+    function test_listNavigationClearsTypeAhead() {
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        fakeModel.scriptedPrefixRows = [1];
+
+        keyClick(Qt.Key_S);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "s");
+        compare(fakeModel.currentIndex, 1);
+
+        keyClick(Qt.Key_Down);
+        compare(fakeModel.currentIndex, 2);
+        compare(shellWindow.typeAheadBuffer, "");
+    }
+
+    function test_gridNavigationClearsTypeAhead() {
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        fakeModel.scriptedPrefixRows = [0];
+
+        keyClick(Qt.Key_S);
+        compare(shellWindow.typeAheadBuffer.toLocaleLowerCase(), "s");
+
+        keyClick(Qt.Key_Right);
+        compare(fakeModel.currentIndex, 1);
+        compare(shellWindow.typeAheadBuffer, "");
+    }
+
+    function test_unboundModifiedKeyDoesNotStartTypeAhead() {
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        const currentBeforeShortcut = fakeModel.currentIndex;
+
+        keyClick(Qt.Key_K, Qt.ControlModifier);
+
+        compare(shellWindow.typeAheadBuffer, "");
+        compare(fakeModel.currentIndex, currentBeforeShortcut);
+        compare(fakeModel.prefixSearchCalls, 0);
+        compare(fakeModel.moveCursorCalls, 0);
+        compare(fakeModel.moveCursorToCalls, 0);
     }
 
     function test_gridDelegatesAreVirtualizedAndRequestThumbnails() {
@@ -1103,6 +1170,23 @@ TestCase {
         verify(gridButton.enabled);
         compare(listButton.checked, true);
         compare(gridButton.checked, false);
+    }
+
+    function test_numberedTabShortcutBeyondOpenTabsIsDisabled() {
+        fakeModel.tabCount = 3;
+        fakeModel.activeTab = 1;
+        waitForRendering(shellWindow.contentItem);
+        let fourthTabShortcut = shortcutForSequence("Ctrl+4");
+        verify(fourthTabShortcut !== null);
+        tryCompare(fourthTabShortcut, "enabled", false);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+
+        keyClick(Qt.Key_4, Qt.ControlModifier);
+
+        compare(fakeModel.activateTabCalls, 0);
+        compare(fakeModel.activeTab, 1);
     }
 
     function test_viewSwitchingKeyboardAndMousePreservesSelection() {
