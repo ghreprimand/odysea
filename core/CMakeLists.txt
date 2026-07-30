@@ -4,6 +4,7 @@
 # display server so the core logic can be verified headless and reused by any
 # presentation layer.
 add_library(odysea_core
+    src/appearance.cpp
     src/digest.cpp
     src/directory_model.cpp
     src/directory_scanner.cpp
