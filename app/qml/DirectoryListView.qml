@@ -14,6 +14,18 @@ FocusScope {
     required property color secondaryTextColor
     required property color selectionColor
 
+    // Optional roles with the shell's former fixed values as defaults, so the
+    // view renders sensibly when a scene does not bind a theme.
+    property color dirInkColor: accentColor
+    property color metaInkColor: secondaryTextColor
+    property color fileInkColor: "#7a7266"
+    property color dangerColor: "#ff8f7a"
+    property color hoverColor: "#28211b"
+    property color rubberBandColor: "#335f87b2"
+    property string contentFontFamily: "monospace"
+    property int contentFontPixelSize: 14
+    property int metaFontPixelSize: 12
+
     readonly property int selectionGutterWidth: 28
     property alias contentY: directoryList.contentY
     property alias interactive: directoryList.interactive
@@ -203,7 +215,7 @@ FocusScope {
 
             Rectangle {
                 anchors.fill: parent
-                color: entryRow.selected ? pane.selectionColor : (rowPointer.containsMouse ? "#28211b" : "transparent")
+                color: entryRow.selected ? pane.selectionColor : (rowPointer.containsMouse ? pane.hoverColor : "transparent")
                 border.color: pane.shellModel.currentIndex === entryRow.index ? pane.accentColor : "transparent"
                 radius: 4
             }
@@ -216,29 +228,29 @@ FocusScope {
 
                 Text {
                     text: entryRow.isDir ? "\u25B8" : "\u2022"
-                    color: entryRow.isDir ? pane.accentColor : "#7a7266"
-                    font.pixelSize: 14
+                    color: entryRow.isDir ? pane.dirInkColor : pane.fileInkColor
+                    font.pixelSize: pane.contentFontPixelSize
                 }
                 Text {
                     visible: entryRow.recoveryEntry
                     text: qsTr("RECOVERY")
-                    color: "#ff8f7a"
+                    color: pane.dangerColor
                     font.bold: true
                     font.pixelSize: 10
                 }
                 Text {
                     Layout.fillWidth: true
                     text: entryRow.name
-                    color: pane.primaryTextColor
+                    color: entryRow.isDir ? pane.dirInkColor : pane.primaryTextColor
                     elide: Text.ElideRight
-                    font.family: "monospace"
-                    font.pixelSize: 14
+                    font.family: pane.contentFontFamily
+                    font.pixelSize: pane.contentFontPixelSize
                 }
                 Text {
                     visible: !entryRow.isDir
                     text: pane.navigationController.formatSize(entryRow.size)
-                    color: pane.secondaryTextColor
-                    font.pixelSize: 12
+                    color: pane.metaInkColor
+                    font.pixelSize: pane.metaFontPixelSize
                 }
             }
 
@@ -366,7 +378,7 @@ FocusScope {
 
             visible: false
             z: 3
-            color: "#335f87b2"
+            color: pane.rubberBandColor
             border.color: pane.accentColor
             radius: 3
         }

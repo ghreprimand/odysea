@@ -16,9 +16,20 @@ FocusScope {
     required property color accentColor
     required property color selectionColor
 
+    // Optional roles with the shell's former fixed values as defaults, so the
+    // view renders sensibly when a scene does not bind a theme.
+    property color dirInkColor: accentColor
+    property color fileInkColor: "#7a7266"
+    property color dangerColor: "#ff8f7a"
+    property color hoverColor: "#28211b"
+    property color rubberBandColor: "#335f87b2"
+    property string contentFontFamily: "monospace"
+    property int contentFontPixelSize: 13
+    property int metaFontPixelSize: 12
+    property int cellWidth: 144
+    property int cellHeight: 154
+
     readonly property int selectionGutterWidth: 28
-    readonly property int cellWidth: 144
-    readonly property int cellHeight: 154
 
     focus: visible
 
@@ -276,7 +287,7 @@ FocusScope {
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 4
-                color: entryCell.selected ? pane.selectionColor : (cellPointer.containsMouse ? "#28211b" : "transparent")
+                color: entryCell.selected ? pane.selectionColor : (cellPointer.containsMouse ? pane.hoverColor : "transparent")
                 border.color: pane.shellModel.currentIndex === entryCell.index ? pane.accentColor : "transparent"
                 radius: 6
             }
@@ -307,7 +318,7 @@ FocusScope {
                         anchors.centerIn: parent
                         visible: thumbnail.status !== Image.Ready && !entryCell.thumbnailLoading
                         text: entryCell.isDir ? "\u25B8" : "\u2022"
-                        color: entryCell.isDir ? pane.accentColor : "#7a7266"
+                        color: entryCell.isDir ? pane.dirInkColor : pane.fileInkColor
                         font.pixelSize: 34
                     }
 
@@ -323,18 +334,18 @@ FocusScope {
                 Text {
                     Layout.fillWidth: true
                     text: entryCell.name
-                    color: pane.primaryTextColor
+                    color: entryCell.isDir ? pane.dirInkColor : pane.primaryTextColor
                     elide: Text.ElideMiddle
                     horizontalAlignment: Text.AlignHCenter
-                    font.family: "monospace"
-                    font.pixelSize: 13
+                    font.family: pane.contentFontFamily
+                    font.pixelSize: pane.contentFontPixelSize
                 }
 
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     visible: entryCell.recoveryEntry
                     text: qsTr("RECOVERY")
-                    color: "#ff8f7a"
+                    color: pane.dangerColor
                     font.bold: true
                     font.pixelSize: 9
                 }
@@ -468,7 +479,7 @@ FocusScope {
 
         visible: false
         z: 3
-        color: "#335f87b2"
+        color: pane.rubberBandColor
         border.color: pane.accentColor
         radius: 3
     }

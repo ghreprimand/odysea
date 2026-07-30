@@ -44,7 +44,15 @@ qt_add_qml_module(odysea_shell_qml
     # Pinned so the module directory is named after the URI regardless of the
     # target name. Import roots and the manifest gate depend on that layout.
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/OdySea
+    # The appearance state lives in the module as the ShellTheme type, so the
+    # application and every scene test configure the same implementation.
+    SOURCES
+        src/theme_controller.cpp
+        src/theme_controller.hpp
+        src/theme_palettes.cpp
+        src/theme_palettes.hpp
     QML_FILES
+        qml/AppearancePanel.qml
         qml/BreadcrumbBar.qml
         qml/DirectoryGridView.qml
         qml/DirectoryListView.qml
@@ -52,8 +60,12 @@ qt_add_qml_module(odysea_shell_qml
         qml/Main.qml
         qml/FilesystemDialogs.qml)
 
+target_include_directories(odysea_shell_qml
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 target_link_libraries(odysea_shell_qml
     PUBLIC
+        odysea::core
         Qt6::Quick Qt6::QuickControls2
     PRIVATE
         odysea_warnings odysea_sanitizers)
@@ -105,6 +117,19 @@ target_link_libraries(odysea_thumbnail_model_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_thumbnail_model COMMAND odysea_thumbnail_model_tests)
+
+# The appearance state ships in the shell module; the test drives it as a
+# plain object, so persistence and font resolution are covered without a scene.
+qt_add_executable(odysea_theme_controller_tests
+    tests/tst_theme_controller.cpp)
+
+target_link_libraries(odysea_theme_controller_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_theme_controller COMMAND odysea_theme_controller_tests)
 
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic
@@ -185,5 +210,5 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 
 set_tests_properties(
     shell_input_parity shell_thumbnail_render shell_entry_interactions
-    shell_load_diagnostic
+    shell_load_diagnostic app_theme_controller
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

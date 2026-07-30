@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QStandardPaths>
 #include <QStringList>
 #include <QUrl>
 #include <QVariant>
@@ -50,7 +51,14 @@ int main(int argc, char* argv[]) {
     DirectoryListModel model(thumbnailProvider);
     model.setPath(start);
 
-    engine.setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)}});
+    // Appearance preferences persist in the per-user application config
+    // location. The scene owns the appearance state; it only needs the path.
+    const QString themeStorage =
+        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+        QStringLiteral("/appearance.conf");
+
+    engine.setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)},
+                                 {QStringLiteral("themeStoragePath"), themeStorage}});
     const odysea::app::ShellLoadOutcome shell =
         odysea::app::loadShellScene(engine, odysea::app::shellModuleUri(), startupSceneType());
     if (!shell.loaded) {

@@ -12,6 +12,11 @@ FocusScope {
     required property color primaryTextColor
     required property color accentColor
 
+    // Optional roles with the shell's former fixed values as defaults, so the
+    // bar renders sensibly when a scene does not bind a theme.
+    property color hoverColor: "#382b22"
+    property color pressedColor: "#4a392b"
+
     readonly property var segments: shellModel.path.length >= 0 ? shellModel.breadcrumbSegments() : []
 
     implicitHeight: 36
@@ -99,7 +104,7 @@ FocusScope {
                     }
 
                     background: Rectangle {
-                        color: crumbButton.down ? "#4a392b" : (crumbButton.hovered ? "#382b22" : bar.backgroundColor)
+                        color: crumbButton.down ? bar.pressedColor : (crumbButton.hovered ? bar.hoverColor : bar.backgroundColor)
                         border.color: crumbButton.activeFocus ? bar.accentColor : bar.borderColor
                         radius: 4
                     }

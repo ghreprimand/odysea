@@ -5,21 +5,31 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+// Self-import: resolves the module's compiled types (ShellTheme) for tooling
+// and runtime alike.
+import OdySea
 
 ApplicationWindow {
     id: root
 
     required property var shellModel
 
+    /// Where appearance preferences persist. The application injects the real
+    /// location; the default keeps scenes and tests in memory only.
+    property string themeStoragePath: ""
+    readonly property ShellTheme shellTheme: ShellTheme {
+        storagePath: root.themeStoragePath
+    }
+
     objectName: "mainWindow"
-    readonly property int rowHeight: 34
-    readonly property color backgroundColor: "#16130f"
-    readonly property color panelColor: "#201b16"
-    readonly property color borderColor: "#3a3128"
-    readonly property color primaryTextColor: "#e8e2d6"
-    readonly property color secondaryTextColor: "#a99f91"
-    readonly property color accentColor: "#ffb454"
-    readonly property color selectionColor: "#49321f"
+    readonly property int rowHeight: shellTheme.rowHeight
+    readonly property color backgroundColor: shellTheme.background
+    readonly property color panelColor: shellTheme.panel
+    readonly property color borderColor: shellTheme.border
+    readonly property color primaryTextColor: shellTheme.text
+    readonly property color secondaryTextColor: shellTheme.textMuted
+    readonly property color accentColor: shellTheme.accent
+    readonly property color selectionColor: shellTheme.selectionBed
     readonly property int typeAheadTimeoutMs: 900
     property bool gridMode: false
     property string typeAheadBuffer: ""
@@ -31,6 +41,8 @@ ApplicationWindow {
     visible: true
     title: root.shellModel.path.length > 0 ? root.shellModel.path + " — OdySea" : "OdySea"
     color: backgroundColor
+    font.family: shellTheme.fontFamily
+    font.pixelSize: shellTheme.fontPixelSize
 
     component ShellButton: Button {
         id: control
@@ -40,14 +52,15 @@ ApplicationWindow {
 
         contentItem: Text {
             text: control.text
-            color: control.enabled ? root.primaryTextColor : "#6f675e"
-            font.pixelSize: 13
+            color: control.enabled ? root.primaryTextColor : root.shellTheme.textFaint
+            font.family: root.shellTheme.fontFamily
+            font.pixelSize: root.shellTheme.fontPixelSize
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
 
         background: Rectangle {
-            color: control.down ? "#4a392b" : (control.hovered ? "#382b22" : root.panelColor)
+            color: control.down ? root.shellTheme.pressed : (control.hovered ? root.shellTheme.hover : root.panelColor)
             border.color: control.activeFocus ? root.accentColor : root.borderColor
             radius: 5
         }
@@ -91,6 +104,14 @@ ApplicationWindow {
             primaryTextColor: root.primaryTextColor
             secondaryTextColor: root.secondaryTextColor
             selectionColor: root.selectionColor
+            dirInkColor: root.shellTheme.dirInk
+            fileInkColor: root.shellTheme.textFaint
+            dangerColor: root.shellTheme.danger
+            hoverColor: root.shellTheme.hover
+            rubberBandColor: root.shellTheme.rubberBand
+            contentFontFamily: root.shellTheme.fontFamily
+            contentFontPixelSize: root.shellTheme.contentFontPixelSize
+            metaFontPixelSize: root.shellTheme.metaFontPixelSize
         }
 
         DirectoryGridView {
@@ -107,6 +128,16 @@ ApplicationWindow {
             secondaryTextColor: root.secondaryTextColor
             accentColor: root.accentColor
             selectionColor: root.selectionColor
+            dirInkColor: root.shellTheme.dirInk
+            fileInkColor: root.shellTheme.textFaint
+            dangerColor: root.shellTheme.danger
+            hoverColor: root.shellTheme.hover
+            rubberBandColor: root.shellTheme.rubberBand
+            contentFontFamily: root.shellTheme.fontFamily
+            contentFontPixelSize: root.shellTheme.contentFontPixelSize
+            metaFontPixelSize: root.shellTheme.metaFontPixelSize
+            cellWidth: root.shellTheme.gridCellWidth
+            cellHeight: root.shellTheme.gridCellHeight
         }
     }
 
@@ -353,6 +384,17 @@ ApplicationWindow {
         sequence: "Delete"
         onActivated: root.shellModel.requestTrash()
     }
+    Shortcut {
+        sequence: "Ctrl+,"
+        onActivated: appearancePanel.open()
+    }
+
+    AppearancePanel {
+        id: appearancePanel
+
+        parent: root.contentItem
+        theme: root.shellTheme
+    }
 
     header: ColumnLayout {
         spacing: 0
@@ -452,6 +494,13 @@ ApplicationWindow {
                     ToolTip.text: qsTr("Grid view (Ctrl+Shift+2)")
                     onClicked: root.switchView(true)
                 }
+                ShellButton {
+                    objectName: "appearanceButton"
+                    text: qsTr("Appearance")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Appearance settings (Ctrl+,)")
+                    onClicked: appearancePanel.open()
+                }
             }
         }
 
@@ -463,6 +512,8 @@ ApplicationWindow {
             borderColor: root.borderColor
             primaryTextColor: root.primaryTextColor
             accentColor: root.accentColor
+            hoverColor: root.shellTheme.hover
+            pressedColor: root.shellTheme.pressed
         }
 
         Rectangle {
@@ -697,6 +748,7 @@ ApplicationWindow {
         primaryTextColor: root.primaryTextColor
         secondaryTextColor: root.secondaryTextColor
         accentColor: root.accentColor
+        dangerColor: root.shellTheme.danger
     }
 
     footer: Rectangle {
@@ -720,21 +772,21 @@ ApplicationWindow {
             Text {
                 Layout.fillWidth: true
                 text: root.shellModel.operationErrorString.length > 0 ? root.shellModel.operationErrorString : (root.shellModel.errorString.length > 0 ? qsTr("Could not read folder: ") + root.shellModel.errorString : root.shellModel.statusMessage)
-                color: root.shellModel.operationErrorString.length > 0 || root.shellModel.errorString.length > 0 ? "#ff8f7a" : root.secondaryTextColor
+                color: root.shellModel.operationErrorString.length > 0 || root.shellModel.errorString.length > 0 ? root.shellTheme.danger : root.secondaryTextColor
                 elide: Text.ElideRight
-                font.pixelSize: 12
+                font.pixelSize: root.shellTheme.metaFontPixelSize
             }
 
             Text {
                 text: qsTr("%1 selected").arg(root.shellModel.selectedCount)
                 color: root.secondaryTextColor
-                font.pixelSize: 12
+                font.pixelSize: root.shellTheme.metaFontPixelSize
             }
 
             Text {
                 text: qsTr("Pane %1 of %2").arg(root.shellModel.activePane + 1).arg(root.shellModel.paneCount)
                 color: root.secondaryTextColor
-                font.pixelSize: 12
+                font.pixelSize: root.shellTheme.metaFontPixelSize
             }
         }
     }

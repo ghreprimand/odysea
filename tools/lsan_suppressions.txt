@@ -1,0 +1,9 @@
+# LeakSanitizer suppressions for third-party one-time initialization.
+#
+# fontconfig parses its XML configuration the first time a process touches the
+# font database and deliberately keeps the parsed configuration allocated until
+# process exit; it is reported as leaked because fontconfig installs no exit
+# teardown. Every test process that resolves a font family trips it. The
+# suppression is scoped to fontconfig frames, so leaks in this project's own
+# code remain fatal.
+leak:libfontconfig

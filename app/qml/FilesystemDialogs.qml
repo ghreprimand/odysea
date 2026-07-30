@@ -13,6 +13,9 @@ Item {
     required property color secondaryTextColor
     required property color accentColor
 
+    // Optional role with the shell's former fixed value as the default.
+    property color dangerColor: "#ff8f7a"
+
     property string pendingOperation: ""
     property var pendingPaths: []
 
@@ -286,7 +289,7 @@ Item {
 
         background: Rectangle {
             color: dialogs.panelColor
-            border.color: "#ff8f7a"
+            border.color: dialogs.dangerColor
             radius: 8
         }
 

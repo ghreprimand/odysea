@@ -114,6 +114,45 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
 Keeping the core free of Qt types means it stays fast, portable, and testable,
 and that the presentation layer can evolve independently.
 
+## Appearance
+
+The shell's look is one shared, live state object rather than scattered style
+constants. What each value *means* — which profiles exist, what their effect
+levels are, how preferences persist and clamp — lives in the Qt-free core as a
+versioned appearance model with headless tests. The presentation layer binds
+that model to the scene as the `ShellTheme` type: it resolves the active color
+family into rendering roles, resolves fonts against what the platform actually
+has, and derives metrics from density and scale. Every appearance control
+writes this state directly and every bound surface restyles in the same event;
+there is no apply step.
+
+- **Semantic roles, not terminal conventions.** Colors are named for what a
+  file manager renders: window ground, panels, wells, hairlines, entry text,
+  metadata columns, directory and symlink inks, selection bed and ink, focus,
+  match, and status inks. Six curated families ship, `odyssey-default` first;
+  each family's values are derived so every ink clears its contrast floor on
+  the surfaces it renders over, directory ink stays measurably chromatic, and
+  the selection bed remains distinct from the ground. An unknown family
+  identifier resolves to the default rather than rendering nothing.
+- **Screen-effect profiles.** `Off`, `Minimal`, `Balanced` (shipped default),
+  and `Strong` are fixed presets over the effect levels the rendering pipeline
+  consumes: core and wide bloom, scanlines, vignette, persistence, ground
+  depth, and text lift. `Custom` renders the user's own stored levels; moving
+  any effect control switches to it and the adjustments survive preset
+  round-trips. Reduced motion zeroes persistence; high contrast zeroes the
+  gains that modulate legibility, pins text lift, and promotes the muted and
+  hairline roles to stronger inks.
+- **Typography roles.** The bundled default body face is Victor Mono, resolved
+  through a fixed-width fallback chain so metrics stay stable when it is
+  absent; the system's fixed-width face and a directly named family are the
+  other sources, and a named family that does not exist falls back rather than
+  failing.
+- **Versioned persistence.** Preferences serialize to a small key=value file
+  written atomically. Parsing is tolerant: unknown keys are ignored, malformed
+  values keep their defaults, out-of-range values clamp, and a missing file is
+  the first-run default state, so a newer build's file never breaks an older
+  one.
+
 ## Rendering
 
 Qt Quick renders through a hardware-accelerated scene graph. On Linux it drives

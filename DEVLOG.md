@@ -7,6 +7,52 @@ and architecture decisions.
 
 ---
 
+## 2026-07-30 -- Live appearance state, palettes, profiles, and settings
+
+The shell now has a real appearance system: one live state object that every
+styled surface binds to and every appearance control writes through. The state
+model — profiles, effect levels, clamping, and the persisted form — is a
+Qt-free core component with headless tests; the `ShellTheme` type in the shell
+module binds it to the scene, resolves the active color family into rendering
+roles, resolves fonts against the platform's installed families, and derives
+row, cell, and type metrics from density and scale. `docs/DESIGN.md` records
+the durable decisions.
+
+Six curated color families ship, expressed directly in file-manager roles
+(ground, panels, wells, hairlines, entry and metadata text, directory and
+symlink inks, selection bed and ink, focus, status inks) rather than terminal
+color conventions; `odyssey-default` is the shipped default and an unknown
+identifier resolves to it. Directory entries now render in the directory ink
+role, entry metadata in the metadata ink role, and the previously hard-coded
+hover, pressed, danger, and rubber-band values in derived or palette roles.
+
+Screen-effect state ships ahead of the GPU pipeline that will consume it:
+`Off`, `Minimal`, `Balanced` (default), and `Strong` presets over bloom,
+scanlines, vignette, persistence, ground depth, and text lift, plus a `Custom`
+profile that remembers the user's own levels across preset round-trips.
+Reduced motion zeroes persistence; high contrast zeroes the legibility-hostile
+gains and promotes the muted and hairline roles. Typography offers the bundled
+default face (Victor Mono, through a stable fixed-width fallback chain), the
+system fixed-width face, or a directly named family with fallback. Preferences
+persist as a small versioned key=value file written atomically; parsing
+tolerates unknown keys, malformed values, and files from newer builds.
+
+The appearance panel opens from a toolbar button and from `Ctrl+,`, and every
+control applies immediately — a test drives each control with pointer or key
+input and observes the shared state change in the same event, so a control
+that renders without being wired fails. The sanitizer preset gained a
+LeakSanitizer suppression scoped to fontconfig's one-time configuration
+allocations, which any process that queries the font database now trips.
+
+Verified with the formatting, static-analysis, QML, file-length, and public-
+repository gates, warning-clean release and ASan/UBSan builds, both full test
+suites (25 release, 24 sanitizer), and a headless smoke launch against a
+sample tree. Known gaps: the effect levels are stored and live but nothing
+renders them yet — the GPU presentation pass consumes them next; the Victor
+Mono files are not yet bundled, so the default face falls back to an installed
+fixed-width family until packaging adds them; window and surface opacity are
+persisted state without a compositor path.
+
 ## 2026-07-30 -- Report why the shell scene failed to load
 
 Startup now explains a shell that cannot be loaded. The scene is reachable only

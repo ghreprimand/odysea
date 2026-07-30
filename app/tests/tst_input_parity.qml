@@ -565,6 +565,33 @@ TestCase {
         verifyBandDrag(child("rubberBandBlankArea"), false);
     }
 
+    function test_appearancePanelKeyboardAndMouseParity() {
+        const panel = child("appearancePanel");
+        verify(!panel.opened);
+
+        // Keyboard path.
+        keySequence("Ctrl+,");
+        tryVerify(function () {
+            return panel.opened;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !panel.opened;
+        });
+
+        // Mouse path.
+        mouseClick(child("appearanceButton"));
+        tryVerify(function () {
+            return panel.opened;
+        });
+        const closeButton = findChild(panel.contentItem, "closeAppearanceButton");
+        verify(closeButton !== null);
+        mouseClick(closeButton);
+        tryVerify(function () {
+            return !panel.opened;
+        });
+    }
+
     function test_ctrlClickReachesSelectionModel() {
         clickRow(1, Qt.LeftButton, Qt.ControlModifier);
         tryCompare(fakeModel, "selectRowCalls", 1);
