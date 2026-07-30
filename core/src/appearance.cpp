@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -30,11 +31,19 @@ constexpr double kScaleMax = 2.0;
 constexpr double kGlassOpacityMin = 0.2;
 
 [[nodiscard]] double clamped(double value, double lo, double hi) noexcept {
+    // NaN compares false against both bounds, so std::clamp would pass it
+    // through untouched. A non-finite value pins to the low bound instead:
+    // every documented range treats its low end as the safe minimum.
+    if (!std::isfinite(value)) {
+        return lo;
+    }
     return std::clamp(value, lo, hi);
 }
 
 /// Parses a decimal double without locale or exception behavior. Returns
-/// `fallback` when `text` is not entirely a number.
+/// `fallback` when `text` is not entirely a finite number: `nan` and `inf`
+/// are valid spellings to the parser but poison every later comparison, so
+/// they count as malformed here and keep the field's default.
 [[nodiscard]] double parse_double(std::string_view text, double fallback) noexcept {
     double value = 0.0;
     const char* const first = text.data();
@@ -44,10 +53,25 @@ constexpr double kGlassOpacityMin = 0.2;
     // reads past it and needs no terminator.
     // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     const auto [ptr, err] = std::from_chars(first, last, value);
-    if (err != std::errc() || ptr != last) {
+    if (err != std::errc() || ptr != last || !std::isfinite(value)) {
         return fallback;
     }
     return value;
+}
+
+/// Removes ASCII control characters and DEL from a stored string. The
+/// persisted form is line-oriented with no escaping, so a value that could
+/// carry a newline would be able to write arbitrary later keys.
+[[nodiscard]] std::string without_control_characters(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char ch : text) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte >= 0x20 && byte != 0x7F) {
+            out.push_back(ch);
+        }
+    }
+    return out;
 }
 
 [[nodiscard]] bool parse_bool(std::string_view text, bool fallback) noexcept {
@@ -130,6 +154,8 @@ EffectLevels clamp_effect_levels(const EffectLevels& levels) noexcept {
 
 AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept {
     AppearanceSettings result = settings;
+    result.palette = without_control_characters(settings.palette);
+    result.font_family = without_control_characters(settings.font_family);
     result.scale = clamped(settings.scale, kScaleMin, kScaleMax);
     result.glass_opacity = clamped(settings.glass_opacity, kGlassOpacityMin, 1.0);
     result.surface_opacity = clamped(settings.surface_opacity, 0.0, 1.0);

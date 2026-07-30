@@ -6,7 +6,9 @@
 
 #include "test_support.hpp"
 
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <system_error>
 
@@ -156,6 +158,61 @@ void test_parsing_tolerates_damage_and_the_future() {
     check(hot.scale == 0.75, "loaded scale clamps to its range");
 }
 
+void test_non_finite_numbers_never_survive() {
+    // Parsed: std::from_chars accepts nan/inf spellings, but a NaN defeats
+    // every clamp comparison, so the parser counts them as malformed and the
+    // field keeps its default.
+    const AppearanceSettings poisoned = parse_appearance("scale=nan\n"
+                                                         "glass_opacity=-nan\n"
+                                                         "surface_opacity=inf\n"
+                                                         "custom_bloom_core=nan\n"
+                                                         "custom_text_lift=-inf\n"
+                                                         "custom_persistence=infinity\n");
+    check(poisoned == AppearanceSettings{}, "non-finite persisted numbers keep their defaults");
+    check(std::isfinite(poisoned.scale) && poisoned.scale == 1.0,
+          "a nan scale never reaches the geometry");
+
+    // Constructed in memory: the clamp helpers pin a non-finite value to the
+    // low bound of its range instead of letting it through.
+    AppearanceSettings s;
+    s.scale = std::numeric_limits<double>::quiet_NaN();
+    s.glass_opacity = -std::numeric_limits<double>::infinity();
+    s.custom.bloom_core = std::numeric_limits<double>::quiet_NaN();
+    s.custom.text_lift = std::numeric_limits<double>::infinity() * -1.0;
+    const AppearanceSettings c = clamp_appearance(s);
+    check(c.scale == 0.75, "a nan scale clamps to the low bound");
+    check(c.glass_opacity == 0.2, "a -inf opacity clamps to the low bound");
+    check(c.custom.bloom_core == 0.0, "a nan effect level clamps to zero");
+    check(c.custom.text_lift == 1.0, "a non-finite text lift clamps to its floor");
+
+    // Serialized: the written form is clamped first, so a poisoned in-memory
+    // value cannot round-trip back in through the file.
+    const std::string text = serialize_appearance(s);
+    check(text.find("nan") == std::string::npos && text.find("inf") == std::string::npos,
+          "a serialized settings value never carries a non-finite number");
+    check(parse_appearance(text) == c, "the clamped form round-trips identically");
+}
+
+void test_stored_strings_cannot_inject_keys() {
+    // The persisted form is line-oriented with no escaping and the last
+    // occurrence of a key wins, so a newline inside a stored string could
+    // rewrite any key serialized after it. Control characters are removed.
+    AppearanceSettings s;
+    s.font_source = FontSource::Named;
+    s.font_family = "Fake Family\nprofile=strong\npalette=odyssey-amber";
+    const AppearanceSettings back = parse_appearance(serialize_appearance(s));
+    check(back.profile == EffectProfile::Balanced, "a font family cannot rewrite the profile");
+    check(back.palette == "odyssey-default", "a font family cannot rewrite the palette");
+    check(back.font_family == "Fake Familyprofile=strongpalette=odyssey-amber",
+          "control characters are removed from the stored family");
+    check(parse_appearance(serialize_appearance(back)) == back, "the sanitized form is stable");
+
+    AppearanceSettings p;
+    p.palette = "odyssey-default\r\nhigh_contrast=true";
+    const AppearanceSettings palette_back = parse_appearance(serialize_appearance(p));
+    check(!palette_back.high_contrast, "a palette identifier cannot inject keys");
+}
+
 void test_enum_names_round_trip() {
     for (const EffectProfile p :
          {EffectProfile::Off, EffectProfile::Minimal, EffectProfile::Balanced,
@@ -214,6 +271,8 @@ int main() {
     test_accessibility_overrides_shape_the_effective_levels();
     test_serialization_round_trips();
     test_parsing_tolerates_damage_and_the_future();
+    test_non_finite_numbers_never_survive();
+    test_stored_strings_cannot_inject_keys();
     test_enum_names_round_trip();
     test_load_and_save(tree.root());
 

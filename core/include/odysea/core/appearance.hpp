@@ -7,7 +7,8 @@
 //
 // The persisted form is a small versioned key=value text file. Parsing is
 // tolerant by design: unknown keys are ignored so newer files degrade cleanly
-// on older builds, and out-of-range values clamp to their documented bounds
+// on older builds, malformed and non-finite numeric values keep their
+// defaults, and out-of-range finite values clamp to their documented bounds
 // instead of failing the load.
 #pragma once
 
@@ -108,8 +109,12 @@ struct AppearanceSettings {
     [[nodiscard]] bool operator==(const AppearanceSettings& other) const noexcept = default;
 };
 
-/// Returns `settings` with every field clamped to its documented range and
-/// enumerated fields left untouched (they cannot hold invalid values).
+/// Returns `settings` with every numeric field clamped to its documented
+/// range — a non-finite value pins to the low bound of its range — control
+/// characters removed from the stored strings, and enumerated fields left
+/// untouched (they cannot hold invalid values). String sanitization exists
+/// because the persisted form is line-oriented with no escaping: a value
+/// carrying a newline could otherwise rewrite any later key.
 [[nodiscard]] AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept;
 
 /// The effect levels the presentation layer should render for `settings`.
@@ -132,15 +137,18 @@ struct AppearanceSettings {
 [[nodiscard]] FontSource font_source_from(std::string_view name) noexcept;
 [[nodiscard]] Density density_from(std::string_view name) noexcept;
 
-/// Renders `settings` as the persisted key=value text form.
+/// Renders `settings` as the persisted key=value text form. The settings are
+/// clamped and sanitized first, so the output never carries a non-finite
+/// number or a control character.
 [[nodiscard]] std::string serialize_appearance(const AppearanceSettings& settings);
 
 /// Parses the persisted text form.
 ///
-/// Missing keys keep their defaults, unknown keys are ignored, malformed
-/// numeric values keep their defaults, and every numeric field is clamped.
-/// The version key is recorded for forward compatibility but does not reject
-/// the file: a newer writer's known keys still load.
+/// Missing keys keep their defaults, unknown keys are ignored (a later save
+/// does not preserve them), malformed and non-finite numeric values keep
+/// their defaults, and every numeric field is clamped. The version key is
+/// recorded for forward compatibility but does not reject the file: a newer
+/// writer's known keys still load.
 [[nodiscard]] AppearanceSettings parse_appearance(std::string_view text);
 
 /// Reads settings from `path`. A missing file is not an error: it yields the
@@ -149,8 +157,10 @@ struct AppearanceSettings {
                                                  std::error_code& ec);
 
 /// Writes settings to `path`, creating parent directories as needed. The write
-/// goes through a sibling temporary file and an atomic rename, so a crash
-/// never leaves a truncated settings file behind.
+/// goes through a sibling temporary file and a rename, so a reader never
+/// observes a partially written file. Durability across power loss and
+/// coordination between concurrent writers are out of scope: appearance
+/// preferences are cheap to re-enter and never worth blocking use over.
 void save_appearance(const std::filesystem::path& path, const AppearanceSettings& settings,
                      std::error_code& ec);
 
