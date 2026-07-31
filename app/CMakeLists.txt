@@ -3,7 +3,7 @@
 # The shell is GPU-rendered through Qt Quick's scene graph. It consumes the
 # toolkit-agnostic odysea::core library for all filesystem work, keeping the
 # performance-critical model free of framework overhead.
-find_package(Qt6 6.6 REQUIRED COMPONENTS Concurrent Core Gui Qml Quick QuickControls2 QuickTest Test)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Concurrent Core Gui Qml Quick QuickControls2 QuickTest ShaderTools Test)
 
 qt_standard_project_setup(REQUIRES 6.6)
 qt_policy(SET QTP0004 NEW)
@@ -54,11 +54,30 @@ qt_add_qml_module(odysea_shell_qml
     QML_FILES
         qml/AppearancePanel.qml
         qml/BreadcrumbBar.qml
+        qml/DeepFieldGround.qml
         qml/DirectoryGridView.qml
         qml/DirectoryListView.qml
+        qml/EffectBlurPass.qml
+        qml/EffectBrightPass.qml
+        qml/EffectComposite.qml
         qml/EntryContextMenu.qml
         qml/Main.qml
-        qml/FilesystemDialogs.qml)
+        qml/FilesystemDialogs.qml
+        qml/PresentationLayer.qml
+        qml/WellMaskLayer.qml)
+
+# The presentation shaders compile to qsb at build time and land in the
+# module's resource tree next to the scenes, so the QML references resolve
+# relative to the importing file.
+qt_add_shaders(odysea_shell_qml "odysea_shell_shaders"
+    BATCHABLE
+    PRECOMPILE
+    OPTIMIZED
+    PREFIX "/qt/qml/OdySea"
+    FILES
+        qml/shaders/blur1d.frag
+        qml/shaders/brightpass.frag
+        qml/shaders/composite.frag)
 
 target_include_directories(odysea_shell_qml
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -148,6 +167,40 @@ target_link_libraries(odysea_shell_tests
 
 add_test(NAME shell_input_parity COMMAND odysea_shell_tests)
 
+# The presentation-pipeline tests run on the default RHI scene graph so the
+# effect chain actually renders. The uniform-binding assertions hold on any
+# backend; the frame-comparison tests skip themselves when the environment
+# has no usable GPU path and the scene graph falls back to software.
+qt_add_executable(odysea_presentation_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_presentation_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/presentation")
+
+target_link_libraries(odysea_presentation_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_presentation COMMAND odysea_presentation_tests)
+
+# The same pipeline under the forced software scene graph: the capability
+# fallback must disengage silently while content and controls keep working.
+qt_add_executable(odysea_presentation_fallback_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_presentation_fallback_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/software")
+
+target_link_libraries(odysea_presentation_fallback_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_presentation_fallback COMMAND odysea_presentation_fallback_tests)
+
 # Renders the real scene from the module against the real decoder, so the
 # thumbnail path is covered from a file on disk to a loaded Image.
 qt_add_executable(odysea_shell_render_tests
@@ -216,6 +269,18 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 # suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
     shell_input_parity shell_thumbnail_render shell_entry_interactions
-    shell_load_diagnostic app_theme_controller
+    shell_load_diagnostic app_theme_controller shell_presentation_fallback
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
+# The presentation suite does not pin a scene-graph backend. The offscreen
+# platform selects the software scene graph by default, where the
+# uniform-binding and control assertions run and the frame comparisons skip
+# themselves. Exporting QT_QUICK_BACKEND=rhi and QSG_RHI_BACKEND=opengl in an
+# environment with a working GL context runs the full suite, frame
+# comparisons included; forcing RHI here would instead abort the whole test
+# process on any machine without one.
+set_tests_properties(
+    shell_presentation
+    PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")

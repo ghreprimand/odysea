@@ -10,6 +10,7 @@
 
 #include <QFontDatabase>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <string>
@@ -362,6 +363,20 @@ int ThemeController::metaFontPixelSize() const {
     return scaled(12, settings_.scale);
 }
 
+QColor ThemeController::lifted(const QColor& ink) const {
+    // Text lift is the palette-side half of the presentation pipeline: it
+    // multiplies chromatic inks toward white, which both brightens them and
+    // pushes them over the bloom threshold. Neutral body text is exempt so
+    // the lift changes emphasis, not legibility. The effective level already
+    // folds in the accessibility overrides — high contrast pins it to one.
+    const float lift = static_cast<float>(effective().text_lift);
+    if (lift <= 1.0F) {
+        return ink;
+    }
+    return QColor::fromRgbF(std::min(1.0F, ink.redF() * lift), std::min(1.0F, ink.greenF() * lift),
+                            std::min(1.0F, ink.blueF() * lift), ink.alphaF());
+}
+
 QColor ThemeController::background() const {
     return activePalette().sheet;
 }
@@ -400,20 +415,20 @@ QColor ThemeController::textFaint() const {
 }
 
 QColor ThemeController::dirInk() const {
-    return activePalette().dir;
+    return lifted(activePalette().dir);
 }
 
 QColor ThemeController::linkInk() const {
-    return activePalette().link;
+    return lifted(activePalette().link);
 }
 
 QColor ThemeController::metaInk() const {
     const ShellPalette& p = activePalette();
-    return settings_.high_contrast ? p.text : p.meta;
+    return settings_.high_contrast ? p.text : lifted(p.meta);
 }
 
 QColor ThemeController::accent() const {
-    return activePalette().accent;
+    return lifted(activePalette().accent);
 }
 
 QColor ThemeController::selectionBed() const {
@@ -421,7 +436,7 @@ QColor ThemeController::selectionBed() const {
 }
 
 QColor ThemeController::selectionInk() const {
-    return activePalette().selectionInk;
+    return lifted(activePalette().selectionInk);
 }
 
 QColor ThemeController::matchBed() const {
@@ -429,7 +444,7 @@ QColor ThemeController::matchBed() const {
 }
 
 QColor ThemeController::focus() const {
-    return activePalette().focus;
+    return lifted(activePalette().focus);
 }
 
 QColor ThemeController::hover() const {

@@ -224,6 +224,9 @@ class ThemeController : public QObject {
     [[nodiscard]] const struct ShellPalette& activePalette() const;
     [[nodiscard]] core::EffectLevels stored() const;
     [[nodiscard]] core::EffectLevels effective() const;
+    /// Applies the effective text lift to a chromatic ink: multiplies the
+    /// channels toward white, clamped. Identity at lift one.
+    [[nodiscard]] QColor lifted(const QColor& ink) const;
     [[nodiscard]] qreal metricScale() const;
 
     core::AppearanceSettings settings_;

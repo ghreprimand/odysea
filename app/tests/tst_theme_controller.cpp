@@ -35,6 +35,7 @@ class tst_ThemeController : public QObject {
     void no_op_writes_do_not_notify();
     void state_persists_across_instances();
     void reset_restores_and_persists_the_defaults();
+    void text_lift_brightens_chromatic_inks_from_effective_state();
 };
 
 void tst_ThemeController::defaults_are_the_shipped_configuration() {
@@ -387,6 +388,36 @@ void tst_ThemeController::reset_restores_and_persists_the_defaults() {
     restored.setStoragePath(path);
     QCOMPARE(restored.paletteId(), QStringLiteral("odyssey-default"));
     QCOMPARE(restored.profile(), ThemeController::Balanced);
+}
+
+void tst_ThemeController::text_lift_brightens_chromatic_inks_from_effective_state() {
+    ThemeController theme;
+
+    // Baseline: Off renders the plain palette (effective lift one).
+    theme.setProfile(ThemeController::Off);
+    const QColor plain = theme.dirInk();
+    const QColor plainBody = theme.text();
+
+    // A stored lift brightens chromatic inks channel-wise, toward white.
+    theme.setTextLift(1.4);
+    const QColor lifted = theme.dirInk();
+    QVERIFY(lifted.redF() >= plain.redF());
+    QVERIFY(lifted.greenF() >= plain.greenF());
+    QVERIFY(lifted.blueF() >= plain.blueF());
+    QVERIFY(lifted != plain);
+
+    // Neutral body text is exempt: the lift changes emphasis, not
+    // legibility.
+    QCOMPARE(theme.text(), plainBody);
+
+    // High contrast pins the effective lift to one, so the ink returns to
+    // the plain palette while the stored preference survives.
+    theme.setHighContrast(true);
+    QCOMPARE(theme.dirInk(), plain);
+    QCOMPARE(theme.textLift(), 1.4);
+
+    theme.setHighContrast(false);
+    QCOMPARE(theme.dirInk(), lifted);
 }
 
 QTEST_MAIN(tst_ThemeController)
