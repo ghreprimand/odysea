@@ -28,6 +28,14 @@ FocusScope {
     property int metaFontPixelSize: 12
     property int cellWidth: 144
     property int cellHeight: 154
+    /// How long the current-item ring persists when the cursor moves away.
+    /// Zero renders instantly; the shell binds this to the presentation
+    /// layer's motion token so reduced motion disables the decay.
+    property int persistenceDurationMs: 0
+    /// Optional protected-content mask layer. When bound, every loaded
+    /// thumbnail registers its pixels as color-true wells the presentation
+    /// pipeline must not process.
+    property WellMaskLayer wellLayer: null
 
     readonly property int selectionGutterWidth: 28
 
@@ -140,6 +148,19 @@ FocusScope {
         cacheBuffer: Math.max(0, height * 2)
         currentIndex: pane.shellModel.currentIndex
         highlightMoveDuration: 60
+
+        // Registered wells mirror scrolled positions only when told the
+        // viewport moved.
+        onContentXChanged: {
+            if (pane.wellLayer !== null) {
+                pane.wellLayer.bump();
+            }
+        }
+        onContentYChanged: {
+            if (pane.wellLayer !== null) {
+                pane.wellLayer.bump();
+            }
+        }
 
         function columnCount() {
             return Math.max(1, Math.floor(directoryGrid.width / pane.cellWidth));
@@ -288,8 +309,25 @@ FocusScope {
                 anchors.fill: parent
                 anchors.margins: 4
                 color: entryCell.selected ? pane.selectionColor : (cellPointer.containsMouse ? pane.hoverColor : "transparent")
-                border.color: pane.shellModel.currentIndex === entryCell.index ? pane.accentColor : "transparent"
                 radius: 6
+            }
+
+            // Current-item ring with persistence decay: leaving a cell fades
+            // the ring over the shared motion token, so a moving cursor
+            // leaves a brief trail. A zero duration renders instantly.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 4
+                color: "transparent"
+                border.color: pane.accentColor
+                radius: 6
+                opacity: pane.shellModel.currentIndex === entryCell.index ? 1 : 0
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: pane.persistenceDurationMs
+                    }
+                }
             }
 
             ColumnLayout {
@@ -312,6 +350,25 @@ FocusScope {
                         asynchronous: true
                         cache: false
                         fillMode: Image.PreserveAspectFit
+
+                        // A loaded thumbnail is color-true content: register
+                        // its pixels as a protected well so the presentation
+                        // pipeline never blooms or bands them.
+                        onStatusChanged: {
+                            if (pane.wellLayer === null) {
+                                return;
+                            }
+                            if (status === Image.Ready) {
+                                pane.wellLayer.registerWell(thumbnail);
+                            } else {
+                                pane.wellLayer.unregisterWell(thumbnail);
+                            }
+                        }
+                        Component.onDestruction: {
+                            if (pane.wellLayer !== null) {
+                                pane.wellLayer.unregisterWell(thumbnail);
+                            }
+                        }
                     }
 
                     Text {

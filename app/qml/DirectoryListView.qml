@@ -25,6 +25,10 @@ FocusScope {
     property string contentFontFamily: "monospace"
     property int contentFontPixelSize: 14
     property int metaFontPixelSize: 12
+    /// How long the current-row ring persists when the cursor moves away.
+    /// Zero renders instantly; the shell binds this to the presentation
+    /// layer's motion token so reduced motion disables the decay.
+    property int persistenceDurationMs: 0
 
     readonly property int selectionGutterWidth: 28
     property alias contentY: directoryList.contentY
@@ -216,8 +220,24 @@ FocusScope {
             Rectangle {
                 anchors.fill: parent
                 color: entryRow.selected ? pane.selectionColor : (rowPointer.containsMouse ? pane.hoverColor : "transparent")
-                border.color: pane.shellModel.currentIndex === entryRow.index ? pane.accentColor : "transparent"
                 radius: 4
+            }
+
+            // Current-row ring with persistence decay: leaving a row fades
+            // the ring over the shared motion token, so a moving cursor
+            // leaves a brief trail. A zero duration renders instantly.
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                border.color: pane.accentColor
+                radius: 4
+                opacity: pane.shellModel.currentIndex === entryRow.index ? 1 : 0
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: pane.persistenceDurationMs
+                    }
+                }
             }
 
             RowLayout {

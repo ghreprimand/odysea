@@ -7,6 +7,65 @@ and architecture decisions.
 
 ---
 
+## 2026-07-31 -- Storage Tube presentation pipeline
+
+The screen-effect levels now render. The shell frame draws crisp, a
+thresholded chroma-preserving bright pass extracts what exceeds the emission
+threshold outside protected wells, separable Gaussian chains blur it at a
+tight core radius and a wide halo radius, and one composite adds the emission
+over the content and then rides scanlines, vignette, and an 8x8 ordered
+dither on the added light with a soft-knee floor. The wide chain stores
+values through a x4 linear headroom encode so its sub-quantum Gaussian tail
+survives 8-bit intermediate textures on stacks without float render targets;
+the composite decodes it, leaving the added energy unchanged. Shaders compile
+to qsb at build time and ship in the module's resource tree.
+
+Every pipeline parameter binds the theme's `effective*` levels — never the
+stored preferences the controls display. A dedicated presentation suite
+drives the divergence (strong stored levels under a pinning accessibility
+override) and fails any stage that reports a stored value; rebinding a
+pipeline parameter to the stored property was verified to fail that test.
+The suite also drives the panel's sliders by pointer and by keyboard and
+asserts the composite's uniforms move, renders Off, Minimal, Balanced,
+Strong, and a Custom table to frames and asserts each pair differs, and
+probes pixels inside a registered thumbnail well to confirm they are
+byte-identical between Off and Strong while the frame around them changes.
+
+Material depth landed with the pipeline. The window and pane grounds are a
+still deep-field material scaled by the ground-depth level; the glass amount
+fades only the pane ground and the surface amount only the chrome strips, so
+translucency reads as depth while text and occluders stay opaque. Text lift
+is applied palette-side: chromatic inks multiply toward white, which also
+puts them over the bloom threshold. Persistence became a shared motion token
+consumed by the list and grid current-item rings as a decay trail; reduced
+motion zeroes it through the effective level. Loaded thumbnails register
+themselves as protected wells and follow scrolling through explicit viewport
+notifications.
+
+Fallback is silent and tested: on the software scene graph — and on any
+backend where a shader stage fails to build, via a latched status check —
+the pipeline never engages, content renders on the plain path, and the
+controls keep writing stored preferences. A forced-software suite asserts
+disengagement, a visible plain-path frame, live controls, and the surviving
+material and motion behavior; the full-shell input-parity suite (also on the
+software backend) confirms the layer stands down inside the real window.
+Popups — menus, dialogs, the appearance panel — render in the window overlay
+above the pipeline by design, so modal surfaces stay solid and color-true.
+
+Verified with the full gate set: formatting, scoped static analysis,
+QML lint/format/module guards, warning-clean release build and tests,
+ASan/UBSan build and tests, file-length and public-repository guards, and
+silent headless smoke launches on both the software and OpenGL RHI backends.
+The GPU-path frame comparisons additionally ran green under both release and
+sanitizer builds with the RHI scene graph forced. Known gaps: the offscreen
+test environment defaults to the software scene graph, so the frame
+comparisons skip unless the environment provides a working GL context (the
+suite documents the variables); Victor Mono is resolved, not yet bundled;
+window-manager compositor transparency remains out of scope — material
+opacity is internal by design.
+
+---
+
 ## 2026-07-30 -- Appearance-state hardening: input safety, override semantics
 
 Hardening pass over the new appearance system, closing correctness gaps in the

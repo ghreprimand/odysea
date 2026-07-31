@@ -460,9 +460,6 @@ TestCase {
     function child(objectName) {
         let item = findChild(shellWindow.contentItem, objectName);
         if (item === null) {
-            item = findChild(shellWindow.header, objectName);
-        }
-        if (item === null) {
             item = findChild(shellWindow, objectName);
         }
         tryVerify(function () {
@@ -563,6 +560,18 @@ TestCase {
 
     function test_blankAreaRubberBand() {
         verifyBandDrag(child("rubberBandBlankArea"), false);
+    }
+
+    function test_presentationLayerWiredIntoTheShell() {
+        const layer = child("presentationLayer");
+        verify(layer !== null);
+        // The layer consumes the same live theme object the shell renders
+        // with — not a copy.
+        verify(layer.theme === shellWindow.shellTheme);
+        // This suite forces the software scene graph: the pipeline must
+        // stand down silently while every interaction above keeps passing.
+        verify(layer.softwareBackend);
+        verify(!layer.active);
     }
 
     function test_appearancePanelKeyboardAndMouseParity() {

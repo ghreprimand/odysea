@@ -164,6 +164,52 @@ there is no apply step.
   newer build's file still loads on an older one. Resetting to defaults
   rewrites the file unconditionally, which also repairs a damaged one.
 
+## Presentation pipeline
+
+The screen-effect levels render through one pipeline over the shell frame:
+the content draws crisp, a thresholded chroma-preserving bright pass extracts
+what exceeds the emission threshold, two separable Gaussian chains blur it at
+a tight core radius and a wide halo radius, and a single composite adds that
+emission over the content and then rides scanlines, vignette, and an ordered
+dither on the added light, with a soft-knee floor so lit pixels never reach
+zero. The wide chain stores values through a linear headroom encode so its
+sub-quantum Gaussian tail survives 8-bit intermediate textures on stacks
+without float render targets; the composite decodes it, so the added energy
+is unchanged.
+
+- **Effective values only.** Every pipeline parameter derives from the
+  theme's effective effect levels — never the stored preferences the
+  controls display. The presentation tests set the two views apart with an
+  accessibility override and fail any stage that reports the stored value.
+- **Protected wells.** Thumbnails and previews are color-true content, not
+  emitters. Views register each loaded thumbnail with a mask layer the
+  pipeline samples; masked pixels are excluded from the bright pass and pass
+  through the composite untouched, byte-identical to the plain path, while
+  the chrome around them keeps its depth.
+- **Plain-path identity.** When every stage is at identity — the `Off`
+  profile, or every gain zero — the pipeline disengages and the content
+  renders on the plain path, byte-identical to having no pipeline at all.
+- **Material depth without a compositor.** The ground the content sits on is
+  a still deep-field material: gradients toward the deep tone from the
+  edges, scaled by the ground-depth level. The glass amount fades only that
+  ground; the surface amount fades only chrome strips. Text and occluders
+  stay opaque, so translucency reads as depth and never thins legibility.
+  Text lift is palette-side: chromatic inks multiply toward white, which
+  both brightens them and puts them over the bloom threshold.
+- **Motion as one token.** Persistence drives a single motion duration the
+  views consume for the current-item ring's decay trail. Reduced motion
+  zeroes the effective persistence, so every consumer becomes instant
+  through the same path the renderer already trusts.
+- **Silent capability fallback.** On the software scene graph, and on any
+  backend where a shader stage fails to build, the pipeline never engages:
+  content renders on the plain path with tokens, typography, material
+  grounds, and text lift intact, and the controls keep writing stored
+  preferences for when a capable backend returns. No warning flood, no
+  blank frame, no disabled UI.
+- **Popups stay solid.** Menus, dialogs, and the appearance panel render in
+  the window overlay above the pipeline by design: modal surfaces are
+  occluders and remain solid and color-true.
+
 ## Rendering
 
 Qt Quick renders through a hardware-accelerated scene graph. On Linux it drives
