@@ -135,6 +135,25 @@ void ShellThumbnailRenderTest::aGridDelegateRendersADecodedThumbnail() {
     QTRY_VERIFY(evaluatesTrue(thumbnail, QStringLiteral("status === Image.Ready")));
     QVERIFY(thumbnail->property("paintedWidth").toReal() > 0.0);
     QVERIFY(thumbnail->property("paintedHeight").toReal() > 0.0);
+
+    // The loaded thumbnail registers itself as a protected well, and the
+    // registration names the grid as the viewport that clips its mirror; a
+    // cache-buffer delegate scrolled beyond the grid must never exempt
+    // surrounding chrome from the presentation pipeline.
+    QQuickItem* mask = visualChild(window->contentItem(), QStringLiteral("wellMaskLayer"));
+    QVERIFY(mask != nullptr);
+    QTRY_COMPARE(mask->property("wellCount").toInt(), 1);
+    QQuickItem* grid = visualChild(window->contentItem(), QStringLiteral("directoryGrid"));
+    QVERIFY(grid != nullptr);
+    QQuickItem* mirror = visualChild(mask, QStringLiteral("wellMirror"));
+    QVERIFY(mirror != nullptr);
+    QCOMPARE(mirror->property("viewport").value<QQuickItem*>(), grid);
+    QVERIFY(mirror->width() > 0.0);
+    QVERIFY(mirror->height() > 0.0);
+
+    // Leaving grid mode tears the delegate down, which unregisters its well.
+    root->setProperty("gridMode", false);
+    QTRY_COMPARE(mask->property("wellCount").toInt(), 0);
 }
 
 void ShellThumbnailRenderTest::anIdentifierAddressedToAnotherProviderNameFails() {

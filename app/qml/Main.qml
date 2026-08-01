@@ -858,6 +858,7 @@ ApplicationWindow {
     WellMaskLayer {
         id: wellMaskLayer
 
+        objectName: "wellMaskLayer"
         anchors.fill: shellContent
     }
 

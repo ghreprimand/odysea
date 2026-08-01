@@ -1,12 +1,13 @@
 // Tests that the presentation pipeline consumes the theme's effective
 // values, that the live controls reach the rendered uniforms through both
 // pointer and keyboard paths, that the profiles produce distinct frames,
-// and that protected wells stay byte-true under the strongest profile.
+// that protected wells stay byte-true under the strongest profile, that a
+// well scrolled out of its clipping viewport stops masking, and that well
+// registration is incremental.
 //
-// The binding assertions run on every scene-graph backend: shader uniforms
-// are plain properties whether or not the stage draws. The frame-comparison
-// tests need a real GPU path and skip themselves when the scene graph falls
-// back to software.
+// The binding, registration, and geometry assertions run on every
+// scene-graph backend. The frame-comparison tests need a real GPU path and
+// skip themselves when the scene graph falls back to software.
 import QtQuick
 import QtTest
 import OdySea
@@ -21,6 +22,16 @@ Item {
         id: theme
     }
 
+    Component {
+        id: wellFactory
+
+        Rectangle {
+            width: 20
+            height: 20
+            color: "#ffffff"
+        }
+    }
+
     Item {
         id: content
 
@@ -31,6 +42,18 @@ Item {
             deepField: theme.effectiveDeepField
             sheetColor: theme.background
             deepColor: theme.backgroundDeep
+        }
+
+        // Bright chrome band: pixels above the emission threshold that no
+        // well may ever exempt from the pipeline.
+        Rectangle {
+            id: chromeBand
+
+            x: 0
+            y: 8
+            width: parent.width
+            height: 40
+            color: "#e8e2d8"
         }
 
         Text {
@@ -60,6 +83,35 @@ Item {
             name: "folder"
             ink: theme.iconInk
             highContrast: theme.highContrast
+        }
+
+        // Clipped scrolling viewport: the synthetic stand-in for a grid
+        // whose cache buffer keeps delegates realized beyond its bounds.
+        Item {
+            id: scrollViewport
+
+            x: 300
+            y: 200
+            width: 200
+            height: 150
+            clip: true
+
+            Item {
+                id: scrollCanvas
+
+                width: parent.width
+                height: 600
+
+                Rectangle {
+                    id: scrolledWell
+
+                    x: 30
+                    y: 0
+                    width: 120
+                    height: 60
+                    color: "#ffffff"
+                }
+            }
         }
 
         // Synthetic thumbnail well: saturated content that would bloom and
@@ -120,11 +172,13 @@ Item {
             brightPass = findChild(layer, "presentationBrightPass");
             verify(brightPass !== null);
             wells.registerWell(thumbWell);
-            compare(wells.wellItems.length, 1);
+            compare(wells.wellCount, 1);
         }
 
         function init() {
             theme.resetToDefaults();
+            scrollCanvas.y = 0;
+            wells.bump();
         }
 
         function settleAndGrab() {
@@ -220,6 +274,122 @@ Item {
             tryVerify(function () {
                 return !panel.opened;
             });
+        }
+
+        function test_registeringOneWellCreatesExactlyOneMirror() {
+            // The reviewer-measured scale: a wide grid at 2x realizes on
+            // the order of sixty thumbnails. Registering one more must
+            // create exactly one mirror and leave every existing mirror
+            // object untouched.
+            const baseCount = wells.wellCount;
+            const items = [];
+            for (let i = 0; i < 60; ++i) {
+                items.push(wellFactory.createObject(content, {
+                    "x": 8 * (i % 30),
+                    "y": 440 + 22 * Math.floor(i / 30)
+                }));
+                wells.registerWell(items[i]);
+            }
+            compare(wells.wellCount, baseCount + 60);
+            const baseline = wells.mirrorCreationCount;
+            const firstMirror = wells.mirrorFor(items[0]);
+            verify(firstMirror !== null);
+
+            const extra = wellFactory.createObject(content, {
+                "x": 300,
+                "y": 440
+            });
+            wells.registerWell(extra);
+            compare(wells.mirrorCreationCount, baseline + 1);
+            verify(wells.mirrorFor(items[0]) === firstMirror);
+
+            // Re-registering is a no-op, not another mirror.
+            wells.registerWell(extra);
+            compare(wells.mirrorCreationCount, baseline + 1);
+
+            wells.unregisterWell(extra);
+            extra.destroy();
+            for (let i = 0; i < items.length; ++i) {
+                wells.unregisterWell(items[i]);
+                items[i].destroy();
+            }
+            compare(wells.wellCount, baseCount);
+        }
+
+        function test_destroyedWellIsPrunedOnTheNextRegistration() {
+            const baseCount = wells.wellCount;
+            const doomed = wellFactory.createObject(content, {
+                "x": 300,
+                "y": 440
+            });
+            wells.registerWell(doomed);
+            compare(wells.wellCount, baseCount + 1);
+            const mirror = wells.mirrorFor(doomed);
+            verify(mirror !== null);
+
+            doomed.destroy();
+            tryVerify(function () {
+                return mirror.well === null;
+            });
+            // A destroyed well's mirror collapses to nothing once refreshed.
+            wells.bump();
+            tryVerify(function () {
+                return mirror.height === 0 && mirror.width === 0;
+            });
+
+            // The next registration sweeps the stale record away.
+            const replacement = wellFactory.createObject(content, {
+                "x": 330,
+                "y": 440
+            });
+            wells.registerWell(replacement);
+            compare(wells.wellCount, baseCount + 1);
+            wells.unregisterWell(replacement);
+            replacement.destroy();
+            compare(wells.wellCount, baseCount);
+        }
+
+        function test_mirrorClampsToItsViewport() {
+            // Half-scrolled: the well spans mapped y 170..230, the viewport
+            // starts at 200, so only the 30 px inside it may mask.
+            scrollCanvas.y = -30;
+            wells.registerWell(scrolledWell, scrollViewport);
+            wells.bump();
+            const mirror = wells.mirrorFor(scrolledWell);
+            verify(mirror !== null);
+            compare(mirror.y, scrollViewport.y);
+            compare(mirror.height, 30);
+            compare(mirror.x, scrollViewport.x + scrolledWell.x);
+            compare(mirror.width, scrolledWell.width);
+
+            // Fully scrolled out: the intersection is empty and the mirror
+            // collapses to nothing.
+            scrollCanvas.y = -180;
+            wells.bump();
+            tryVerify(function () {
+                return mirror.height === 0;
+            });
+
+            wells.unregisterWell(scrolledWell);
+        }
+
+        function test_wellScrolledOutOfItsViewportLeavesChromeUntouched() {
+            if (layer.softwareBackend) {
+                skip("software scene graph: the pipeline is disengaged by design");
+            }
+            // The reviewer pixel case: a registered well whose delegate
+            // stays realized in the cache buffer scrolls until its mapped
+            // rectangle lands on the bright chrome band above the viewport.
+            // The frame must render identically with and without the
+            // registration — no exemption may reach the band.
+            theme.profile = ShellTheme.Strong;
+            scrollCanvas.y = -180;
+            wells.registerWell(scrolledWell, scrollViewport);
+            wells.bump();
+            const registered = settleAndGrab();
+            wells.unregisterWell(scrolledWell);
+            const unregistered = settleAndGrab();
+            verify(registered.equals(unregistered), "a well outside its viewport must not mask chrome");
         }
 
         function test_profilesProduceDistinctFrames() {

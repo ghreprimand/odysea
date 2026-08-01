@@ -358,13 +358,16 @@ FocusScope {
 
                         // A loaded thumbnail is color-true content: register
                         // its pixels as a protected well so the presentation
-                        // pipeline never blooms or bands them.
+                        // pipeline never blooms or bands them. The grid is
+                        // the clipping viewport — cache-buffer delegates
+                        // stay realized beyond it, and their mirrors must
+                        // not escape onto surrounding chrome.
                         onStatusChanged: {
                             if (pane.wellLayer === null) {
                                 return;
                             }
                             if (status === Image.Ready) {
-                                pane.wellLayer.registerWell(thumbnail);
+                                pane.wellLayer.registerWell(thumbnail, directoryGrid);
                             } else {
                                 pane.wellLayer.unregisterWell(thumbnail);
                             }
