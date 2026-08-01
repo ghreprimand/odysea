@@ -137,12 +137,18 @@ Item {
     EffectBlurPass {
         id: coreV
 
+        objectName: "presentationCoreV"
         anchors.fill: parent
         visible: layer.emissionActive && layer.coreIntensity > 0.001
         src: coreHSrc
         srcSize: Qt.size(layer.width * layer.dpr, layer.height * layer.dpr)
         axis: Qt.vector2d(0, 1)
         sigma: layer.sigmaCore
+        onStatusChanged: {
+            if (status === ShaderEffect.Error) {
+                layer.shaderFailed = true;
+            }
+        }
     }
 
     ShaderEffectSource {
@@ -186,6 +192,7 @@ Item {
     EffectBlurPass {
         id: wideV
 
+        objectName: "presentationWideV"
         anchors.fill: parent
         visible: layer.emissionActive && layer.wideIntensity > 0.001
         src: wideHSrc
@@ -193,6 +200,11 @@ Item {
         axis: Qt.vector2d(0, 1)
         sigma: layer.sigmaWide
         gain: 2.0
+        onStatusChanged: {
+            if (status === ShaderEffect.Error) {
+                layer.shaderFailed = true;
+            }
+        }
     }
 
     ShaderEffectSource {

@@ -2,12 +2,14 @@
 // values, that the live controls reach the rendered uniforms through both
 // pointer and keyboard paths, that the profiles produce distinct frames,
 // that protected wells stay byte-true under the strongest profile, that a
-// well scrolled out of its clipping viewport stops masking, and that well
-// registration is incremental.
+// well scrolled out of its clipping viewport stops masking, that well
+// registration is incremental, and that a failed shader stage latches the
+// pipeline off and leaves the content on the plain path.
 //
 // The binding, registration, and geometry assertions run on every
-// scene-graph backend. The frame-comparison tests need a real GPU path and
-// skip themselves when the scene graph falls back to software.
+// scene-graph backend. The frame-comparison and shader-failure tests need
+// a real GPU path and skip themselves when the scene graph falls back to
+// software.
 import QtQuick
 import QtTest
 import OdySea
@@ -457,6 +459,132 @@ Item {
 
             // And the frame outside the well did change.
             verify(!strong.equals(off));
+        }
+    }
+
+    // Shader-failure latch scenes. Each failure test poisons its layer for
+    // the whole session — that is the latch's contract — so every test gets
+    // its own scene. Fixed colors keep the plain path profile-independent,
+    // which lets the latched frame compare byte-equal against an Off frame.
+    component LatchScene: Item {
+        id: latchScene
+
+        readonly property alias sceneTheme: latchTheme
+        readonly property alias sceneLayer: latchLayer
+        readonly property alias sceneContent: latchContent
+
+        width: 320
+        height: 240
+        visible: false
+
+        ShellTheme {
+            id: latchTheme
+        }
+
+        Item {
+            id: latchContent
+
+            anchors.fill: parent
+
+            Rectangle {
+                anchors.fill: parent
+                color: "#14100c"
+            }
+
+            Text {
+                x: 24
+                y: 32
+                text: "latch sample"
+                color: "#e8e2d8"
+                font.pixelSize: 24
+                font.bold: true
+            }
+
+            Rectangle {
+                x: 200
+                y: 150
+                width: 80
+                height: 60
+                color: "#ffffff"
+            }
+        }
+
+        WellMaskLayer {
+            id: latchWells
+
+            anchors.fill: latchContent
+        }
+
+        PresentationLayer {
+            id: latchLayer
+
+            anchors.fill: latchContent
+            content: latchContent
+            wellMask: latchWells
+            theme: latchTheme
+        }
+    }
+
+    LatchScene {
+        id: latchSceneA
+    }
+
+    LatchScene {
+        id: latchSceneB
+    }
+
+    TestCase {
+        name: "ShaderFailureLatch"
+        when: windowShown
+
+        function grabScene(scene) {
+            wait(60);
+            waitForRendering(scene);
+            return grabImage(scene);
+        }
+
+        // Breaks one blur stage on a live scene and requires the latch to
+        // stand the whole pipeline down onto the silent plain path.
+        function exerciseLatch(scene, stageName) {
+            if (scene.sceneLayer.softwareBackend) {
+                skip("software scene graph: shader stages never compile");
+            }
+            scene.visible = true;
+            scene.sceneTheme.resetToDefaults();
+            scene.sceneTheme.profile = ShellTheme.Off;
+            const plain = grabScene(scene);
+
+            scene.sceneTheme.profile = ShellTheme.Strong;
+            verify(scene.sceneLayer.active);
+            waitForRendering(scene);
+
+            const stage = findChild(scene.sceneLayer, stageName);
+            verify(stage !== null);
+            stage.fragmentShader = "shaders/no-such-stage.frag.qsb";
+            tryVerify(function () {
+                return scene.sceneLayer.shaderFailed;
+            });
+            verify(!scene.sceneLayer.pipelineAvailable);
+            verify(!scene.sceneLayer.active);
+            const composite = findChild(scene.sceneLayer, "presentationComposite");
+            verify(composite !== null);
+            verify(!composite.visible);
+            verify(scene.sceneContent.visible);
+
+            // The latched frame is the plain path, byte for byte: the
+            // strongest profile with a broken stage renders exactly what
+            // no pipeline at all renders.
+            const latched = grabScene(scene);
+            verify(latched.equals(plain), "a latched pipeline must leave the plain path untouched");
+            scene.visible = false;
+        }
+
+        function test_failedCoreVerticalStageLatchesThePipelineOff() {
+            exerciseLatch(latchSceneA, "presentationCoreV");
+        }
+
+        function test_failedWideVerticalStageLatchesThePipelineOff() {
+            exerciseLatch(latchSceneB, "presentationWideV");
         }
     }
 }

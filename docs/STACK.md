@@ -30,6 +30,10 @@ The graphical shell is built with Qt Quick:
 - **Declarative UI with escape hatches.** QML expresses the interface concisely,
   while shader effects and custom RHI passes remain available for the heavier
   visuals.
+- **Build-time shader compilation.** The presentation pipeline's fragment
+  shaders compile to Qt's portable `.qsb` format during the build, so the
+  **Qt Shader Tools** module (`Qt6::ShaderTools`) is a required build
+  component alongside Qt Quick.
 - **Native fit.** Qt is the toolkit of the KDE ecosystem, so the app integrates
   naturally on Plasma while remaining independent of any specific environment.
 - **Bounded image decoding.** `QImageReader` and `QImageWriter` supply the

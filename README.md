@@ -57,7 +57,9 @@ overhead. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Build
 
-Requires CMake 3.28+, a C++20 compiler, and Qt 6.6+ (Qt Quick).
+Requires CMake 3.28+, a C++20 compiler, and Qt 6.6+ with the Qt Quick and
+Qt Shader Tools modules; the build compiles the presentation shaders to
+Qt's portable `.qsb` format through `Qt6::ShaderTools`.
 
 ```sh
 git clone https://github.com/ghreprimand/odysea.git

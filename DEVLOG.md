@@ -161,6 +161,65 @@ author and committer and reports no unrelated contributor identity.
 
 ---
 
+## 2026-08-01 -- Presentation hardening: viewport masking and the GPU gate
+
+Two correctness holes and two gate holes in the presentation pipeline are
+closed.
+
+Protected-well mirrors now stay inside the viewport that clips their well. A
+grid keeps cache-buffer delegates realized beyond its visible bounds, so a
+loaded thumbnail could scroll out of the grid while staying registered; its
+mask mirror followed the mapped position onto surrounding chrome, where the
+composite exempted a drifting rectangular patch from bloom, scanlines, and
+vignette. Each registration now names its clipping viewport and the mirror
+intersects its mapped rectangle against it, collapsing to nothing outside.
+An end-to-end GPU regression scrolls a registered well out of a clipped
+viewport onto a bright chrome band and requires the frame to render
+byte-identically with and without the registration; a geometry test pins the
+clamped intersection exactly, and the rendered-scene test asserts a loaded
+thumbnail's registration names the grid and dissolves when the view does.
+
+Well registration became incremental. The previous mask rebuilt every mirror
+delegate whenever the registered set changed — registering well N+1 recreated
+all N existing mirrors, quadratic item churn across a directory load. Each
+well now owns exactly one mirror object, created on registration and
+destroyed on unregistration; a creation counter proves that registering one
+well among sixty creates exactly one object and leaves every existing mirror
+untouched. Records whose well was destroyed without unregistering collapse
+immediately and are swept on the next registration.
+
+The GPU frame comparisons are now part of the shipped gate. `ctest` runs the
+presentation suite on the default backend, where the offscreen platform
+selects the software scene graph and the frame tests skip; previously
+deleting the protected-well exemption from the composite shader passed every
+shipped test. A new gate entry probes for a usable OpenGL context and
+re-executes the presentation suite under the forced OpenGL RHI scene graph
+when one exists, exiting with the CTest skip code when it does not. The same
+exemption deletion now fails `ctest` outright on any machine that can render
+it, and skips cleanly — not silently passes — on machines that cannot.
+
+The shader-failure latch is exercised rather than trusted. Both vertical
+blur passes gained the failure handlers their horizontal twins already had,
+and two gate tests point a live stage's shader at a missing `.qsb`, require
+the latch to stand the pipeline down, and require the latched frame to be
+byte-identical to the plain path. Removing the latch from the pipeline
+availability condition was verified to fail both tests, and deleting the
+viewport intersection was verified to fail both new masking tests.
+
+Qt Shader Tools is now documented as a required build component in the
+README and stack notes. The leak-checker suppression file gained two
+third-party entries scoped to the GPU driver and the D-Bus client library,
+whose one-time allocations surface only when the sanitizer build renders the
+real OpenGL scene graph; project-code leaks remain fatal.
+
+Verified with the full gate set: formatting, scoped static analysis, QML
+lint/format/module guards, warning-clean release build with 28 passing test
+entries (GPU path included), ASan/UBSan build and tests, file-length and
+public-repository guards, and silent headless smoke launches on both the
+software and OpenGL RHI backends.
+
+---
+
 ## 2026-07-31 -- Storage Tube presentation pipeline
 
 The screen-effect levels now render. The shell frame draws crisp, a

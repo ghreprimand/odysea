@@ -194,6 +194,30 @@ target_link_libraries(odysea_presentation_tests
 
 add_test(NAME shell_presentation COMMAND odysea_presentation_tests)
 
+# The GPU-path gate. Probes for a usable OpenGL context and, when one
+# exists, re-executes the presentation suite with the OpenGL RHI scene graph
+# forced, so the frame comparisons and shader-failure assertions run as part
+# of the shipped gate on every machine that can render them. Without a
+# context the probe exits with the CTest skip code instead of aborting.
+qt_add_executable(odysea_presentation_rhi_launcher
+    tests/tst_presentation_rhi_launcher.cpp)
+
+target_compile_definitions(odysea_presentation_rhi_launcher
+    PRIVATE ODYSEA_PRESENTATION_BINARY="$<TARGET_FILE:odysea_presentation_tests>")
+
+target_link_libraries(odysea_presentation_rhi_launcher
+    PRIVATE
+        Qt6::Gui
+        odysea_warnings odysea_sanitizers)
+
+add_dependencies(odysea_presentation_rhi_launcher odysea_presentation_tests)
+
+add_test(NAME shell_presentation_rhi COMMAND odysea_presentation_rhi_launcher)
+
+set_tests_properties(shell_presentation_rhi PROPERTIES
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
 # The same pipeline under the forced software scene graph: the capability
 # fallback must disengage silently while content and controls keep working.
 qt_add_executable(odysea_presentation_fallback_tests
@@ -285,10 +309,10 @@ set_tests_properties(
 # The presentation suite does not pin a scene-graph backend. The offscreen
 # platform selects the software scene graph by default, where the
 # uniform-binding and control assertions run and the frame comparisons skip
-# themselves. Exporting QT_QUICK_BACKEND=rhi and QSG_RHI_BACKEND=opengl in an
-# environment with a working GL context runs the full suite, frame
-# comparisons included; forcing RHI here would instead abort the whole test
-# process on any machine without one.
+# themselves. Forcing RHI here would abort the whole test process on any
+# machine without a working GL context; the shell_presentation_rhi entry
+# above closes the gap by probing for a context first and running the full
+# suite — frame comparisons included — wherever one exists.
 set_tests_properties(
     shell_presentation
     PROPERTIES ENVIRONMENT

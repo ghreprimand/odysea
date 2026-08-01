@@ -7,3 +7,12 @@
 # suppression is scoped to fontconfig frames, so leaks in this project's own
 # code remain fatal.
 leak:libfontconfig
+
+# Rendering a real OpenGL scene graph under the sanitizer trips one-time
+# allocations that the GPU driver and the D-Bus client library keep alive
+# until process exit — driver-internal state from context creation and the
+# session-bus message loader touched by the platform integration. Both
+# stacks are entirely third-party. The suppressions are scoped to those
+# library frames, so leaks in this project's own code remain fatal.
+leak:libnvidia-glcore
+leak:libdbus-1
