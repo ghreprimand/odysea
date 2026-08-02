@@ -7,6 +7,38 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Give each QML test runner its own directory
+
+Qt Quick Test scans its source directory recursively and offers no exclusion,
+and the rendered-shell runner was pointed at the parent of two other runners'
+directories. It therefore adopted their cases: the presentation suite and the
+software-fallback suite executed a second time inside the shell test entry. The
+cost was not only duplicated work. A planted presentation failure was reported
+by the shell entry, so a presentation regression named a suite that does not
+contain the fault and sent a reader to the wrong file.
+
+The shell scenes move to `app/tests/shell`, giving every runner a leaf
+directory that no other runner scans. The shell entry now runs its three own
+suites; the presentation entries are the only owners of the presentation cases.
+A planted failure is reported by the presentation entry alone, and the shell
+entry passes.
+
+The layout is checked rather than left to inspection, because both ways of
+getting it wrong are invisible in a passing run. A nested scope duplicates
+cases under the wrong entry, and a runner aimed at a directory holding no
+`tst_*.qml` prints nothing and exits successfully, so its entry stays green
+while covering nothing. `qml_test_scopes` reads the declared scopes and rejects
+both, along with two runners sharing one directory and a scope that does not
+exist. It also refuses to report success over a build file in which it found no
+runner at all, since a parse that silently matches nothing is the same vacuous
+pass in a different place — a defect the self-test caught in the check's own
+pattern before it was registered.
+
+Verification: the pre-fix scope is rejected by the new gate, which names both
+nested directories independently; `qml_test_scopes_self_test` enforces eight
+layouts; a planted presentation failure is attributed to the presentation entry
+and, under the old scope, to the shell entry.
+
 ## 2026-08-02 -- Semantic typography and vector iconography
 
 Victor Mono 1.561 now ships inside the static shell resource and is registered

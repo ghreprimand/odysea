@@ -72,6 +72,12 @@ add_test(
     NAME qml_module_guard_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_module_selftest.sh)
 add_test(
+    NAME qml_test_scopes
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_test_scopes.sh)
+add_test(
+    NAME qml_test_scopes_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_test_scopes_selftest.sh)
+add_test(
     NAME file_length_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length.sh)
 add_test(
@@ -82,6 +88,7 @@ set_tests_properties(
     public_repository_guard attribution_hooks_self_test formatting_guard
     formatting_guard_self_test qml_formatting_guard qml_lint_guard
     qml_lint_order_self_test qml_module_guard qml_module_guard_self_test
+    qml_test_scopes qml_test_scopes_self_test
     file_length_guard
     static_analysis
     PROPERTIES SKIP_RETURN_CODE 77)

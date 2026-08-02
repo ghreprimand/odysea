@@ -162,11 +162,17 @@ add_test(NAME app_theme_controller COMMAND odysea_theme_controller_tests)
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic
 # qmltestrunner cannot do that: it would only ever see the source directory.
+#
+# Every QML runner below scans its source directory recursively, so each one is
+# pointed at a leaf directory that no other runner owns. A runner aimed at a
+# parent of another runner's directory silently adopts that runner's cases:
+# they execute twice, and a failure is then reported under the wrong test entry,
+# sending a diagnosing reader to a suite that does not contain the fault.
 qt_add_executable(odysea_shell_tests
     tests/tst_shell_quick.cpp)
 
 target_compile_definitions(odysea_shell_tests
-    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/shell")
 
 target_link_libraries(odysea_shell_tests
     PRIVATE

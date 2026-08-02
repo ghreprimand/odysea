@@ -104,6 +104,17 @@ These are not optional; they are how the project stays safe in C++:
   the gate to that with throwaway repositories and manifests covering an
   omitted scene, a renamed entry, a renamed file, a stale entry, an absent
   manifest, an empty corpus, and a scene that cannot be a type.
+- Every QML test runner owns a leaf directory that no other runner scans. Qt
+  Quick Test scans recursively and offers no exclusion, so a runner aimed at a
+  parent of another runner's directory silently adopts its cases: they run
+  twice and a failure is attributed to the wrong test entry. A runner aimed at
+  a directory holding no `tst_*.qml` is quieter still — it prints nothing and
+  exits successfully. Both faults are invisible in a passing run, so
+  `qml_test_scopes` checks the declared scopes statically, and
+  `qml_test_scopes_self_test` holds it to that with throwaway projects covering
+  sibling scopes, a nested scope, a deeply nested scope, two runners sharing a
+  directory, an empty scope, an absent scope, a sibling whose name is a prefix
+  of another, and a build file declaring no runner at all.
 - Warnings are errors (`-Werror`); keep the build clean.
 - No tracked source or text file may exceed 2,000 physical lines. Split files
   along clear ownership or responsibility boundaries before reaching the
