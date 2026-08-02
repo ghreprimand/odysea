@@ -207,10 +207,36 @@ availability condition was verified to fail both tests, and deleting the
 viewport intersection was verified to fail both new masking tests.
 
 Qt Shader Tools is now documented as a required build component in the
-README and stack notes. The leak-checker suppression file gained two
-third-party entries scoped to the GPU driver and the D-Bus client library,
-whose one-time allocations surface only when the sanitizer build renders the
-real OpenGL scene graph; project-code leaks remain fatal.
+README and stack notes. The leak-checker suppression file gained
+third-party entries for the one-time allocations that surface only when
+the sanitizer build renders the real OpenGL scene graph. The GPU-driver
+entries name one module per supported driver family — the NVIDIA
+proprietary core library, the Mesa Gallium modules for AMD and Intel, the
+Mesa software rasterizer, and the Mesa GLX and GL dispatch libraries — so
+the sanitizer gate holds across vendors rather than only on the machine
+that first measured it. The D-Bus entry names the exact message-loader
+function inside libdbus rather than the whole client library, so an
+allocation leaked by project code inside a D-Bus dispatch callback stays
+fatal. A planted leak in project font-resolution code was verified to
+fail both the ordinary sanitizer entries and the forced-GL entry with
+these suppressions active.
+
+The public-repository guard's narration check previously matched only
+full process phrases, so a bare role word in a comment passed it. A new
+case-insensitive pattern rejects bare process-role vocabulary at word
+boundaries; words with legitimate engineering meanings — thread-pool
+workers, the builder pattern, the C++ `operator` keyword — stay out of
+the bare list and are matched only in phrase forms, and the guard was
+verified to reject planted role text while passing every existing
+operator overload. Two test comments and one gate-script comment were
+rewritten to state their measured facts impersonally.
+
+The mask registry ignores a failed mirror creation instead of recording
+it, since the stale-entry sweep dereferences each record's mirror and one
+null record would abort the sweep mid-loop. The mirror clamp's two
+standing assumptions — a single clip level between well and mask layer,
+and transform-free shell items — are now stated at the clamp site so
+dual-pane or columns work revisits them deliberately.
 
 Verified with the full gate set: formatting, scoped static analysis, QML
 lint/format/module guards, warning-clean release build with 28 passing test

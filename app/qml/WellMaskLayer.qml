@@ -53,6 +53,12 @@ Item {
             "well": item,
             "viewport": viewport === undefined ? null : viewport
         });
+        if (mirror === null) {
+            // A failed creation must not enter the registry: the sweep
+            // dereferences each record's mirror, and one null record would
+            // abort it mid-loop and leave the registry inconsistent.
+            return;
+        }
         entries.push({
             "well": item,
             "mirror": mirror
@@ -118,6 +124,15 @@ Item {
 
             // Mapped well rectangle intersected with the mapped viewport.
             // Depends on `revision` so scroll notifications re-evaluate it.
+            //
+            // Two assumptions hold across the current shell and must be
+            // revisited if either changes. First, exactly one clip level
+            // sits between a well and this layer, so intersecting against
+            // a single viewport is exhaustive; nested clipping views would
+            // need the full ancestor chain. Second, no shell item carries
+            // scale or rotation, so the unmapped well and viewport widths
+            // and heights equal their mapped extents; a transformed view
+            // would need both corners mapped instead.
             readonly property rect clipped: {
                 void maskLayer.revision;
                 if (mirror.well === null || mirror.well.parent === null) {
