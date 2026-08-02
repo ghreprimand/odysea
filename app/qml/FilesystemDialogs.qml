@@ -6,6 +6,7 @@ Item {
     id: dialogs
 
     required property var shellModel
+    required property var theme
     required property color backgroundColor
     required property color panelColor
     required property color borderColor
@@ -246,10 +247,9 @@ Item {
             radius: 8
         }
 
-        contentItem: Label {
+        contentItem: LongFormText {
+            theme: dialogs.theme
             text: qsTr("%1 selected item(s) will remain recoverable in Trash.").arg(dialogs.pendingPaths.length)
-            color: dialogs.primaryTextColor
-            wrapMode: Text.Wrap
         }
 
         footer: DialogButtonBox {
@@ -293,10 +293,9 @@ Item {
             radius: 8
         }
 
-        contentItem: Label {
+        contentItem: LongFormText {
+            theme: dialogs.theme
             text: dialogs.shellModel.operationErrorString
-            color: dialogs.primaryTextColor
-            wrapMode: Text.Wrap
         }
     }
 }

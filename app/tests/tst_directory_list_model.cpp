@@ -681,6 +681,7 @@ void DirectoryListModelTest::symlinkTargetDirectoryChangesRefreshRole() {
     const int linkRow = rowForName(model, QStringLiteral("changing-link"));
     QVERIFY(linkRow >= 0);
     QVERIFY(!model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
+    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsSymlinkRole).toBool());
 
     const auto scannedLink = std::ranges::find(model.scannedEntries_, std::string{"changing-link"},
                                                &odysea::core::Entry::name);
@@ -699,6 +700,7 @@ void DirectoryListModelTest::symlinkTargetDirectoryChangesRefreshRole() {
 
     QCOMPARE(changedSpy.count(), 1);
     QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
+    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsSymlinkRole).toBool());
 }
 
 void DirectoryListModelTest::operationsReachCoreAndReportFailures() {

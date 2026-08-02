@@ -20,12 +20,16 @@ FocusScope {
     // view renders sensibly when a scene does not bind a theme.
     property color dirInkColor: accentColor
     property color fileInkColor: "#7a7266"
+    property color linkInkColor: "#7096b8"
+    property color iconInkColor: secondaryTextColor
     property color dangerColor: "#ff8f7a"
     property color hoverColor: "#28211b"
     property color rubberBandColor: "#335f87b2"
-    property string contentFontFamily: "monospace"
-    property int contentFontPixelSize: 13
-    property int metaFontPixelSize: 12
+    property string entryFontFamily: "monospace"
+    property int entryFontPixelSize: 13
+    property string captionFontFamily: "monospace"
+    property int captionFontPixelSize: 12
+    property bool highContrast: false
     property int cellWidth: 144
     property int cellHeight: 154
     /// How long the current-item ring persists when the cursor moves away.
@@ -254,6 +258,7 @@ FocusScope {
             required property int index
             required property string name
             required property bool isDir
+            required property bool isSymlink
             required property bool selected
             required property bool recoveryEntry
             required property string entryPath
@@ -371,12 +376,15 @@ FocusScope {
                         }
                     }
 
-                    Text {
+                    VectorIcon {
+                        objectName: "entryCellIcon-" + entryCell.index
                         anchors.centerIn: parent
                         visible: thumbnail.status !== Image.Ready && !entryCell.thumbnailLoading
-                        text: entryCell.isDir ? "\u25B8" : "\u2022"
-                        color: entryCell.isDir ? pane.dirInkColor : pane.fileInkColor
-                        font.pixelSize: 34
+                        width: Math.max(34, pane.entryFontPixelSize * 2.4)
+                        height: width
+                        name: entryCell.isSymlink ? "symlink" : (entryCell.isDir ? "folder" : "file")
+                        ink: entryCell.isSymlink ? pane.linkInkColor : (entryCell.isDir ? pane.dirInkColor : pane.fileInkColor)
+                        highContrast: pane.highContrast
                     }
 
                     BusyIndicator {
@@ -394,8 +402,8 @@ FocusScope {
                     color: entryCell.isDir ? pane.dirInkColor : pane.primaryTextColor
                     elide: Text.ElideMiddle
                     horizontalAlignment: Text.AlignHCenter
-                    font.family: pane.contentFontFamily
-                    font.pixelSize: pane.contentFontPixelSize
+                    font.family: pane.entryFontFamily
+                    font.pixelSize: pane.entryFontPixelSize
                 }
 
                 Text {
@@ -404,7 +412,8 @@ FocusScope {
                     text: qsTr("RECOVERY")
                     color: pane.dangerColor
                     font.bold: true
-                    font.pixelSize: 9
+                    font.family: pane.captionFontFamily
+                    font.pixelSize: Math.max(9, pane.captionFontPixelSize - 3)
                 }
             }
 
@@ -483,6 +492,9 @@ FocusScope {
                 objectName: "gridEntryMenu-" + entryCell.index
                 shellModel: pane.shellModel
                 focusTarget: directoryGrid
+                iconInk: pane.iconInkColor
+                textInk: pane.primaryTextColor
+                highContrast: pane.highContrast
             }
 
             DropArea {
@@ -547,5 +559,8 @@ FocusScope {
         objectName: "gridKeyboardContextMenu"
         shellModel: pane.shellModel
         focusTarget: directoryGrid
+        iconInk: pane.iconInkColor
+        textInk: pane.primaryTextColor
+        highContrast: pane.highContrast
     }
 }

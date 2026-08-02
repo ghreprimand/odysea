@@ -46,6 +46,8 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
         return QString::fromStdString(entry.name);
     case IsDirRole:
         return entry.is_directory();
+    case IsSymlinkRole:
+        return entry.kind == odysea::core::EntryKind::Symlink;
     case SizeRole:
         return QVariant::fromValue<qulonglong>(entry.size);
     case PathRole:
@@ -69,6 +71,7 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
 QHash<int, QByteArray> DirectoryListModel::roleNames() const {
     return {{NameRole, "name"},
             {IsDirRole, "isDir"},
+            {IsSymlinkRole, "isSymlink"},
             {SizeRole, "size"},
             {PathRole, "entryPath"},
             {SelectedRole, "selected"},

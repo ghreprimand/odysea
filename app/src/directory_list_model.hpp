@@ -55,6 +55,7 @@ class DirectoryListModel : public QAbstractListModel {
     enum Roles {
         NameRole = Qt::UserRole + 1,
         IsDirRole,
+        IsSymlinkRole,
         SizeRole,
         PathRole,
         SelectedRole,

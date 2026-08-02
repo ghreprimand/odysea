@@ -36,8 +36,12 @@ class ThemeController : public QObject {
     Q_PROPERTY(Source fontSource READ fontSource WRITE setFontSource NOTIFY appearanceChanged)
     Q_PROPERTY(QString namedFontFamily READ namedFontFamily WRITE setNamedFontFamily NOTIFY
                    appearanceChanged)
-    Q_PROPERTY(QString fontFamily READ fontFamily NOTIFY appearanceChanged)
     Q_PROPERTY(bool bundledFontAvailable READ bundledFontAvailable CONSTANT)
+    Q_PROPERTY(QString contentFontFamily READ contentFontFamily NOTIFY appearanceChanged)
+    Q_PROPERTY(QString chromeFontFamily READ chromeFontFamily NOTIFY appearanceChanged)
+    Q_PROPERTY(QString pathFontFamily READ pathFontFamily NOTIFY appearanceChanged)
+    Q_PROPERTY(QString captionFontFamily READ captionFontFamily NOTIFY appearanceChanged)
+    Q_PROPERTY(QString longFormFontFamily READ longFormFontFamily NOTIFY appearanceChanged)
     Q_PROPERTY(Densities density READ density WRITE setDensity NOTIFY appearanceChanged)
     Q_PROPERTY(qreal uiScale READ uiScale WRITE setUiScale NOTIFY appearanceChanged)
 
@@ -79,9 +83,13 @@ class ThemeController : public QObject {
     Q_PROPERTY(int rowHeight READ rowHeight NOTIFY appearanceChanged)
     Q_PROPERTY(int gridCellWidth READ gridCellWidth NOTIFY appearanceChanged)
     Q_PROPERTY(int gridCellHeight READ gridCellHeight NOTIFY appearanceChanged)
-    Q_PROPERTY(int fontPixelSize READ fontPixelSize NOTIFY appearanceChanged)
+    Q_PROPERTY(int chromeFontPixelSize READ chromeFontPixelSize NOTIFY appearanceChanged)
     Q_PROPERTY(int contentFontPixelSize READ contentFontPixelSize NOTIFY appearanceChanged)
-    Q_PROPERTY(int metaFontPixelSize READ metaFontPixelSize NOTIFY appearanceChanged)
+    Q_PROPERTY(int pathFontPixelSize READ pathFontPixelSize NOTIFY appearanceChanged)
+    Q_PROPERTY(int captionFontPixelSize READ captionFontPixelSize NOTIFY appearanceChanged)
+    Q_PROPERTY(int longFormFontPixelSize READ longFormFontPixelSize NOTIFY appearanceChanged)
+    Q_PROPERTY(qreal longFormLineHeight READ longFormLineHeight NOTIFY appearanceChanged)
+    Q_PROPERTY(int longFormMeasure READ longFormMeasure NOTIFY appearanceChanged)
 
     // Color roles, resolved from the active family and the high-contrast
     // override.
@@ -91,6 +99,8 @@ class ThemeController : public QObject {
     Q_PROPERTY(QColor panel READ panel NOTIFY appearanceChanged)
     Q_PROPERTY(QColor border READ border NOTIFY appearanceChanged)
     Q_PROPERTY(QColor text READ text NOTIFY appearanceChanged)
+    Q_PROPERTY(QColor longFormInk READ longFormInk NOTIFY appearanceChanged)
+    Q_PROPERTY(QColor iconInk READ iconInk NOTIFY appearanceChanged)
     Q_PROPERTY(QColor textMuted READ textMuted NOTIFY appearanceChanged)
     Q_PROPERTY(QColor textFaint READ textFaint NOTIFY appearanceChanged)
     Q_PROPERTY(QColor dirInk READ dirInk NOTIFY appearanceChanged)
@@ -139,8 +149,12 @@ class ThemeController : public QObject {
     void setFontSource(Source source);
     [[nodiscard]] QString namedFontFamily() const;
     void setNamedFontFamily(const QString& family);
-    [[nodiscard]] QString fontFamily() const;
     [[nodiscard]] bool bundledFontAvailable() const;
+    [[nodiscard]] QString contentFontFamily() const;
+    [[nodiscard]] QString chromeFontFamily() const;
+    [[nodiscard]] QString pathFontFamily() const;
+    [[nodiscard]] QString captionFontFamily() const;
+    [[nodiscard]] QString longFormFontFamily() const;
 
     [[nodiscard]] Densities density() const;
     void setDensity(Densities density);
@@ -182,9 +196,13 @@ class ThemeController : public QObject {
     [[nodiscard]] int rowHeight() const;
     [[nodiscard]] int gridCellWidth() const;
     [[nodiscard]] int gridCellHeight() const;
-    [[nodiscard]] int fontPixelSize() const;
+    [[nodiscard]] int chromeFontPixelSize() const;
     [[nodiscard]] int contentFontPixelSize() const;
-    [[nodiscard]] int metaFontPixelSize() const;
+    [[nodiscard]] int pathFontPixelSize() const;
+    [[nodiscard]] int captionFontPixelSize() const;
+    [[nodiscard]] int longFormFontPixelSize() const;
+    [[nodiscard]] qreal longFormLineHeight() const;
+    [[nodiscard]] int longFormMeasure() const;
 
     [[nodiscard]] QColor background() const;
     [[nodiscard]] QColor backgroundDeep() const;
@@ -192,6 +210,8 @@ class ThemeController : public QObject {
     [[nodiscard]] QColor panel() const;
     [[nodiscard]] QColor border() const;
     [[nodiscard]] QColor text() const;
+    [[nodiscard]] QColor longFormInk() const;
+    [[nodiscard]] QColor iconInk() const;
     [[nodiscard]] QColor textMuted() const;
     [[nodiscard]] QColor textFaint() const;
     [[nodiscard]] QColor dirInk() const;

@@ -8,14 +8,38 @@
 #include "theme_palettes.hpp"
 
 #include <QFile>
+#include <QFont>
 #include <QFontDatabase>
+#include <QFontMetrics>
 #include <QIODevice>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtNumeric>
 #include <QtTest>
 
+#include <cmath>
+
 using odysea::app::ThemeController;
+
+namespace {
+
+double linear_channel(double channel) {
+    return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
+}
+
+double relative_luminance(const QColor& color) {
+    return (0.2126 * linear_channel(static_cast<double>(color.redF()))) +
+           (0.7152 * linear_channel(static_cast<double>(color.greenF()))) +
+           (0.0722 * linear_channel(static_cast<double>(color.blueF())));
+}
+
+double contrast_ratio(const QColor& first, const QColor& second) {
+    const double bright = std::max(relative_luminance(first), relative_luminance(second));
+    const double dark = std::min(relative_luminance(first), relative_luminance(second));
+    return (bright + 0.05) / (dark + 0.05);
+}
+
+} // namespace
 
 class tst_ThemeController : public QObject {
     Q_OBJECT
@@ -33,6 +57,8 @@ class tst_ThemeController : public QObject {
     void bundled_font_resources_register_every_shipped_face();
     void fonts_resolve_to_available_families();
     void metrics_follow_density_and_scale();
+    void typography_roles_bound_fallback_reflow();
+    void long_form_role_is_readable();
     void no_op_writes_do_not_notify();
     void state_persists_across_instances();
     void reset_restores_and_persists_the_defaults();
@@ -209,7 +235,7 @@ void tst_ThemeController::non_finite_input_never_corrupts_geometry() {
     QVERIFY(qIsFinite(theme.uiScale()));
     QCOMPARE(theme.uiScale(), 0.75);
     QVERIFY(theme.rowHeight() >= 26);
-    QVERIFY(theme.fontPixelSize() >= 9);
+    QVERIFY(theme.chromeFontPixelSize() >= 9);
 
     QFile written(path);
     QVERIFY(written.open(QIODevice::ReadOnly));
@@ -290,21 +316,26 @@ void tst_ThemeController::reset_repairs_a_damaged_settings_file() {
 void tst_ThemeController::fonts_resolve_to_available_families() {
     ThemeController theme;
     QVERIFY(theme.bundledFontAvailable());
-    QCOMPARE(theme.fontFamily(), QStringLiteral("Victor Mono"));
+    QCOMPARE(theme.contentFontFamily(), QStringLiteral("Victor Mono"));
+    QCOMPARE(theme.chromeFontFamily(), QStringLiteral("Victor Mono"));
+    QCOMPARE(theme.pathFontFamily(), QStringLiteral("Victor Mono"));
+    QCOMPARE(theme.captionFontFamily(), QStringLiteral("Victor Mono"));
+    QVERIFY(QFontDatabase::hasFamily(theme.longFormFontFamily()));
 
     theme.setFontSource(ThemeController::System);
-    QCOMPARE(theme.fontFamily(), QFontDatabase::systemFont(QFontDatabase::FixedFont).family());
+    QCOMPARE(theme.contentFontFamily(),
+             QFontDatabase::systemFont(QFontDatabase::FixedFont).family());
 
     // A named family that does not exist falls back to a real one.
     theme.setFontSource(ThemeController::Named);
     theme.setNamedFontFamily(QStringLiteral("No Such Family 123"));
-    QVERIFY(QFontDatabase::hasFamily(theme.fontFamily()));
+    QVERIFY(QFontDatabase::hasFamily(theme.contentFontFamily()));
 
     // A named family that exists is honored.
     const QStringList families = QFontDatabase::families();
     QVERIFY(!families.isEmpty());
     theme.setNamedFontFamily(families.first());
-    QCOMPARE(theme.fontFamily(), families.first());
+    QCOMPARE(theme.contentFontFamily(), families.first());
 }
 
 void tst_ThemeController::bundled_font_resources_register_every_shipped_face() {
@@ -335,11 +366,72 @@ void tst_ThemeController::metrics_follow_density_and_scale() {
     theme.setDensity(ThemeController::Cozy);
     theme.setUiScale(2.0);
     QCOMPARE(theme.rowHeight(), 68);
-    QCOMPARE(theme.fontPixelSize(), 26);
+    QCOMPARE(theme.chromeFontPixelSize(), 26);
+    QCOMPARE(theme.contentFontPixelSize(), 28);
+    QCOMPARE(theme.pathFontPixelSize(), 26);
+    QCOMPARE(theme.captionFontPixelSize(), 24);
+    QCOMPARE(theme.longFormFontPixelSize(), 30);
+    QCOMPARE(theme.longFormMeasure(), 1120);
     QVERIFY(theme.gridCellWidth() > 144);
 
     theme.setUiScale(99.0);
     QCOMPARE(theme.uiScale(), 2.0);
+}
+
+void tst_ThemeController::typography_roles_bound_fallback_reflow() {
+    ThemeController theme;
+    const int rowHeight = theme.rowHeight();
+    const int cellWidth = theme.gridCellWidth();
+    const int cellHeight = theme.gridCellHeight();
+
+    QFont bundled(theme.contentFontFamily());
+    bundled.setPixelSize(theme.contentFontPixelSize());
+    const QFontMetrics bundledMetrics(bundled);
+
+    theme.setFontSource(ThemeController::System);
+    QFont fallback(theme.contentFontFamily());
+    fallback.setPixelSize(theme.contentFontPixelSize());
+    const QFontMetrics fallbackMetrics(fallback);
+
+    QCOMPARE(theme.rowHeight(), rowHeight);
+    QCOMPARE(theme.gridCellWidth(), cellWidth);
+    QCOMPARE(theme.gridCellHeight(), cellHeight);
+    QVERIFY(bundledMetrics.height() <= rowHeight - 6);
+    QVERIFY(fallbackMetrics.height() <= rowHeight - 6);
+    QVERIFY(std::abs(bundledMetrics.height() - fallbackMetrics.height()) <= rowHeight / 4);
+
+    const QString sample = QStringLiteral("Archive-2026");
+    const int advanceDelta = std::abs(bundledMetrics.horizontalAdvance(sample) -
+                                      fallbackMetrics.horizontalAdvance(sample));
+    QVERIFY(advanceDelta <= cellWidth / 2);
+}
+
+void tst_ThemeController::long_form_role_is_readable() {
+    ThemeController theme;
+    QVERIFY(QFontDatabase::hasFamily(theme.longFormFontFamily()));
+    QVERIFY(theme.longFormFontPixelSize() > theme.chromeFontPixelSize());
+    QVERIFY(theme.longFormLineHeight() >= 1.4);
+    QVERIFY(theme.longFormLineHeight() <= 1.6);
+    QVERIFY(theme.longFormMeasure() >= 500);
+    QVERIFY(theme.longFormMeasure() <= 620);
+    QCOMPARE(theme.longFormInk(), theme.text());
+
+    for (const QString& palette : theme.availablePalettes()) {
+        theme.setPaletteId(palette);
+        QVERIFY2(contrast_ratio(theme.longFormInk(), theme.background()) >= 4.5,
+                 qPrintable(QStringLiteral("Long-form contrast failed for %1").arg(palette)));
+    }
+
+    theme.setProfile(ThemeController::Strong);
+    const QColor icon = theme.iconInk();
+    const float brightest = std::max({icon.redF(), icon.greenF(), icon.blueF()});
+    QVERIFY(brightest < 0.45F);
+    theme.setHighContrast(true);
+    QCOMPARE(theme.iconInk(), theme.text());
+
+    theme.setUiScale(2.0);
+    QCOMPARE(theme.longFormFontPixelSize(), 30);
+    QCOMPARE(theme.longFormMeasure(), 1120);
 }
 
 void tst_ThemeController::no_op_writes_do_not_notify() {

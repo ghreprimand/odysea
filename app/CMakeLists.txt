@@ -63,7 +63,9 @@ qt_add_qml_module(odysea_shell_qml
         qml/EntryContextMenu.qml
         qml/Main.qml
         qml/FilesystemDialogs.qml
+        qml/LongFormText.qml
         qml/PresentationLayer.qml
+        qml/VectorIcon.qml
         qml/WellMaskLayer.qml
     RESOURCES
         third_party/victor-mono/OFL.txt

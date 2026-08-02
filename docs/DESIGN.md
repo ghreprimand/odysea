@@ -180,11 +180,26 @@ there is no apply step.
   view only, an active override never makes an enabled control discard or
   misreport a write, and lifting the override renders the adjustments made
   while it was on.
-- **Typography roles.** The bundled default body face is Victor Mono, resolved
-  through a fixed-width fallback chain so metrics stay stable when it is
-  absent; the system's fixed-width face and a directly named family are the
-  other sources, and a named family that does not exist falls back rather than
-  failing.
+- **Typography roles.** The static shell module carries Victor Mono 1.561 in
+  Regular, Italic, Bold, and Bold Italic faces under the SIL Open Font License.
+  The application registers those resources before constructing the shell, so
+  the bundled source does not depend on a system installation; registration
+  failure resolves through a fixed-width fallback chain. The system's
+  fixed-width face and a directly named installed family remain selectable,
+  and a missing named family falls back rather than failing. Semantic content,
+  chrome, path, caption, and long-form roles derive their metrics from density
+  and UI scale. Entry row and grid-cell geometry stays invariant when a font
+  source changes, with tests bounding the resulting glyph-metric delta.
+  Long-form copy uses the system's proportional general face, 1.45 leading, a
+  density-scaled maximum measure, wrapping, and the primary neutral text ink
+  to keep dialogs and explanations readable.
+- **Vector iconography.** Directory, file, symlink, navigation, view, tab,
+  selection, transfer, rename, delete, and open symbols share code-native
+  vector paths in a 24-unit coordinate space. They recolor through semantic
+  theme ink, retain the same geometry at 1x and 2x scale, and gain stroke
+  weight under high contrast. Normal dark-palette icon ink remains below the
+  Strong bright-pass threshold so orientation chrome does not become an
+  unintended emitter; high contrast deliberately promotes it to primary text.
 - **Versioned persistence.** Preferences serialize to a small key=value file.
   The write goes through a sibling temporary file and a rename, so a reader
   never observes a partially written file; durability across power loss and

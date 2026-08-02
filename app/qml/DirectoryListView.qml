@@ -19,12 +19,16 @@ FocusScope {
     property color dirInkColor: accentColor
     property color metaInkColor: secondaryTextColor
     property color fileInkColor: "#7a7266"
+    property color linkInkColor: "#7096b8"
+    property color iconInkColor: secondaryTextColor
     property color dangerColor: "#ff8f7a"
     property color hoverColor: "#28211b"
     property color rubberBandColor: "#335f87b2"
-    property string contentFontFamily: "monospace"
-    property int contentFontPixelSize: 14
-    property int metaFontPixelSize: 12
+    property string entryFontFamily: "monospace"
+    property int entryFontPixelSize: 14
+    property string captionFontFamily: "monospace"
+    property int captionFontPixelSize: 12
+    property bool highContrast: false
     /// How long the current-row ring persists when the cursor moves away.
     /// Zero renders instantly; the shell binds this to the presentation
     /// layer's motion token so reduced motion disables the decay.
@@ -186,6 +190,7 @@ FocusScope {
             required property int index
             required property string name
             required property bool isDir
+            required property bool isSymlink
             required property double size
             required property bool selected
             required property bool recoveryEntry
@@ -246,31 +251,36 @@ FocusScope {
                 anchors.rightMargin: 10
                 spacing: 10
 
-                Text {
-                    text: entryRow.isDir ? "\u25B8" : "\u2022"
-                    color: entryRow.isDir ? pane.dirInkColor : pane.fileInkColor
-                    font.pixelSize: pane.contentFontPixelSize
+                VectorIcon {
+                    objectName: "entryIcon-" + entryRow.index
+                    implicitWidth: pane.entryFontPixelSize + 4
+                    implicitHeight: implicitWidth
+                    name: entryRow.isSymlink ? "symlink" : (entryRow.isDir ? "folder" : "file")
+                    ink: entryRow.isSymlink ? pane.linkInkColor : (entryRow.isDir ? pane.dirInkColor : pane.fileInkColor)
+                    highContrast: pane.highContrast
                 }
                 Text {
                     visible: entryRow.recoveryEntry
                     text: qsTr("RECOVERY")
                     color: pane.dangerColor
                     font.bold: true
-                    font.pixelSize: 10
+                    font.family: pane.captionFontFamily
+                    font.pixelSize: Math.max(10, pane.captionFontPixelSize - 2)
                 }
                 Text {
                     Layout.fillWidth: true
                     text: entryRow.name
                     color: entryRow.isDir ? pane.dirInkColor : pane.primaryTextColor
                     elide: Text.ElideRight
-                    font.family: pane.contentFontFamily
-                    font.pixelSize: pane.contentFontPixelSize
+                    font.family: pane.entryFontFamily
+                    font.pixelSize: pane.entryFontPixelSize
                 }
                 Text {
                     visible: !entryRow.isDir
                     text: pane.navigationController.formatSize(entryRow.size)
                     color: pane.metaInkColor
-                    font.pixelSize: pane.metaFontPixelSize
+                    font.family: pane.captionFontFamily
+                    font.pixelSize: pane.captionFontPixelSize
                 }
             }
 
@@ -348,6 +358,9 @@ FocusScope {
                 objectName: "entryMenu-" + entryRow.index
                 shellModel: pane.shellModel
                 focusTarget: directoryList
+                iconInk: pane.iconInkColor
+                textInk: pane.primaryTextColor
+                highContrast: pane.highContrast
             }
 
             DropArea {
@@ -416,5 +429,8 @@ FocusScope {
         objectName: "listKeyboardContextMenu"
         shellModel: pane.shellModel
         focusTarget: directoryList
+        iconInk: pane.iconInkColor
+        textInk: pane.primaryTextColor
+        highContrast: pane.highContrast
     }
 }

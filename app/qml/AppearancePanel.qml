@@ -32,21 +32,24 @@ Popup {
     component SectionLabel: Text {
         Layout.topMargin: 8
         color: panel.theme.textMuted
-        font.pixelSize: panel.theme.metaFontPixelSize
+        font.family: panel.theme.captionFontFamily
+        font.pixelSize: panel.theme.captionFontPixelSize
         font.bold: true
     }
 
     component FieldLabel: Text {
         Layout.preferredWidth: 130
         color: panel.theme.text
-        font.pixelSize: panel.theme.fontPixelSize
+        font.family: panel.theme.chromeFontFamily
+        font.pixelSize: panel.theme.chromeFontPixelSize
         elide: Text.ElideRight
     }
 
     component ValueLabel: Text {
         Layout.preferredWidth: 40
         color: panel.theme.textMuted
-        font.pixelSize: panel.theme.metaFontPixelSize
+        font.family: panel.theme.captionFontFamily
+        font.pixelSize: panel.theme.captionFontPixelSize
         horizontalAlignment: Text.AlignRight
     }
 
@@ -123,7 +126,8 @@ Popup {
         Text {
             text: qsTr("Appearance")
             color: panel.theme.text
-            font.pixelSize: panel.theme.contentFontPixelSize
+            font.family: panel.theme.chromeFontFamily
+            font.pixelSize: panel.theme.chromeFontPixelSize
             font.bold: true
         }
 
@@ -282,10 +286,10 @@ Popup {
                     Text {
                         objectName: "resolvedFamilyLabel"
                         Layout.fillWidth: true
-                        text: panel.theme.fontFamily
+                        text: panel.theme.contentFontFamily
                         color: panel.theme.textMuted
-                        font.family: panel.theme.fontFamily
-                        font.pixelSize: panel.theme.fontPixelSize
+                        font.family: panel.theme.contentFontFamily
+                        font.pixelSize: panel.theme.chromeFontPixelSize
                         elide: Text.ElideRight
                     }
                 }

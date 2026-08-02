@@ -7,6 +7,40 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Semantic typography and vector iconography
+
+Victor Mono 1.561 now ships inside the static shell resource and is registered
+before the QML engine starts. Regular, Italic, Bold, and Bold Italic cover the
+shell's used styles without carrying unused display weights; the upstream
+provenance and complete SIL Open Font License accompany the four OpenType
+files. The bundled source is therefore independent of a system font install,
+while System and Named sources keep their prior fixed-width fallback behavior.
+
+Typography is expressed through content, chrome, path, caption, and long-form
+roles instead of shared body and metadata sizes. Density and UI scale drive
+each role, while font-source changes leave entry row and grid-cell geometry
+fixed and bound the fallback reflow with real font metrics. Long-form dialog
+and error copy uses a proportional system face, open leading, wrapping, a
+bounded measure, and primary neutral ink whose contrast is checked across all
+shipped palettes.
+
+A shared vector component now supplies directory, file, symlink, navigation,
+view, tab, selection, transfer, rename, delete, and open symbols to entry
+delegates, toolbar actions, and context-menu actions. The paths use semantic
+ink and one coordinate space at 1x and 2x; high contrast increases stroke
+weight and promotes the ink. Normal dark-palette chrome stays below the Strong
+profile's bright-pass threshold, preventing unexpected emission. The app
+adapter exposes symlink identity explicitly so file-type icon selection does
+not depend on a target's current state.
+
+Verification covered the font resource registration, role and fallback
+metrics, palette contrast, icon geometry and recoloring, entry type mapping,
+input-parity surfaces, presentation behavior, release and sanitizer suites,
+QML and source checks, public-repository and file-length guards, and software
+and OpenGL RHI smoke launches.
+
+---
+
 ## 2026-08-02 -- Record load-bearing invariants and deepen the lint scan
 
 Three behaviors that existed only as working code are now stated as

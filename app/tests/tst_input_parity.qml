@@ -410,6 +410,7 @@ TestCase {
             fakeModel.append({
                 "name": "sample-" + index + ".txt",
                 "isDir": false,
+                "isSymlink": false,
                 "size": 12 + index,
                 "selected": false,
                 "recoveryEntry": false,
@@ -439,6 +440,7 @@ TestCase {
             fakeModel.append({
                 "name": names[index],
                 "isDir": false,
+                "isSymlink": false,
                 "size": 12 + index,
                 "selected": false,
                 "recoveryEntry": false,
@@ -1007,6 +1009,21 @@ TestCase {
         verify(realized > 0);
         verify(realized < fakeModel.count);
         verify(cellAt(0) !== null);
+    }
+
+    function test_entryVectorIconsFollowSemanticKinds() {
+        fakeModel.setProperty(0, "isDir", true);
+        fakeModel.setProperty(1, "isSymlink", true);
+
+        compare(child("entryIcon-0").name, "folder");
+        compare(child("entryIcon-1").name, "symlink");
+        compare(child("entryIcon-2").name, "file");
+
+        mouseClick(child("gridViewButton"));
+        tryCompare(child("directoryGrid"), "visible", true);
+        compare(child("entryCellIcon-0").name, "folder");
+        compare(child("entryCellIcon-1").name, "symlink");
+        compare(child("entryCellIcon-2").name, "file");
     }
 
     function test_gridPointerActivationAndSelection() {

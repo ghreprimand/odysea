@@ -50,6 +50,18 @@ Item {
             font.pixelSize: 24
         }
 
+        VectorIcon {
+            id: toolbarIcon
+
+            x: 48
+            y: 190
+            width: 24
+            height: 24
+            name: "folder"
+            ink: theme.iconInk
+            highContrast: theme.highContrast
+        }
+
         // Synthetic thumbnail well: saturated content that would bloom and
         // band hard if the mask failed.
         Rectangle {
@@ -233,6 +245,25 @@ Item {
             verify(!minimal.equals(balanced), "Minimal and Balanced must differ");
             verify(!balanced.equals(strong), "Balanced and Strong must differ");
             verify(!strong.equals(custom), "Strong and Custom must differ");
+        }
+
+        function test_subduedVectorIconStaysBelowStrongBrightPass() {
+            theme.profile = ShellTheme.Strong;
+            const brightest = Math.max(toolbarIcon.ink.r, toolbarIcon.ink.g, toolbarIcon.ink.b);
+            verify(brightest < brightPass.threshold);
+
+            const strong = settleAndGrab();
+            const first = strong.pixel(toolbarIcon.x, toolbarIcon.y);
+            let varied = false;
+            for (let y = toolbarIcon.y; y < toolbarIcon.y + toolbarIcon.height && !varied; ++y) {
+                for (let x = toolbarIcon.x; x < toolbarIcon.x + toolbarIcon.width; ++x) {
+                    if (!Qt.colorEqual(strong.pixel(x, y), first)) {
+                        varied = true;
+                        break;
+                    }
+                }
+            }
+            verify(varied, "the Strong frame must contain the vector icon without promoting it to an emitter");
         }
 
         function test_protectedWellStaysByteTrueUnderStrong() {

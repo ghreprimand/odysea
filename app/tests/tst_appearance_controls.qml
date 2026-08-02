@@ -137,7 +137,7 @@ Item {
             fontSource.currentIndex = 1;
             fontSource.activated(1);
             compare(theme.fontSource, ShellTheme.System);
-            verify(theme.fontFamily.length > 0);
+            verify(theme.contentFontFamily.length > 0);
         }
 
         function test_slidersStayLiveUnderHighContrast() {

@@ -11,6 +11,8 @@ FocusScope {
     required property color borderColor
     required property color primaryTextColor
     required property color accentColor
+    required property string pathFontFamily
+    required property int pathFontPixelSize
 
     // Optional roles with the shell's former fixed values as defaults, so the
     // bar renders sensibly when a scene does not bind a theme.
@@ -19,7 +21,7 @@ FocusScope {
 
     readonly property var segments: shellModel.path.length >= 0 ? shellModel.breadcrumbSegments() : []
 
-    implicitHeight: 36
+    implicitHeight: Math.max(36, pathFontPixelSize + 18)
 
     function activateSegment(path) {
         shellModel.navigateToPath(path);
@@ -91,6 +93,8 @@ FocusScope {
                             text: crumbButton.text
                             color: bar.primaryTextColor
                             elide: Text.ElideMiddle
+                            font.family: bar.pathFontFamily
+                            font.pixelSize: bar.pathFontPixelSize
                             verticalAlignment: Text.AlignVCenter
                         }
 
@@ -100,6 +104,8 @@ FocusScope {
                             visible: crumbButton.index + 1 < crumbRepeater.count
                             text: "\u203a"
                             color: bar.primaryTextColor
+                            font.family: bar.pathFontFamily
+                            font.pixelSize: bar.pathFontPixelSize
                         }
                     }
 

@@ -35,6 +35,30 @@ namespace {
     return 34;
 }
 
+[[nodiscard]] int densityTypeOffset(core::Density density) noexcept {
+    switch (density) {
+    case core::Density::Compact:
+        return -1;
+    case core::Density::Comfortable:
+        return 1;
+    case core::Density::Cozy:
+        break;
+    }
+    return 0;
+}
+
+[[nodiscard]] int densityLongFormMeasure(core::Density density) noexcept {
+    switch (density) {
+    case core::Density::Compact:
+        return 520;
+    case core::Density::Comfortable:
+        return 600;
+    case core::Density::Cozy:
+        break;
+    }
+    return 560;
+}
+
 [[nodiscard]] int scaled(int base, qreal factor) noexcept {
     return std::max(1, static_cast<int>(std::lround(base * factor)));
 }
@@ -183,7 +207,7 @@ void ThemeController::setNamedFontFamily(const QString& family) {
     mutate([&](core::AppearanceSettings& s) { s.font_family = family.toStdString(); });
 }
 
-QString ThemeController::fontFamily() const {
+QString ThemeController::contentFontFamily() const {
     switch (settings_.font_source) {
     case core::FontSource::System:
         return QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
@@ -207,6 +231,22 @@ QString ThemeController::fontFamily() const {
 
 bool ThemeController::bundledFontAvailable() const {
     return bundledFontRegistration().available;
+}
+
+QString ThemeController::chromeFontFamily() const {
+    return contentFontFamily();
+}
+
+QString ThemeController::pathFontFamily() const {
+    return contentFontFamily();
+}
+
+QString ThemeController::captionFontFamily() const {
+    return contentFontFamily();
+}
+
+QString ThemeController::longFormFontFamily() const {
+    return QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
 }
 
 ThemeController::Densities ThemeController::density() const {
@@ -400,16 +440,32 @@ int ThemeController::gridCellHeight() const {
     return scaled(154, metricScale());
 }
 
-int ThemeController::fontPixelSize() const {
-    return scaled(13, settings_.scale);
+int ThemeController::chromeFontPixelSize() const {
+    return scaled(13 + densityTypeOffset(settings_.density), settings_.scale);
 }
 
 int ThemeController::contentFontPixelSize() const {
-    return scaled(14, settings_.scale);
+    return scaled(14 + densityTypeOffset(settings_.density), settings_.scale);
 }
 
-int ThemeController::metaFontPixelSize() const {
-    return scaled(12, settings_.scale);
+int ThemeController::pathFontPixelSize() const {
+    return scaled(13 + densityTypeOffset(settings_.density), settings_.scale);
+}
+
+int ThemeController::captionFontPixelSize() const {
+    return scaled(12 + densityTypeOffset(settings_.density), settings_.scale);
+}
+
+int ThemeController::longFormFontPixelSize() const {
+    return scaled(15 + densityTypeOffset(settings_.density), settings_.scale);
+}
+
+qreal ThemeController::longFormLineHeight() const {
+    return 1.45;
+}
+
+int ThemeController::longFormMeasure() const {
+    return scaled(densityLongFormMeasure(settings_.density), settings_.scale);
 }
 
 QColor ThemeController::lifted(const QColor& ink) const {
@@ -451,6 +507,31 @@ QColor ThemeController::border() const {
 
 QColor ThemeController::text() const {
     return activePalette().text;
+}
+
+QColor ThemeController::longFormInk() const {
+    // Paragraph text uses the strongest neutral ink. It stays crisp under
+    // every effect profile and high contrast never weakens it.
+    return activePalette().text;
+}
+
+QColor ThemeController::iconInk() const {
+    const ShellPalette& p = activePalette();
+    if (settings_.high_contrast || p.light) {
+        return p.text;
+    }
+
+    // Toolbar symbols are orientation aids, not emitters. Keep their normal
+    // state below the Strong profile's bright-pass threshold; high contrast
+    // deliberately promotes them to primary text instead.
+    constexpr float maximumChannel = 0.40F;
+    const float brightest = std::max({p.faint.redF(), p.faint.greenF(), p.faint.blueF()});
+    if (brightest <= maximumChannel) {
+        return p.faint;
+    }
+    const float factor = maximumChannel / brightest;
+    return QColor::fromRgbF(p.faint.redF() * factor, p.faint.greenF() * factor,
+                            p.faint.blueF() * factor, p.faint.alphaF());
 }
 
 QColor ThemeController::textMuted() const {

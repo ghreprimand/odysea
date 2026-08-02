@@ -41,22 +41,38 @@ ApplicationWindow {
     visible: true
     title: root.shellModel.path.length > 0 ? root.shellModel.path + " — OdySea" : "OdySea"
     color: backgroundColor
-    font.family: shellTheme.fontFamily
-    font.pixelSize: shellTheme.fontPixelSize
+    font.family: shellTheme.chromeFontFamily
+    font.pixelSize: shellTheme.chromeFontPixelSize
 
     component ShellButton: Button {
         id: control
-        implicitHeight: 32
+        property string iconName: ""
+        property int iconSize: Math.round(18 * root.shellTheme.uiScale)
+        implicitHeight: Math.max(32, control.iconSize + 12, root.shellTheme.chromeFontPixelSize + 14)
         leftPadding: 11
         rightPadding: 11
 
-        contentItem: Text {
-            text: control.text
-            color: control.enabled ? root.primaryTextColor : root.shellTheme.textFaint
-            font.family: root.shellTheme.fontFamily
-            font.pixelSize: root.shellTheme.fontPixelSize
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+        contentItem: RowLayout {
+            spacing: control.text.length > 0 && control.iconName.length > 0 ? 7 : 0
+
+            VectorIcon {
+                visible: control.iconName.length > 0
+                Layout.preferredWidth: control.iconSize
+                Layout.preferredHeight: control.iconSize
+                name: control.iconName
+                ink: control.enabled ? root.shellTheme.iconInk : root.shellTheme.textFaint
+                highContrast: root.shellTheme.highContrast
+            }
+
+            Text {
+                visible: control.text.length > 0
+                text: control.text
+                color: control.enabled ? root.primaryTextColor : root.shellTheme.textFaint
+                font.family: root.shellTheme.chromeFontFamily
+                font.pixelSize: root.shellTheme.chromeFontPixelSize
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
         }
 
         background: Rectangle {
@@ -112,12 +128,16 @@ ApplicationWindow {
             selectionColor: root.selectionColor
             dirInkColor: root.shellTheme.dirInk
             fileInkColor: root.shellTheme.textFaint
+            linkInkColor: root.shellTheme.linkInk
+            iconInkColor: root.shellTheme.iconInk
             dangerColor: root.shellTheme.danger
             hoverColor: root.shellTheme.hover
             rubberBandColor: root.shellTheme.rubberBand
-            contentFontFamily: root.shellTheme.fontFamily
-            contentFontPixelSize: root.shellTheme.contentFontPixelSize
-            metaFontPixelSize: root.shellTheme.metaFontPixelSize
+            entryFontFamily: root.shellTheme.contentFontFamily
+            entryFontPixelSize: root.shellTheme.contentFontPixelSize
+            captionFontFamily: root.shellTheme.captionFontFamily
+            captionFontPixelSize: root.shellTheme.captionFontPixelSize
+            highContrast: root.shellTheme.highContrast
             persistenceDurationMs: presentationLayer.motionDurationMs
         }
 
@@ -137,12 +157,16 @@ ApplicationWindow {
             selectionColor: root.selectionColor
             dirInkColor: root.shellTheme.dirInk
             fileInkColor: root.shellTheme.textFaint
+            linkInkColor: root.shellTheme.linkInk
+            iconInkColor: root.shellTheme.iconInk
             dangerColor: root.shellTheme.danger
             hoverColor: root.shellTheme.hover
             rubberBandColor: root.shellTheme.rubberBand
-            contentFontFamily: root.shellTheme.fontFamily
-            contentFontPixelSize: root.shellTheme.contentFontPixelSize
-            metaFontPixelSize: root.shellTheme.metaFontPixelSize
+            entryFontFamily: root.shellTheme.contentFontFamily
+            entryFontPixelSize: root.shellTheme.contentFontPixelSize
+            captionFontFamily: root.shellTheme.captionFontFamily
+            captionFontPixelSize: root.shellTheme.captionFontPixelSize
+            highContrast: root.shellTheme.highContrast
             cellWidth: root.shellTheme.gridCellWidth
             cellHeight: root.shellTheme.gridCellHeight
             persistenceDurationMs: presentationLayer.motionDurationMs
@@ -439,28 +463,32 @@ ApplicationWindow {
                     spacing: 6
 
                     ShellButton {
-                        text: "\u2190"
+                        Accessible.name: qsTr("Back")
+                        iconName: "back"
                         enabled: root.shellModel.canGoBack
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Back (Alt+Left)")
                         onClicked: root.shellModel.goBack()
                     }
                     ShellButton {
-                        text: "\u2192"
+                        Accessible.name: qsTr("Forward")
+                        iconName: "forward"
                         enabled: root.shellModel.canGoForward
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Forward (Alt+Right)")
                         onClicked: root.shellModel.goForward()
                     }
                     ShellButton {
-                        text: "\u2191"
+                        Accessible.name: qsTr("Up")
+                        iconName: "up"
                         enabled: root.shellModel.canGoUp
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Up (Alt+Up)")
                         onClicked: root.shellModel.goUp()
                     }
                     ShellButton {
-                        text: "\u21bb"
+                        Accessible.name: qsTr("Refresh")
+                        iconName: "refresh"
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Refresh (F5)")
                         onClicked: root.shellModel.refresh()
@@ -471,6 +499,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         text: root.shellModel.path
                         color: root.primaryTextColor
+                        font.family: root.shellTheme.pathFontFamily
+                        font.pixelSize: root.shellTheme.pathFontPixelSize
                         selectByMouse: true
                         placeholderText: qsTr("Location")
                         onAccepted: {
@@ -497,6 +527,7 @@ ApplicationWindow {
                     }
 
                     ShellButton {
+                        iconName: "panes"
                         text: root.shellModel.paneCount === 2 ? qsTr("1 pane") : qsTr("2 panes")
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Toggle pane workspace (Ctrl+Shift+P)")
@@ -504,6 +535,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "listViewButton"
+                        iconName: "list"
                         text: qsTr("List")
                         checkable: true
                         checked: !root.gridMode
@@ -513,6 +545,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "gridViewButton"
+                        iconName: "grid"
                         text: qsTr("Grid")
                         checkable: true
                         checked: root.gridMode
@@ -522,6 +555,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "appearanceButton"
+                        iconName: "appearance"
                         text: qsTr("Appearance")
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Appearance settings (Ctrl+,)")
@@ -540,11 +574,13 @@ ApplicationWindow {
                 accentColor: root.accentColor
                 hoverColor: root.shellTheme.hover
                 pressedColor: root.shellTheme.pressed
+                pathFontFamily: root.shellTheme.pathFontFamily
+                pathFontPixelSize: root.shellTheme.pathFontPixelSize
             }
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: 40
+                implicitHeight: Math.max(40, root.shellTheme.chromeFontPixelSize + 18)
                 color: Qt.alpha(root.panelColor, root.shellTheme.surfaceOpacity)
                 border.color: root.borderColor
 
@@ -557,7 +593,7 @@ ApplicationWindow {
                     TabBar {
                         id: tabs
                         Layout.fillWidth: true
-                        implicitHeight: 34
+                        implicitHeight: Math.max(34, root.shellTheme.chromeFontPixelSize + 14)
                         currentIndex: root.shellModel.activeTab
 
                         background: Item {}
@@ -592,13 +628,15 @@ ApplicationWindow {
                     }
 
                     ShellButton {
-                        text: "+"
+                        Accessible.name: qsTr("New tab")
+                        iconName: "add"
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("New tab (Ctrl+T)")
                         onClicked: root.shellModel.addTab()
                     }
                     ShellButton {
-                        text: "\u00d7"
+                        Accessible.name: qsTr("Close tab")
+                        iconName: "close"
                         enabled: root.shellModel.tabCount > 1
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Close tab (Ctrl+W)")
@@ -609,7 +647,7 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: 44
+                implicitHeight: Math.max(44, root.shellTheme.chromeFontPixelSize + 20)
                 color: Qt.alpha(root.backgroundColor, root.shellTheme.surfaceOpacity)
 
                 RowLayout {
@@ -652,6 +690,7 @@ ApplicationWindow {
 
                     ShellButton {
                         objectName: "selectAllButton"
+                        iconName: "select-all"
                         text: qsTr("Select all")
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Select all entries (Ctrl+A)")
@@ -664,6 +703,7 @@ ApplicationWindow {
 
                     ShellButton {
                         objectName: "copyButton"
+                        iconName: "copy"
                         text: qsTr("Copy")
                         enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                         ToolTip.visible: hovered
@@ -672,6 +712,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "moveButton"
+                        iconName: "move"
                         text: qsTr("Move")
                         enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                         ToolTip.visible: hovered
@@ -680,6 +721,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "renameButton"
+                        iconName: "rename"
                         text: qsTr("Rename")
                         enabled: root.shellModel.selectedCount === 1 && !root.shellModel.operationBusy
                         ToolTip.visible: hovered
@@ -688,6 +730,7 @@ ApplicationWindow {
                     }
                     ShellButton {
                         objectName: "trashButton"
+                        iconName: "trash"
                         text: qsTr("Trash")
                         enabled: root.shellModel.selectedCount > 0 && !root.shellModel.operationBusy
                         ToolTip.visible: hovered
@@ -768,7 +811,7 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: 30
+                implicitHeight: Math.max(30, root.shellTheme.captionFontPixelSize + 14)
                 color: Qt.alpha(root.panelColor, root.shellTheme.surfaceOpacity)
                 border.color: root.borderColor
 
@@ -790,19 +833,22 @@ ApplicationWindow {
                         text: root.shellModel.operationErrorString.length > 0 ? root.shellModel.operationErrorString : (root.shellModel.errorString.length > 0 ? qsTr("Could not read folder: ") + root.shellModel.errorString : root.shellModel.statusMessage)
                         color: root.shellModel.operationErrorString.length > 0 || root.shellModel.errorString.length > 0 ? root.shellTheme.danger : root.secondaryTextColor
                         elide: Text.ElideRight
-                        font.pixelSize: root.shellTheme.metaFontPixelSize
+                        font.family: root.shellTheme.captionFontFamily
+                        font.pixelSize: root.shellTheme.captionFontPixelSize
                     }
 
                     Text {
                         text: qsTr("%1 selected").arg(root.shellModel.selectedCount)
                         color: root.secondaryTextColor
-                        font.pixelSize: root.shellTheme.metaFontPixelSize
+                        font.family: root.shellTheme.captionFontFamily
+                        font.pixelSize: root.shellTheme.captionFontPixelSize
                     }
 
                     Text {
                         text: qsTr("Pane %1 of %2").arg(root.shellModel.activePane + 1).arg(root.shellModel.paneCount)
                         color: root.secondaryTextColor
-                        font.pixelSize: root.shellTheme.metaFontPixelSize
+                        font.family: root.shellTheme.captionFontFamily
+                        font.pixelSize: root.shellTheme.captionFontPixelSize
                     }
                 }
             }
@@ -827,6 +873,7 @@ ApplicationWindow {
 
     FilesystemDialogs {
         shellModel: root.shellModel
+        theme: root.shellTheme
         backgroundColor: root.backgroundColor
         panelColor: root.panelColor
         borderColor: root.borderColor
