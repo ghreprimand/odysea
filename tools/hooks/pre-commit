@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Reject any commit whose attribution would publish a contributor other than
+# the repository owner.
+#
+# The identity is not hard-coded. It is derived from the existing history and
+# validated structurally, so this hook carries no address in tracked text and
+# stays correct if the repository changes hands.
+set -euo pipefail
+
+# GitHub resolves a commit to an account by e-mail. Only the account-scoped
+# no-reply form <numeric-account-id>+<login>@users.noreply.github.com is
+# guaranteed to resolve to a specific account: a bare local part such as a
+# project or role name is still a syntactically valid no-reply address, but it
+# resolves to whichever unrelated account owns that login.
+owner_identity_re='^[0-9]+\+[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?@users\.noreply\.github\.com$'
+
+author_email="$(git var GIT_AUTHOR_IDENT | sed -n 's/.*<\(.*\)>.*/\1/p')"
+committer_email="$(git var GIT_COMMITTER_IDENT | sed -n 's/.*<\(.*\)>.*/\1/p')"
+
+for role in author committer; do
+    eval "candidate=\$${role}_email"
+    if [[ ! "$candidate" =~ $owner_identity_re ]]; then
+        echo "Commit blocked: ${role} identity is not an account-scoped GitHub no-reply address." >&2
+        echo "Expected the <account-id>+<login>@users.noreply.github.com form." >&2
+        exit 1
+    fi
+done
+
+if [[ "$author_email" != "$committer_email" ]]; then
+    echo "Commit blocked: author and committer identities differ." >&2
+    exit 1
+fi
+
+# Stay consistent with published history. This is what stops a well-formed but
+# different identity from silently adding a second contributor.
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    head_email="$(git show -s --format=%ae HEAD)"
+    if [[ "$head_email" =~ $owner_identity_re && "$author_email" != "$head_email" ]]; then
+        echo "Commit blocked: identity does not match the identity already in this history." >&2
+        exit 1
+    fi
+fi

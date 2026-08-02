@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# Reject commit messages that carry machine-generated attribution trailers.
+#
+# Coding agents add these by default. A single trailer publishes a second
+# contributor on the commit, so the message is rejected at the moment it is
+# written rather than discovered later in a verification run.
+set -euo pipefail
+
+attribution_trailer_re='^[[:space:]]*(co-authored-by|signed-off-by|assisted-by|generated-by|created-by|authored-by|on-behalf-of):'
+
+message_file="${1:?commit-msg hook requires the message file path}"
+
+# Comment lines are stripped by git before the message is stored, so an
+# explanatory mention inside a comment must not trip the check.
+if grep -vE '^[[:space:]]*#' "$message_file" | grep -qiE "$attribution_trailer_re"; then
+    echo "Commit blocked: the message carries an attribution trailer." >&2
+    echo "Commits in this repository are attributed to the owner only." >&2
+    echo "Remove Co-Authored-By, Assisted-by, Generated-by and equivalents." >&2
+    exit 1
+fi

@@ -118,6 +118,16 @@ release artifact as published material.
 - Configure a repository-local Git author name and no-reply address intended for
   public attribution. Never publish a personal email address through commit
   metadata.
+- Use only the account-scoped GitHub no-reply address: the numeric account id,
+  a plus sign, the account login, and the GitHub no-reply mail domain. Never
+  construct a no-reply address from a project, product, or role name. Such an
+  address is still syntactically valid, but GitHub resolves it to whichever
+  unrelated account owns that login, publishing an unrelated account as a
+  contributor.
+- Run `tools/install_hooks.sh` once per clone. Hooks live under `.git/`, which
+  is never cloned, so a fresh checkout starts with no enforcement until the
+  tracked hooks in `tools/hooks/` are enabled. Never commit or push with
+  verification disabled.
 - Inspect staged changes before every commit. `.gitignore` is a backstop, not a
   security boundary; stop and investigate any ambiguous content.
 - Keep `public_repository_guard` green. It rejects tracked secret-file names,
@@ -135,4 +145,11 @@ assignments or use internal workflow terminology in tracked text.
 
 Update `DEVLOG.md` with each accepted development milestone, in the same change
 as the code or documentation it records. Commit subjects and bodies stay
-factual and scoped. Do not add `Co-Authored-By` trailers.
+factual and scoped.
+
+Commits carry no attribution trailers. `Co-Authored-By`, `Assisted-by`,
+`Generated-by`, `Created-by`, `Authored-by`, `Signed-off-by`, and
+`On-behalf-of` are rejected in commit messages, amended messages, and squash
+messages, because each one publishes an additional contributor. Automated
+tools that add such a trailer by default must have that behavior disabled
+before they are used against this repository.

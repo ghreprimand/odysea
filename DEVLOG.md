@@ -7,6 +7,38 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Enforce owner-only commit attribution
+
+The public-repository guard now requires the account-scoped GitHub no-reply
+address -- the numeric account id, a plus sign, the account login, and the
+GitHub no-reply mail domain -- for both author and committer on every commit,
+requires the whole history to carry exactly one identity, and rejects
+attribution trailers. The previous check accepted any
+address ending in the no-reply domain, which admitted addresses built from a
+project or role name; such an address is syntactically valid but resolves to
+whichever unrelated account owns that login, so unrelated accounts could appear
+as repository contributors.
+
+Enforcement moved into the tracked tree. `tools/hooks/` holds `pre-commit`,
+`commit-msg`, and `pre-push`; `tools/install_hooks.sh` points `core.hooksPath`
+at them, which is required once per clone because hooks under `.git/` are never
+cloned and a fresh checkout would otherwise have no enforcement. The hooks
+derive the expected identity from the existing history rather than storing an
+address, so no address enters tracked text. `commit-msg` rejects
+`Co-Authored-By`, `Assisted-by`, `Generated-by`, `Created-by`, `Authored-by`,
+`Signed-off-by`, and `On-behalf-of`; `pre-push` re-checks every outgoing commit
+so history arriving by merge, cherry-pick, or rebase is covered.
+
+`attribution_hooks_self_test` exercises the hooks against a throwaway
+repository and asserts that an owner-attributed commit is accepted, that an
+unscoped no-reply identity, a second account-scoped identity, and each trailer
+are rejected, and that a trailer named inside a stripped comment line is
+ignored. Verification: release 28/28 including the new gate, ASan/UBSan 27/27
+enabled, warning-clean builds, all guards green, and silent release and
+sanitizer smoke launches.
+
+---
+
 ## 2026-07-31 -- Storage Tube presentation pipeline
 
 The screen-effect levels now render. The shell frame draws crisp, a

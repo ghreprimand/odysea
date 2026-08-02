@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# Reject a push when any commit in the outgoing range would publish a
+# contributor other than the repository owner.
+#
+# The pre-commit and commit-msg hooks cover commits created in this checkout.
+# This hook is the boundary check: it also covers commits that arrived by
+# merge, cherry-pick, rebase, or a tool that bypassed the earlier hooks.
+set -euo pipefail
+
+owner_identity_re='^[0-9]+\+[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?@users\.noreply\.github\.com$'
+attribution_trailer_re='^[[:space:]]*(co-authored-by|signed-off-by|assisted-by|generated-by|created-by|authored-by|on-behalf-of):'
+zero_re='^0+$'
+
+failed=0
+
+check_commit() {
+    local commit="$1"
+    local author_email committer_email
+
+    author_email="$(git show -s --format=%ae "$commit")"
+    committer_email="$(git show -s --format=%ce "$commit")"
+
+    if [[ ! "$author_email" =~ $owner_identity_re ]] ||
+        [[ ! "$committer_email" =~ $owner_identity_re ]]; then
+        echo "Push blocked: commit $commit is not attributed to an account-scoped no-reply identity." >&2
+        failed=1
+        return
+    fi
+
+    if [[ "$author_email" != "$committer_email" ]]; then
+        echo "Push blocked: commit $commit has differing author and committer identities." >&2
+        failed=1
+        return
+    fi
+
+    if git show -s --format=%B "$commit" | grep -qiE "$attribution_trailer_re"; then
+        echo "Push blocked: commit $commit carries an attribution trailer." >&2
+        failed=1
+    fi
+}
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    # A deletion carries an all-zero local object id and has nothing to inspect.
+    if [[ "$local_sha" =~ $zero_re ]]; then
+        continue
+    fi
+
+    if [[ "$remote_sha" =~ $zero_re ]]; then
+        # A new remote ref: inspect every commit it would publish that is not
+        # already reachable from another remote-tracking ref.
+        mapfile -t commits < <(git rev-list "$local_sha" --not --remotes)
+    else
+        mapfile -t commits < <(git rev-list "${remote_sha}..${local_sha}")
+    fi
+
+    for commit in "${commits[@]}"; do
+        [[ -z "$commit" ]] || check_commit "$commit"
+    done
+done
+
+if ((failed != 0)); then
+    exit 1
+fi

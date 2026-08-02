@@ -32,9 +32,17 @@ if [[ -n "$sensitive_paths" ]]; then
     failed=1
 fi
 
+# The attribution enforcement sources are excluded from the corpus scans below
+# for the same reason this script is: their subject matter is the shape of a
+# commit identity, so they necessarily contain address syntax and would
+# otherwise trip the blanket at-sign rule they exist to support. They are
+# reviewed as enforcement code, and no other tracked file may contain an
+# at-sign.
 self_excluding_pathspec=(
     .
     ':(exclude)tools/check_public_repo.sh'
+    ':(exclude)tools/check_hooks_selftest.sh'
+    ':(exclude)tools/hooks/*'
 )
 
 report_matches "email-like or user-at-host text is tracked" \
@@ -59,32 +67,51 @@ report_matches "internal workflow narration is tracked" \
     '(the operator|the user (asked|requested|wanted)|per operator|Director role|Builder [0-9]|agent workflow|work packet|peer_send|audit[- ]round)' \
     -- "${self_excluding_pathspec[@]}"
 
+# Attribution must use the account-scoped GitHub no-reply form
+# <numeric-account-id>+<login>@users.noreply.github.com. Requiring the numeric
+# account prefix is what makes the check meaningful: a bare local part such as
+# a project or role name is still syntactically a no-reply address, but GitHub
+# resolves it to whichever unrelated account happens to own that login. Only
+# the account-scoped form is guaranteed to map to this repository's owner.
+owner_identity_re='^[0-9]+\+[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?@users\.noreply\.github\.com$'
+
 unsafe_identity_commits=""
+observed_identities=""
 while IFS=$'\t' read -r commit author_email committer_email; do
-    case "$author_email" in
-        *@users.noreply.github.com | noreply@*) ;;
-        *) unsafe_identity_commits+="${commit}"$'\n' ;;
-    esac
-    case "$committer_email" in
-        *@users.noreply.github.com | noreply@*) ;;
-        *) unsafe_identity_commits+="${commit}"$'\n' ;;
-    esac
+    if [[ ! "$author_email" =~ $owner_identity_re ]] ||
+        [[ ! "$committer_email" =~ $owner_identity_re ]]; then
+        unsafe_identity_commits+="${commit}"$'\n'
+    fi
+    observed_identities+="${author_email}"$'\n'"${committer_email}"$'\n'
 done < <(git log --format='%H%x09%ae%x09%ce')
 if [[ -n "$unsafe_identity_commits" ]]; then
-    printf 'public_repository_guard: commits use non-no-reply attribution\n%s' \
+    printf 'public_repository_guard: commits are not attributed to an account-scoped no-reply identity\n%s' \
         "$unsafe_identity_commits" >&2
     failed=1
 fi
 
-coauthored_commits=""
+# Every commit must carry the same identity. A second well-formed identity is
+# still a second published contributor, which is the outcome this guards.
+distinct_identities="$(printf '%s' "$observed_identities" | sort -u | grep -c .)"
+if ((distinct_identities > 1)); then
+    printf 'public_repository_guard: history carries %s distinct commit identities; expected exactly one\n' \
+        "$distinct_identities" >&2
+    failed=1
+fi
+
+# Machine-generated collaboration trailers must never reach published history.
+# The match is case-insensitive and covers the trailers emitted by common
+# coding agents; any of them would publish a second contributor on the commit.
+attribution_trailer_re='^[[:space:]]*(co-authored-by|signed-off-by|assisted-by|generated-by|created-by|authored-by|on-behalf-of):'
+trailer_commits=""
 while IFS= read -r commit; do
-    if git show -s --format=%B "$commit" | grep -q '^Co-Authored-By:'; then
-        coauthored_commits+="${commit}"$'\n'
+    if git show -s --format=%B "$commit" | grep -qiE "$attribution_trailer_re"; then
+        trailer_commits+="${commit}"$'\n'
     fi
 done < <(git log --format=%H)
-if [[ -n "$coauthored_commits" ]]; then
-    printf 'public_repository_guard: Co-Authored-By trailers are present\n%s' \
-        "$coauthored_commits" >&2
+if [[ -n "$trailer_commits" ]]; then
+    printf 'public_repository_guard: attribution trailers are present\n%s' \
+        "$trailer_commits" >&2
     failed=1
 fi
 

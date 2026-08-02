@@ -47,6 +47,9 @@ add_test(
     NAME public_repository_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_public_repo.sh)
 add_test(
+    NAME attribution_hooks_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_hooks_selftest.sh)
+add_test(
     NAME formatting_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_format.sh)
 add_test(
@@ -73,9 +76,10 @@ add_test(
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
 
 set_tests_properties(
-    public_repository_guard formatting_guard formatting_guard_self_test
-    qml_formatting_guard qml_lint_guard qml_module_guard
-    qml_module_guard_self_test file_length_guard static_analysis
+    public_repository_guard attribution_hooks_self_test formatting_guard
+    formatting_guard_self_test qml_formatting_guard qml_lint_guard
+    qml_module_guard qml_module_guard_self_test file_length_guard
+    static_analysis
     PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)
     set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)

@@ -3,6 +3,9 @@
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
 
 # Local-only audit findings and generated reports
 /audit/
