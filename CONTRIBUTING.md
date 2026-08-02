@@ -86,6 +86,9 @@ These are not optional; they are how the project stays safe in C++:
   throwaway import roots covering a built module, an unbuilt one, a manifest
   with no trailing newline, a module declaring no type descriptions, nested and
   deeply nested manifests, and an import root that does not exist.
+  `.qmlformat.ini` deliberately leaves property normalization and import sorting
+  off; `docs/STACK.md` records why, and changing either setting rewrites every
+  tracked scene.
 - The declarative shell is a linkable QML module. Application code and tests
   load scenes through `OdySea`, never by relative source-directory import, so a
   scene missing from the module fails both instead of only the application. A

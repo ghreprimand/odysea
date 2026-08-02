@@ -47,6 +47,18 @@ newlines, explicit semicolons, and stable source ordering. Verification compares
 every tracked QML file with formatter output and rejects all lint warnings.
 These checks run through CTest in both release and sanitizer configurations.
 
+"Stable source ordering" is a deliberate setting, not an oversight. The
+formatter's property-normalization and import-sorting passes are both turned
+off, so declaration and import order is the author's and the gate accepts it as
+written. Order in a QML scene carries meaning the formatter cannot see:
+identifiers and required properties read first, related bindings stay grouped,
+and layered children keep the stacking order their positions depend on.
+Reordering is also the formatter's least stable behavior across releases, which
+would make a toolchain upgrade rewrite the corpus. Turning either setting on
+rewrites every tracked scene at once — a change with no behavioral gain that
+would collide with any concurrent work on the same files — so the settings file
+is changed only as a deliberate, separately reviewed decision.
+
 The shell itself is a linkable QML module. The application and the
 rendered-shell tests both link it and load scenes through the `OdySea` module
 rather than by relative source path, so a scene the module does not export

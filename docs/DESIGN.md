@@ -86,6 +86,26 @@ terminal file manager. Achieving both at once is a deliberate design target.
   intersected by its rubber-band rectangle. The shared selection model applies
   that set by stable entry key, so list and grid geometry do not leak into
   selection state.
+- **Rubber-band reachability.** A drag-rectangle selection must be startable at
+  every window size, including the one that matters most: a directory whose
+  entries fill the viewport completely, leaving no blank space below the last
+  row. Each directory view therefore reserves a permanent interactive gutter
+  along its trailing edge and narrows its delegates by exactly that width. The
+  delegate and gutter ranges are adjacent rather than overlapping, so the
+  gutter — which sits above the delegates in stacking order, because it must
+  stay reachable while rows are present — never covers part of a row and never
+  intercepts a click meant for an entry. The gutter is a layout requirement,
+  not decoration; a view laid out without it has no rubber-band at all once its
+  content fills the viewport, and the loss is invisible in a short directory.
+- **Rubber-band drag ownership.** A rubber-band press claims the pointer grab
+  for the whole drag, and anchors its origin in the view's content coordinates
+  rather than in view coordinates. Both are required for a correct band. A
+  surrounding flickable otherwise takes the grab over mid-drag once the pointer
+  passes its movement threshold, which discards the motion samples after that
+  point and leaves the band short of where the pointer actually went; an anchor
+  in view coordinates additionally slides whenever the content scrolls during
+  the drag. These constraints hold for any view that offers a rubber-band,
+  including reusable components factored out of an existing view.
 - **Terminal bridge.** Opening a terminal at the current directory, and running a
   command against the current selection, are core interactions.
 
@@ -99,6 +119,18 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   scheduling. It has no GUI dependency and is unit-tested headless. This is
   where the performance-critical work lives, deliberately free of framework
   overhead.
+- **Entry kind is unresolved; navigability is resolved.** An entry's kind
+  describes the directory entry itself, so a symlink is classified as a symlink
+  whatever it points at. Symlinks are tested before directories for exactly
+  that reason, and the ordering is a requirement rather than an accident: a
+  symlink to a directory that reported itself as a directory would lose the one
+  fact that distinguishes it, and the shell could no longer mark it, refuse to
+  recurse into it, or resolve it separately. Whether an entry behaves as a
+  directory is a second, separate question answered through the link target.
+  Call sites that dispatch on navigability — opening, dropping onto, recursing
+  into, or ordering an entry — must ask the resolved question and must not read
+  the kind as a proxy for it. A broken symlink keeps its symlink kind and is
+  not navigable.
 - **`app/` (Qt Quick).** The GPU-rendered shell: the QML scene, input handling,
   theming, and thumbnail decoding and presentation. A thin adapter
   (`DirectoryListModel`, a `QAbstractListModel`) is the single boundary that

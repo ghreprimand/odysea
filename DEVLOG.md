@@ -7,6 +7,55 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Record load-bearing invariants and deepen the lint scan
+
+Three behaviors that existed only as working code are now stated as
+requirements, because each looks removable to a reader who has not seen what it
+costs to remove it.
+
+`docs/DESIGN.md` records that an entry's kind describes the directory entry
+itself and never its link target, that symlinks are therefore classified before
+directories on purpose, and that any call site deciding whether an entry is
+navigable must ask the resolved question instead of reading the kind as a proxy
+for it. It also records the layout a pointer rubber-band depends on: a
+permanent interactive gutter along each directory view's trailing edge,
+delegates narrowed by exactly that width, delegate and gutter ranges adjacent
+rather than overlapping so the gutter never covers a row, a press that claims
+the pointer grab for the whole drag, and a press origin anchored in content
+coordinates. Without the gutter a drag-rectangle cannot be started at all once
+entries fill the viewport, and the loss does not show in a short directory.
+These constraints apply to reusable components factored out of the current
+views.
+
+`docs/STACK.md` records why the tracked formatter settings leave property
+normalization and import sorting off: declaration order carries meaning the
+formatter cannot see, reordering is its least stable behavior across releases,
+and enabling either setting rewrites every tracked scene at once for no
+behavioral gain.
+
+The lint gate's build-ordering check no longer caps how deeply it looks for
+module manifests. The shell module already produces a second manifest one level
+below its own, and a capped scan skipped it silently, leaving missing type
+descriptions to surface as a lint import warning that named neither the
+manifest nor the ordering. `qml_lint_order_self_test` now holds the check to
+seven throwaway import roots: a built module, an unbuilt one, a manifest with
+no trailing newline, a module declaring no type descriptions, a nested
+manifest, a manifest four levels down, and an import root that does not exist.
+Removing the scan fails four of them, restoring the depth cap fails two, and
+dropping the unterminated-line continuation fails one.
+
+The shell-load diagnostic's placeholder-location assertion moved to the case
+that produces one. An absent module reports an error carrying no file and no
+line, and it is that case the engine's aggregate error string decorates with a
+placeholder position; the assertion sat instead on the located-error case,
+where it could not fire.
+
+Verification: release 29/29 including the new gate, ASan/UBSan 28/28 enabled,
+warning-clean builds under `-Werror`, all guards green, and silent release and
+sanitizer smoke launches on the software and OpenGL paths.
+
+---
+
 ## 2026-08-02 -- Resolve hooks from any working directory
 
 The hook path is now configured as an absolute path. Git resolves a relative
