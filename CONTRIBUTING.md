@@ -80,7 +80,12 @@ These are not optional; they are how the project stays safe in C++:
   `app` directory as an import root; `ctest` does this automatically. Build
   before linting: the import root only carries type descriptions once the module
   has been built, and `qml_lint_guard` fails on a configure-only tree while
-  `qml_module_guard` does not.
+  `qml_module_guard` does not. That ordering check reads every manifest below an
+  import root at any depth, because a module directory may carry nested
+  manifests of its own. `qml_lint_order_self_test` holds it to that with
+  throwaway import roots covering a built module, an unbuilt one, a manifest
+  with no trailing newline, a module declaring no type descriptions, nested and
+  deeply nested manifests, and an import root that does not exist.
 - The declarative shell is a linkable QML module. Application code and tests
   load scenes through `OdySea`, never by relative source-directory import, so a
   scene missing from the module fails both instead of only the application. A

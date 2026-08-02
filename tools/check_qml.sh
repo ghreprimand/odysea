@@ -48,6 +48,14 @@ while (($# > 0)); do
     # or one built with NO_GENERATE_QMLTYPES — passes this check and is left to
     # qmllint, which is the only tool that can judge whether such a module
     # resolves. The check is about ordering, not about module completeness.
+    #
+    # The scan is not depth-limited. No layout rule fixes how deeply a manifest
+    # sits below an import root: a module directory may carry nested submodule or
+    # resource manifests of its own, and the shell module already produces a
+    # second manifest one level below its own. A depth cap skips those silently,
+    # leaving missing type descriptions to surface as a qmllint import warning
+    # that names neither the manifest nor the ordering. An import root is a build
+    # output directory, so an uncapped scan stays bounded by the build.
     while IFS= read -r manifest; do
         module_directory="${manifest%/qmldir}"
         # The `|| [[ -n ... ]]` continuation reads a final line that carries no
@@ -63,7 +71,7 @@ while (($# > 0)); do
                 exit 1
             fi
         done <"$manifest"
-    done < <(find "$import_root" -maxdepth 2 -name qmldir -type f)
+    done < <(find "$import_root" -name qmldir -type f)
 
     import_flags="$import_flags -I $import_root"
 done

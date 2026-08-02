@@ -62,6 +62,9 @@ add_test(
     NAME qml_lint_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh lint ${CMAKE_BINARY_DIR}/app)
 add_test(
+    NAME qml_lint_order_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_lint_order_selftest.sh)
+add_test(
     NAME qml_module_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_module.sh
         ${CMAKE_BINARY_DIR}/app/OdySea)
@@ -78,7 +81,8 @@ add_test(
 set_tests_properties(
     public_repository_guard attribution_hooks_self_test formatting_guard
     formatting_guard_self_test qml_formatting_guard qml_lint_guard
-    qml_module_guard qml_module_guard_self_test file_length_guard
+    qml_lint_order_self_test qml_module_guard qml_module_guard_self_test
+    file_length_guard
     static_analysis
     PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)
