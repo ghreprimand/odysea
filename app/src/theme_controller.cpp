@@ -9,6 +9,7 @@
 #include "theme_palettes.hpp"
 
 #include <QFontDatabase>
+#include <QList>
 
 #include <algorithm>
 #include <cmath>
@@ -54,9 +55,48 @@ namespace {
     return QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
 }
 
+struct BundledFontRegistration {
+    bool available{false};
+    QString family;
+};
+
+[[nodiscard]] BundledFontRegistration registerBundledFonts() {
+    static const QString family = QStringLiteral("Victor Mono");
+    static const QStringList resources{
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Regular.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Italic.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Bold.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-BoldItalic.otf")};
+
+    QList<int> registeredIds;
+    registeredIds.reserve(resources.size());
+    for (const QString& resource : resources) {
+        const int id = QFontDatabase::addApplicationFont(resource);
+        if (id < 0 || !QFontDatabase::applicationFontFamilies(id).contains(family)) {
+            if (id >= 0) {
+                QFontDatabase::removeApplicationFont(id);
+            }
+            for (const int registeredId : registeredIds) {
+                QFontDatabase::removeApplicationFont(registeredId);
+            }
+            return {};
+        }
+        registeredIds.push_back(id);
+    }
+    return {.available = true, .family = family};
+}
+
+[[nodiscard]] const BundledFontRegistration& bundledFontRegistration() {
+    static const BundledFontRegistration registration = registerBundledFonts();
+    return registration;
+}
+
 } // namespace
 
 ThemeController::ThemeController(QObject* parent) : QObject(parent) {
+    // Registration is process-wide and idempotent. Keeping it here means the
+    // application and every module-linked scene test resolve the same face.
+    static_cast<void>(bundledFontRegistration());
     settings_.palette = defaultShellPaletteId().toStdString();
 }
 
@@ -154,10 +194,19 @@ QString ThemeController::fontFamily() const {
         }
         return firstAvailableFamily(bundledFontCandidates());
     }
-    case core::FontSource::Bundled:
+    case core::FontSource::Bundled: {
+        const BundledFontRegistration& bundled = bundledFontRegistration();
+        if (bundled.available) {
+            return bundled.family;
+        }
         break;
     }
+    }
     return firstAvailableFamily(bundledFontCandidates());
+}
+
+bool ThemeController::bundledFontAvailable() const {
+    return bundledFontRegistration().available;
 }
 
 ThemeController::Densities ThemeController::density() const {

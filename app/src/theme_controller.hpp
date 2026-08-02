@@ -37,6 +37,7 @@ class ThemeController : public QObject {
     Q_PROPERTY(QString namedFontFamily READ namedFontFamily WRITE setNamedFontFamily NOTIFY
                    appearanceChanged)
     Q_PROPERTY(QString fontFamily READ fontFamily NOTIFY appearanceChanged)
+    Q_PROPERTY(bool bundledFontAvailable READ bundledFontAvailable CONSTANT)
     Q_PROPERTY(Densities density READ density WRITE setDensity NOTIFY appearanceChanged)
     Q_PROPERTY(qreal uiScale READ uiScale WRITE setUiScale NOTIFY appearanceChanged)
 
@@ -139,6 +140,7 @@ class ThemeController : public QObject {
     [[nodiscard]] QString namedFontFamily() const;
     void setNamedFontFamily(const QString& family);
     [[nodiscard]] QString fontFamily() const;
+    [[nodiscard]] bool bundledFontAvailable() const;
 
     [[nodiscard]] Densities density() const;
     void setDensity(Densities density);

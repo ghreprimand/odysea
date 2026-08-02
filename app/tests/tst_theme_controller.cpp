@@ -30,6 +30,7 @@ class tst_ThemeController : public QObject {
     void non_finite_input_never_corrupts_geometry();
     void named_font_family_cannot_inject_keys();
     void reset_repairs_a_damaged_settings_file();
+    void bundled_font_resources_register_every_shipped_face();
     void fonts_resolve_to_available_families();
     void metrics_follow_density_and_scale();
     void no_op_writes_do_not_notify();
@@ -288,8 +289,8 @@ void tst_ThemeController::reset_repairs_a_damaged_settings_file() {
 
 void tst_ThemeController::fonts_resolve_to_available_families() {
     ThemeController theme;
-    // Whatever the platform has installed, the resolved family must exist.
-    QVERIFY(QFontDatabase::hasFamily(theme.fontFamily()));
+    QVERIFY(theme.bundledFontAvailable());
+    QCOMPARE(theme.fontFamily(), QStringLiteral("Victor Mono"));
 
     theme.setFontSource(ThemeController::System);
     QCOMPARE(theme.fontFamily(), QFontDatabase::systemFont(QFontDatabase::FixedFont).family());
@@ -304,6 +305,22 @@ void tst_ThemeController::fonts_resolve_to_available_families() {
     QVERIFY(!families.isEmpty());
     theme.setNamedFontFamily(families.first());
     QCOMPARE(theme.fontFamily(), families.first());
+}
+
+void tst_ThemeController::bundled_font_resources_register_every_shipped_face() {
+    static const QStringList resources{
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Regular.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Italic.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-Bold.otf"),
+        QStringLiteral(":/qt/qml/OdySea/third_party/victor-mono/VictorMono-BoldItalic.otf")};
+
+    for (const QString& resource : resources) {
+        const int id = QFontDatabase::addApplicationFont(resource);
+        QVERIFY2(id >= 0, qPrintable(resource));
+        QCOMPARE(QFontDatabase::applicationFontFamilies(id),
+                 QStringList{QStringLiteral("Victor Mono")});
+        QVERIFY(QFontDatabase::removeApplicationFont(id));
+    }
 }
 
 void tst_ThemeController::metrics_follow_density_and_scale() {

@@ -64,7 +64,14 @@ qt_add_qml_module(odysea_shell_qml
         qml/Main.qml
         qml/FilesystemDialogs.qml
         qml/PresentationLayer.qml
-        qml/WellMaskLayer.qml)
+        qml/WellMaskLayer.qml
+    RESOURCES
+        third_party/victor-mono/OFL.txt
+        third_party/victor-mono/README.md
+        third_party/victor-mono/VictorMono-Bold.otf
+        third_party/victor-mono/VictorMono-BoldItalic.otf
+        third_party/victor-mono/VictorMono-Italic.otf
+        third_party/victor-mono/VictorMono-Regular.otf)
 
 # The presentation shaders compile to qsb at build time and land in the
 # module's resource tree next to the scenes, so the QML references resolve
