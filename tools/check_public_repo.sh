@@ -67,6 +67,23 @@ report_matches "internal workflow narration is tracked" \
     '(the operator|the user (asked|requested|wanted)|per operator|Director role|Builder [0-9]|agent workflow|work packet|peer_send|audit[- ]round)' \
     -- "${self_excluding_pathspec[@]}"
 
+# Bare process-role vocabulary. Words with legitimate engineering meanings are
+# deliberately absent from this list and matched only in the phrase forms
+# above: "worker" names thread-pool members throughout core, "builder" names
+# the builder pattern, and bare "operator" is the C++ keyword in every
+# operator=, operator==, and operator() declaration. "director" does not
+# collide with "directory": the word boundary requires the token to end.
+# `.gitignore` is excluded because it legitimately names ignored files.
+report_matches "process-role vocabulary is tracked" \
+    git grep --cached -nI -iE \
+    '\b(reviewers?|directors?|verdicts?|packets?|agents?|subagents?|orchestrators?|coordinators?|the assignee|sign[- ]?off)\b' \
+    -- "${self_excluding_pathspec[@]}" ':(exclude).gitignore'
+
+report_matches "process-adjacent operator phrasing is tracked" \
+    git grep --cached -nI -iE \
+    "\\boperator'?s? (approval|approved|asked|decision|instruction|request|review)" \
+    -- "${self_excluding_pathspec[@]}"
+
 # Attribution must use the account-scoped GitHub no-reply form
 # <numeric-account-id>+<login>@users.noreply.github.com. Requiring the numeric
 # account prefix is what makes the check meaningful: a bare local part such as

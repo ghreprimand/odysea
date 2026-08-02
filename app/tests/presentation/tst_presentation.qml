@@ -279,10 +279,9 @@ Item {
         }
 
         function test_registeringOneWellCreatesExactlyOneMirror() {
-            // The reviewer-measured scale: a wide grid at 2x realizes on
-            // the order of sixty thumbnails. Registering one more must
-            // create exactly one mirror and leave every existing mirror
-            // object untouched.
+            // Measured scale: a wide grid at 2x realizes on the order of
+            // sixty thumbnails. Registering one more must create exactly
+            // one mirror and leave every existing mirror object untouched.
             const baseCount = wells.wellCount;
             const items = [];
             for (let i = 0; i < 60; ++i) {
@@ -379,8 +378,8 @@ Item {
             if (layer.softwareBackend) {
                 skip("software scene graph: the pipeline is disengaged by design");
             }
-            // The reviewer pixel case: a registered well whose delegate
-            // stays realized in the cache buffer scrolls until its mapped
+            // Regression case: a registered well whose delegate stays
+            // realized in the cache buffer scrolls until its mapped
             // rectangle lands on the bright chrome band above the viewport.
             // The frame must render identically with and without the
             // registration — no exemption may reach the band.

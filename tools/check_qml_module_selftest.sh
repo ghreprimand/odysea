@@ -5,7 +5,7 @@
 # The gate compares a tracked scene corpus against a built module manifest. A
 # gate that compared nothing would look identical to a passing one, so each
 # scenario below builds a throwaway repository and a throwaway manifest, then
-# requires a specific verdict. An always-failing gate fails the accepting
+# requires a specific outcome. An always-failing gate fails the accepting
 # scenario, and an always-passing gate fails every rejecting one.
 
 set -euo pipefail
