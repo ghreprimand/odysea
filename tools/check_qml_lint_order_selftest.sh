@@ -9,7 +9,7 @@
 # warning that names neither the manifest nor the ordering, so a check that
 # silently scanned nothing would be indistinguishable from a passing one.
 #
-# Each scenario builds a throwaway import root and requires a specific verdict.
+# Each scenario builds a throwaway import root and requires a specific outcome.
 # The scenarios run from a directory outside any repository, so a root the check
 # accepts stops at the gate's own Git-metadata skip: reaching that skip proves
 # the scan ran to completion and passed the root rather than exiting early.
