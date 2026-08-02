@@ -84,7 +84,7 @@ line, and it is that case the engine's aggregate error string decorates with a
 placeholder position; the assertion sat instead on the located-error case,
 where it could not fire.
 
-Verification: release 29/29 including the new gate, ASan/UBSan 28/28 enabled,
+Verification: release 30/30 including the new gate, ASan/UBSan 29/29 enabled,
 warning-clean builds under `-Werror`, all guards green, and silent release and
 sanitizer smoke launches on the software and OpenGL paths.
 
