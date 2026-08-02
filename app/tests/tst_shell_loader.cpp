@@ -180,7 +180,9 @@ class StandardErrorCapture {
 /// Returns the module URI, or an empty string when the fixture could not be
 /// written.
 QString installUncompilableModule(QQmlApplicationEngine& engine, const QString& root) {
-    const QString moduleName = QStringLiteral("OdySeaUncompilableFixture");
+    // Not const: the name is returned by value, and a const local blocks the
+    // implicit move on the way out.
+    QString moduleName = QStringLiteral("OdySeaUncompilableFixture");
     const QString moduleDirectory = QDir(root).filePath(moduleName);
     if (!QDir().mkpath(moduleDirectory)) {
         return {};
@@ -340,6 +342,12 @@ void ShellLoaderTest::anAbsentModuleIsReported() {
     QVERIFY2(outcome.diagnostic.contains(QStringLiteral("NoSuchModule")),
              qPrintable(outcome.diagnostic));
     QVERIFY2(outcome.diagnostic.contains(shellSceneType()), qPrintable(outcome.diagnostic));
+
+    // An absent module produces an error that carries no file and no line. The
+    // engine's own aggregate string stands a placeholder location in its place,
+    // which reads as a real position and sends a reader looking for a file that
+    // was never named. The report omits the location instead.
+    QVERIFY2(!outcome.diagnostic.contains(QStringLiteral(":-1")), qPrintable(outcome.diagnostic));
 }
 
 void ShellLoaderTest::anUncompilableSceneReportsItsLocatedEngineErrors() {
@@ -361,10 +369,6 @@ void ShellLoaderTest::anUncompilableSceneReportsItsLocatedEngineErrors() {
              qPrintable(outcome.diagnostic));
     QVERIFY2(outcome.diagnostic.contains(moduleName), qPrintable(outcome.diagnostic));
     QVERIFY2(!outcome.diagnostic.contains(QLatin1Char('\n')), qPrintable(outcome.diagnostic));
-
-    // The engine's own aggregate string prefixes a placeholder location for an
-    // error that has none; a located error must not gain one.
-    QVERIFY2(!outcome.diagnostic.contains(QStringLiteral(":-1")), qPrintable(outcome.diagnostic));
 }
 
 void ShellLoaderTest::theReportNamesTheSceneUrlWhenTheEngineSuppliesOne() {
