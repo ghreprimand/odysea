@@ -61,6 +61,23 @@ sanitizer smoke launches.
 
 ---
 
+## 2026-08-01 -- Correct commit attribution metadata
+
+Published `main` history was rewritten so every author and committer resolves
+to the repository owner's verified GitHub no-reply identity. The rewrite
+preserved all 64 file trees, commit messages, author and committer timestamps,
+merge-parent topology, and application content; only attribution metadata and
+the resulting commit identifiers changed. The remote tip moved from
+`c49df3d` to `237cff7` with an exact force-with-lease check.
+
+Verification repeated against the rewritten tree: all 27 release tests passed,
+including static analysis and the public-repository guard; all 26 enabled
+ASan/UBSan tests passed; release and sanitizer smoke launches remained alive
+and silent. GitHub resolves the rewritten tip to the repository owner for both
+author and committer and reports no unrelated contributor identity.
+
+---
+
 ## 2026-07-31 -- Storage Tube presentation pipeline
 
 The screen-effect levels now render. The shell frame draws crisp, a
