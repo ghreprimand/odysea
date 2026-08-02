@@ -81,6 +81,44 @@ else
     report fail "a trailer inside a comment line is ignored"
 fi
 
+# The configured hook path must resolve from a linked worktree and from a
+# subdirectory, not only from the repository root. Git resolves a relative
+# core.hooksPath against the current working directory, so a relative value
+# leaves every worktree unprotected while still looking configured.
+configured_hooks_path="$(git config --get core.hooksPath || true)"
+if [[ -z "$configured_hooks_path" ]]; then
+    report fail "core.hooksPath is configured (run tools/install_hooks.sh)"
+elif [[ "$configured_hooks_path" != /* ]]; then
+    report fail "core.hooksPath is absolute so it resolves from any directory"
+else
+    report pass "core.hooksPath is absolute so it resolves from any directory"
+
+    for required in pre-commit commit-msg pre-push; do
+        if [[ -x "${configured_hooks_path}/${required}" ]]; then
+            report pass "the configured ${required} hook is present and executable"
+        else
+            report fail "the configured ${required} hook is present and executable"
+        fi
+    done
+
+    # Prove enforcement actually reaches a linked worktree.
+    worktree="${scratch}-worktree"
+    if git -C "$scratch" worktree add -q -b selftest-probe "$worktree" >/dev/null 2>&1; then
+        echo probe >"${worktree}/probe.txt"
+        git -C "$worktree" add -A
+        if git -C "$worktree" -c user.email="$unscoped_identity" \
+            commit -qm "unscoped identity in a worktree" 2>/dev/null; then
+            report fail "an unscoped identity is rejected inside a linked worktree"
+        else
+            report pass "an unscoped identity is rejected inside a linked worktree"
+        fi
+        git -C "$scratch" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+        git -C "$scratch" branch -D selftest-probe >/dev/null 2>&1 || true
+    else
+        report fail "a linked worktree can be created for the enforcement probe"
+    fi
+fi
+
 if ((failures != 0)); then
     echo "hooks_selftest: failed" >&2
     exit 1

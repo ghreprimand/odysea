@@ -7,6 +7,28 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Resolve hooks from any working directory
+
+The hook path is now configured as an absolute path. Git resolves a relative
+`core.hooksPath` against the current working directory rather than the
+repository root, so the previous relative value found no hooks whenever work
+happened in a linked worktree or a subdirectory: enforcement appeared
+configured while nothing ran. A commit carrying a deliberately incorrect
+identity was accepted in a linked worktree before this change and is rejected
+after it.
+
+`tools/install_hooks.sh` now resolves the main checkout through the common
+Git directory, so the recorded path stays valid when the command is run from a
+worktree that will later be removed. The hooks self-test gained four checks:
+the configured path is absolute, each required hook is present and executable
+at that path, and an incorrect identity is rejected from inside a real linked
+worktree.
+
+Verification: release 28/28, ASan/UBSan 27/27 enabled, warning-clean builds,
+all guards green, and silent release smoke launch.
+
+---
+
 ## 2026-08-02 -- Enforce owner-only commit attribution
 
 The public-repository guard now requires the account-scoped GitHub no-reply

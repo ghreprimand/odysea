@@ -4,23 +4,35 @@
 #
 # Hooks live under .git/, which is never cloned, so a fresh checkout starts
 # with no enforcement at all. Running this once per clone activates the tracked
-# hooks; `core.hooksPath` is repository-local configuration, so it applies to
-# this checkout and every worktree attached to it.
+# hooks.
+#
+# The configured path is absolute on purpose. Git resolves a relative
+# `core.hooksPath` against the current working directory rather than the
+# repository root, so a relative value silently finds nothing whenever work
+# happens in a linked worktree or any subdirectory — the hooks appear
+# configured while enforcing nothing. Because `core.hooksPath` is stored in the
+# shared repository config, one absolute value covers the main checkout and
+# every linked worktree.
 set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
-hooks_directory="tools/hooks"
+# In a linked worktree, --show-toplevel is that worktree. Resolve the main
+# checkout so the hook path never points inside a worktree that will be removed.
+common_directory="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+main_checkout="$(dirname "$common_directory")"
 
-if [[ ! -d "${repository_root}/${hooks_directory}" ]]; then
+hooks_directory="${main_checkout}/tools/hooks"
+
+if [[ ! -d "$hooks_directory" ]]; then
     echo "install_hooks: ${hooks_directory} is missing" >&2
     exit 1
 fi
 
-chmod +x "${repository_root}/${hooks_directory}"/*
+chmod +x "${hooks_directory}"/*
 
 git -C "$repository_root" config core.hooksPath "$hooks_directory"
 
 echo "install_hooks: hooks enabled from ${hooks_directory}"
-for hook in "${repository_root}/${hooks_directory}"/*; do
+for hook in "${hooks_directory}"/*; do
     echo "  $(basename "$hook")"
 done
