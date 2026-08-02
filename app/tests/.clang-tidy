@@ -1,0 +1,13 @@
+# Static-analysis policy for the Qt test translation units.
+#
+# Inherits the repository policy and removes one check that cannot be satisfied
+# here. A Qt test case is a private slot invoked through the meta-object system,
+# which cannot invoke a static member function. Converting one as suggested
+# removes the case from the run while leaving the file compiling and the suite
+# green, so the advice is not merely noisy here but actively unsafe.
+#
+# This exclusion is scoped to this directory. The same check stays enabled for
+# application and core sources, where its advice is sound.
+InheritParentConfig: true
+Checks: >
+  -readability-convert-member-functions-to-static

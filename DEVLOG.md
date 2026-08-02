@@ -7,6 +7,46 @@ and architecture decisions.
 
 ---
 
+## 2026-08-02 -- Make a new static-analysis diagnostic visible
+
+The static-analysis gate passed while printing several hundred advisory
+diagnostics. Zero of them were fatal, so the gate was doing its job by its own
+definition, but a genuinely new diagnostic would have appeared as one unfamiliar
+line among hundreds of unchanged ones. Analysis nobody can read is not a gate.
+
+The check policy already separates the two kinds: `bugprone-*`, owning-memory,
+no-malloc, and the clang analyzer are errors, and the rest are advice. The
+advisory set is now held against a recorded baseline of one count per file and
+check. The gate fails when a file gains a diagnostic it did not have, and
+equally when it sheds one without the baseline being updated, so the recorded
+set can only move downward and cannot quietly drift. Advisory output is
+summarized to a single line; only movement is printed in full.
+
+Counting is per file and check over deduplicated locations. A header is
+re-analyzed by every translation unit that includes it, so counting raw
+emissions would have made the baseline shift whenever an unrelated source
+started including a header, and counting per line would have restated the
+baseline on any edit above a recorded diagnostic.
+
+One category is excluded rather than recorded, scoped to `app/tests`. A Qt test
+case is a private slot invoked through the meta-object system, which cannot
+invoke a static member function; converting one as
+`readability-convert-member-functions-to-static` advises would remove the case
+from the run while leaving the file compiling and the suite green. That is a
+structural conflict, not noise, and the check stays enabled elsewhere — the ten
+occurrences in application sources remain recorded. No category was disabled for
+being loud: the remaining 255 advisory diagnostics stay visible in the baseline
+as work not yet done.
+
+All translation units are now analyzed before the gate reports, so one run lists
+every fatal diagnostic instead of stopping at the first file that has one.
+
+Verification: a planted advisory diagnostic is reported by file, check, and
+count; a planted fatal diagnostic in an application source is reported while a
+later core source is still analyzed in the same run, which is what demonstrates
+the early stop is gone; a hand-edited baseline reproduces both the increased and
+the no-longer-occurring directions.
+
 ## 2026-08-02 -- Give each QML test runner its own directory
 
 Qt Quick Test scans its source directory recursively and offers no exclusion,

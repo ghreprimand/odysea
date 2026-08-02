@@ -104,6 +104,28 @@ These are not optional; they are how the project stays safe in C++:
   the gate to that with throwaway repositories and manifests covering an
   omitted scene, a renamed entry, a renamed file, a stale entry, an absent
   manifest, an empty corpus, and a scene that cannot be a type.
+- Static analysis separates fatal from advisory checks. `.clang-tidy` promotes
+  the categories that indicate real defects — `bugprone-*`, owning-memory,
+  no-malloc, and the clang analyzer — to errors; those fail the gate outright.
+  Every remaining enabled check is advisory and is held against
+  `tools/clang_tidy_baseline.txt`, which records one count per file and check.
+  The gate fails when a file gains a diagnostic it did not have and equally
+  when it sheds one without the baseline being updated, so the recorded set can
+  only move downward. Fix a new diagnostic rather than recording it; after
+  genuinely removing one, regenerate with
+  `bash tools/check_clang_tidy.sh <build-directory> --update-baseline` and
+  commit the smaller baseline. Advisory diagnostics are summarized rather than
+  reprinted, because several hundred unchanged lines on every run hide the one
+  that is new. All translation units are analyzed before the gate reports, so a
+  single run lists every fatal diagnostic instead of stopping at the first.
+- An advisory check is disabled only where it cannot be satisfied, never
+  because it is loud, and the reason is recorded next to the exclusion.
+  `app/tests/.clang-tidy` is the only such exclusion: a Qt test case is a
+  private slot invoked through the meta-object system, which cannot invoke a
+  static member function, so converting one as
+  `readability-convert-member-functions-to-static` suggests removes the case
+  from the run while leaving the suite green. The check stays enabled for
+  application and core sources.
 - Every QML test runner owns a leaf directory that no other runner scans. Qt
   Quick Test scans recursively and offers no exclusion, so a runner aimed at a
   parent of another runner's directory silently adopts its cases: they run
