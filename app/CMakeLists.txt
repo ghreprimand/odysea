@@ -52,11 +52,14 @@ qt_add_qml_module(odysea_shell_qml
         src/theme_palettes.cpp
         src/theme_palettes.hpp
     QML_FILES
+        qml/ActionBar.qml
         qml/AppearancePanel.qml
         qml/BreadcrumbBar.qml
+        qml/ChromeStrip.qml
         qml/DeepFieldGround.qml
         qml/DirectoryGridView.qml
         qml/DirectoryListView.qml
+        qml/DirectoryPane.qml
         qml/EffectBlurPass.qml
         qml/EffectBrightPass.qml
         qml/EffectComposite.qml
@@ -64,7 +67,13 @@ qt_add_qml_module(odysea_shell_qml
         qml/Main.qml
         qml/FilesystemDialogs.qml
         qml/LongFormText.qml
+        qml/PanePlaceholder.qml
         qml/PresentationLayer.qml
+        qml/ShellButton.qml
+        qml/ShellTextField.qml
+        qml/ShellToolBar.qml
+        qml/StatusBar.qml
+        qml/TabStrip.qml
         qml/VectorIcon.qml
         qml/WellMaskLayer.qml
     RESOURCES
@@ -181,6 +190,24 @@ target_link_libraries(odysea_shell_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME shell_input_parity COMMAND odysea_shell_tests)
+
+# The reusable chrome components, each instantiated standalone against a
+# recording model stand-in. A component that silently depends on the shell
+# scene fails here even while the full-shell suites stay green, so this is
+# the gate that keeps the components genuinely reusable.
+qt_add_executable(odysea_component_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_component_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/components")
+
+target_link_libraries(odysea_component_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_components COMMAND odysea_component_tests)
 
 # The presentation-pipeline tests run on the default RHI scene graph so the
 # effect chain actually renders. The uniform-binding assertions hold on any
@@ -307,8 +334,9 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 # does, while a deliberate project leak in the same code path stays fatal: the
 # suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
-    shell_input_parity shell_thumbnail_render shell_entry_interactions
-    shell_load_diagnostic app_theme_controller shell_presentation_fallback
+    shell_input_parity shell_components shell_thumbnail_render
+    shell_entry_interactions shell_load_diagnostic app_theme_controller
+    shell_presentation_fallback
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
