@@ -17,6 +17,56 @@ the archive.
 
 ---
 
+## 2026-08-03 -- Shared context-aware action system
+
+Every user-facing action is now declared once, in a registry the whole shell
+renders from. A declaration carries the action's identity, label, icon role,
+destructive classification, applicable surfaces, enablement, key sequences,
+and handler together; menus, toolbar and action-row buttons, the tab strip,
+pane surfaces, and the shortcut table all consume the same declaration, so a
+surface can no longer gate or word an action differently from the rest of the
+shell. The previous structure had already demonstrated the failure mode this
+removes: the entry menu, the keyboard menu, and the toolbar each carried their
+own enablement expressions until a gate caught one drifting.
+
+Enablement is computed from an immutable context snapshot — a frozen object
+keyed by kind and target path or index — and never from the asking surface.
+Live capabilities are read at evaluation rather than captured, and triggering
+revalidates enablement before the handler runs, so a stale menu or a shortcut
+on a contextually dead action is a safe no-op. Each pane, the tab strip, and
+the inactive-pane placeholder host one shared menu instance parameterized per
+invocation; keyboard invocations anchor it to the focused item, never a
+pointer position. Destructive actions render last, after a separator, with
+labels stating the exact target count. Disabled actions stay visible, render
+disabled with an accessible reason, and are skipped by menu key navigation.
+Blank-canvas menus open from a right press on the empty region below the
+entries — mirroring the rubber-band area's geometry rather than restating
+it — and from the menu key when no entry is current. Breadcrumb, Places, and
+device surface kinds are declared with location actions ready for the
+navigation chrome that consumes them, and the registry enumerates and filters
+labeled actions for the command palette that lands next.
+
+The shortcut table is instantiated from the declarations, one `Shortcut` per
+declared sequence, with a numbered family (tab ordinals) declared as one
+action carrying per-sequence arguments. A sequence declared by two actions is
+a test failure. A dedicated suite covers registry mechanics, cross-surface
+enablement equality, trigger revalidation, destructive ordering and counts,
+context immutability, palette enumeration, and the shared menu's rendering,
+live re-enablement, focus restoration, and per-context rebuild; the parity
+and component suites assert the same declarations through the rendered shell
+and the standalone chrome.
+
+Verification covered warning-clean release and sanitizer builds, both full
+test suites including the real-GPU presentation entry, C++ and QML
+formatting, QML lint/module/runner-scope checks, public-repository and
+file-length guards, and silent software and OpenGL RHI smoke launches.
+Deliberate defects were planted and caught before restoration: a duplicated
+key sequence failed the conflict case, an inverted enablement predicate
+failed the action, component, and parity suites together, and a keyboard menu
+re-anchored to a pointer-style position failed the anchoring case.
+
+---
+
 ## 2026-08-03 -- Split the development record by calendar month
 
 The development record is now a live file plus a dated archive. `DEVLOG.md`

@@ -157,6 +157,27 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   single clip level and identity transforms. New surfaces build on these
   components instead of restyling primitives inline, so palette, density,
   scale, and contrast changes restyle every surface from one definition.
+- **Shared action system.** Every user-facing action — over an entry, a
+  selection, blank canvas, a path segment, a Places shortcut, a device, a tab,
+  or a pane — is declared exactly once, carrying its label, icon role,
+  enablement, key sequences, and handler together. Menus, toolbar buttons, the
+  tab strip, pane surfaces, the instantiated shortcut table, and the command
+  palette all render from these declarations through one registry; no surface
+  restates enablement or wording, because duplicated enablement logic has
+  already been observed to drift between a menu and a toolbar until a gate
+  caught it. Enablement is a function of the action and a context snapshot
+  only — never of which surface is asking — and is revalidated when an action
+  triggers, so a stale popup or a key press on a contextually dead action is a
+  safe no-op rather than an unauthorized operation. Context snapshots are
+  immutable frozen objects keyed by kind and target identity (path or index);
+  capabilities are read live at evaluation and never snapshotted. Each hosting
+  surface owns one shared menu instance parameterized per invocation rather
+  than a popup per realized delegate; keyboard-invoked menus anchor to the
+  focused item, never to a pointer position; disabled actions render visibly
+  disabled and are skipped by menu key navigation rather than hidden; and
+  destructive actions state their exact target count and render last, after a
+  separator. Key sequences are declared with their actions, and a sequence
+  declared by two actions is a test failure, not a runtime shadowing surprise.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 
