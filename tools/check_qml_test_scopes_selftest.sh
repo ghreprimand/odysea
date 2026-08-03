@@ -43,9 +43,8 @@ build_project() {
     local build_file="$root/CMakeLists.txt"
     : >"$build_file"
 
-    local entry relative marker argument
-    for ((argument = 1; argument <= $#; argument++)); do
-        entry="${!argument}"
+    local entry relative marker
+    for entry in "$@"; do
         relative="${entry%%:*}"
         marker=""
         [[ "$entry" == *:* ]] && marker="${entry##*:}"

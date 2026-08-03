@@ -49,14 +49,13 @@ done < <(sed -n "s|.*${scope_pattern}\([^\"]*\)\".*|\1|p" "$build_file")
 
 # A parse that finds nothing would report success over an unexamined file, which
 # is the same vacuous pass this gate exists to reject.
-if ((${#scopes[*]} == 0)); then
+if ((${#scopes[@]} == 0)); then
     printf 'qml_test_scopes: no QML test scopes found in %s\n' "$build_file" >&2
     exit 1
 fi
 
 # Every scope must exist and must actually hold cases for its runner to execute.
-for ((index = 0; index < ${#scopes[*]}; index++)); do
-    relative="${scopes[index]}"
+for relative in "${scopes[@]}"; do
     absolute="$source_directory/$relative"
     if [[ ! -d "$absolute" ]]; then
         printf 'qml_test_scopes: %s scans %s, which does not exist\n' \
@@ -73,7 +72,7 @@ done
 
 # No scope may contain another. Comparing with a trailing separator keeps a
 # sibling whose name merely starts with another's from matching.
-scope_count="${#scopes[*]}"
+scope_count="${#scopes[@]}"
 for ((outer = 0; outer < scope_count; outer++)); do
     for ((inner = 0; inner < scope_count; inner++)); do
         ((outer != inner)) || continue

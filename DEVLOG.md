@@ -7,6 +7,49 @@ and architecture decisions.
 
 ---
 
+## 2026-08-03 -- Permit shell expansion syntax under the at-sign ban
+
+The public-repository guard banned the at-sign in every tracked file, and shell
+expansion syntax cannot be written without it. Two consecutive gate scripts had
+therefore been written with index loops and star subscripts in place of the
+array-at and positional forms. Nothing was broken by that: every element read
+was quoted, and the star form is equivalent where only a count is taken. The
+cost was that the guard steered contributors away from the one correct idiom
+for arguments that contain spaces, which eventually produces a defect that
+looks like a bug in the script rather than a consequence of the rule.
+
+The ban is now lifted for the syntax rather than for the files that contain it.
+Permitted: the array-at subscript inside a parameter expansion, the braced
+positional form, and the bare positional form, which covers the quoted and
+unquoted spellings because the quotes sit outside the token. Every other
+at-sign in a shell file is still rejected, and the ban is unchanged everywhere
+else.
+
+Excluding whole files was considered and rejected. An excluded file is one the
+guard stops reading, and the exclusion list would have grown by one entry per
+script until the rule survived only in the comment describing it. The scan
+instead removes the permitted forms from a line and reads what is left, so an
+address sitting beside a legitimate expansion on the same line, or two lines
+below one, is still reported.
+
+The three scripts that had been written around the ban are restored to the
+natural idiom, so the permitted forms are exercised by ordinary use rather than
+only by tests.
+
+The guard had no self-test. It has one now, covering both directions: the six
+permitted forms are accepted, and an address is rejected on its own, beside an
+expansion on one line, in a file that also contains permitted forms, and in a
+non-shell file. Each scenario asserts the specific reason for rejection, so a
+case cannot pass because an unrelated check happened to fire. The planted
+address is composed at run time from its byte value, because a literal one in
+the tracked self-test would have required exactly the file-level exclusion the
+carve-out exists to avoid; the permitted forms in that file are written out
+literally, so its own tracked text is part of what it demonstrates.
+
+Verification: removing the shell scan, excusing a whole line, excusing a whole
+file, and restoring the blanket ban each fail the self-test, in the first three
+cases on the negative scenarios and in the last on the permitted forms.
+
 ## 2026-08-02 -- Make a new static-analysis diagnostic visible
 
 The static-analysis gate passed while printing several hundred advisory

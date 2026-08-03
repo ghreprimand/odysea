@@ -146,11 +146,11 @@ fi
 
 status=0
 
-if ((${#failed_units[*]} > 0)); then
+if ((${#failed_units[@]} > 0)); then
     printf 'static_analysis: %d translation units reported fatal diagnostics:\n' \
-        "${#failed_units[*]}" >&2
-    for ((failed_index = 0; failed_index < ${#failed_units[*]}; failed_index++)); do
-        printf '  %s\n' "${failed_units[failed_index]}" >&2
+        "${#failed_units[@]}" >&2
+    for unit in "${failed_units[@]}"; do
+        printf '  %s\n' "$unit" >&2
     done
     grep -E '(error|warning): .*\[(bugprone-|cppcoreguidelines-owning-memory|cppcoreguidelines-no-malloc|clang-analyzer-)' \
         "$raw_output" | sed "s|^${repository_root}/||" | sort -u >&2 || true

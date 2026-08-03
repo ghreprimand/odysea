@@ -176,6 +176,21 @@ release artifact as published material.
   references, internal workflow narration, unsafe commit attribution,
   `Co-Authored-By` trailers, and at-signs in tracked text. Public clone links use
   HTTPS so email-like syntax is unnecessary.
+- The at-sign ban is lifted for shell expansion syntax, which cannot be written
+  without it: the array-at subscript inside a parameter expansion, the braced
+  positional form, and the bare positional form, which covers both the quoted
+  and unquoted spellings. Write those forms normally instead of substituting
+  index loops or star subscripts, which is what the unqualified ban used to
+  force. Every other at-sign in a shell file is still rejected, including in
+  a comment or a string, and the ban stays blanket in
+  every other file. The exception is granted to the syntax, not to the file: a
+  line is scanned again with the permitted forms removed, so an address beside
+  a legitimate expansion is still caught. Whole-file exclusions were rejected
+  because each one stops the guard reading the rest of that file, and the list
+  would grow one entry per script until the rule lived only in its own comment.
+  `public_repository_guard_self_test` holds both directions, since an
+  unexercised carve-out would let the guard keep reporting success after the
+  exception had swallowed the rule.
 
 ## Engineering record
 

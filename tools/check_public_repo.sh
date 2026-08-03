@@ -45,8 +45,41 @@ self_excluding_pathspec=(
     ':(exclude)tools/hooks/*'
 )
 
+# Shell expansion syntax requires the at-sign, so the ban on it is lifted for
+# those forms alone rather than for the files that contain them. The permitted
+# forms are the array-at subscript inside a parameter expansion, the braced
+# positional form, and the bare positional form, which covers both the quoted
+# and unquoted spellings because the quotes sit outside the token.
+#
+# A file-level exclusion was rejected. Excluding a shell file wholesale would
+# stop the guard reading the rest of it, and the exclusion list would grow one
+# entry per script until the ban existed only in the comment describing it. A
+# syntax-level carve-out keeps every other at-sign in those files banned: a
+# line is scanned again after the permitted forms are removed, so an address
+# sitting beside a legitimate expansion on the same line is still caught.
+#
+# The alternation is written with bracket expressions because a brace carries
+# interval meaning in an extended regular expression.
+permitted_shell_expansion_re='[$][{]#?[A-Za-z_][A-Za-z0-9_]*[[]@[]]|[$][{]@[^}]*[}]|[$]@'
+
 report_matches "email-like or user-at-host text is tracked" \
-    git grep --cached -nI -E '@' -- "${self_excluding_pathspec[@]}"
+    git grep --cached -nI -E '@' -- "${self_excluding_pathspec[@]}" \
+    ':(exclude)*.sh'
+
+# Shell sources are scanned with the permitted expansion forms removed first.
+# Anything still holding an at-sign afterwards is text, not syntax.
+shell_at_sign_matches="$(
+    git grep --cached -nI -E '@' -- '*.sh' \
+        ':(exclude)tools/check_public_repo.sh' \
+        ':(exclude)tools/check_hooks_selftest.sh' 2>/dev/null |
+        sed -E "s/${permitted_shell_expansion_re}//g" |
+        grep -E '@' || true
+)"
+if [[ -n "$shell_at_sign_matches" ]]; then
+    printf 'public_repository_guard: email-like or user-at-host text is tracked in a shell file\n%s\n' \
+        "$shell_at_sign_matches" >&2
+    failed=1
+fi
 
 report_matches "personal home-directory path is tracked" \
     git grep --cached -nI -E '(/home/[^/[:space:]]+|/Users/[^/[:space:]]+|[A-Za-z]:\\Users\\[^\\[:space:]]+)' \
