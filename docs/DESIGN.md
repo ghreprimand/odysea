@@ -82,6 +82,22 @@ terminal file manager. Achieving both at once is a deliberate design target.
   creates a sibling duplicate without replacing the source. Breadcrumbs expose
   every absolute path segment, including the filesystem root, through pointer
   and keyboard paths in a horizontally scrollable strip.
+- **Calm path orientation.** Normal browsing keeps the path surface to
+  breadcrumbs and quiet Location and Places affordances. `Ctrl+L` or the
+  Location button summons a full editor. Hiding a changed editor retains its
+  draft and marks that retained state; only a successful navigation replaces
+  it. Direct entry accepts absolute paths and `~/` expansion, completes the
+  next directory segment inline, and reports invalid, missing, non-directory,
+  or unreadable destinations through the shared status surface without
+  changing location.
+- **Places, recents, and tree jumps.** Places are user-orderable shortcuts that
+  can be added and removed with pointer controls or keyboard actions. Recent
+  destinations are newest-first, de-duplicated, bounded to twelve entries, and
+  explicitly clearable. Breadcrumb ancestors, Places, and recents all jump
+  directly to their immutable path instead of walking intermediate folders.
+  Breadcrumb and Place context requests expose stable path snapshots and
+  visual anchors to the shell-wide action registry; navigation chrome does not
+  declare private context menus.
 - **Parity rule for contributors.** No primary action may be keyboard-only or
   mouse-only. When a feature adds an interaction, it is wired for both paths.
 - **Views.** Planned view models include a single-pane list/grid, a dual-pane
@@ -238,10 +254,14 @@ there is no apply step.
   weight under high contrast. Normal dark-palette icon ink remains below the
   Strong bright-pass threshold so orientation chrome does not become an
   unintended emitter; high contrast deliberately promotes it to primary text.
-- **Versioned persistence.** Preferences serialize to a small key=value file.
+- **Versioned persistence.** Appearance, accessibility, Places, and recent
+  navigation preferences serialize to one small key=value file, so independent
+  surfaces cannot overwrite each other through competing stores. Repeated
+  navigation values use percent encoding and explicit counts, preserving UTF-8
+  labels and paths while making malformed or incomplete lists fall back safely.
   The write goes through a sibling temporary file and a rename, so a reader
   never observes a partially written file; durability across power loss and
-  coordination between concurrent writers are out of scope for appearance
+  coordination between concurrent writers are out of scope for preference
   state. Parsing is tolerant: unknown keys are ignored on load — and are not
   preserved by the next write — malformed and non-finite values keep their
   defaults, out-of-range values clamp, control characters never enter a

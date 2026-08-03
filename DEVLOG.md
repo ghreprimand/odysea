@@ -102,6 +102,36 @@ backends.
 
 ---
 
+## 2026-08-03 -- Add calm path orientation and direct navigation
+
+The always-visible address field is replaced by a reusable path navigator that
+keeps breadcrumbs calm during ordinary browsing. Ctrl+L and the Location
+button summon the full editor; Escape or the Hide button returns to the calm
+surface while retaining and advertising an unfinished draft. Absolute and
+tilde-prefixed input is validated before navigation, invalid destinations
+report through the existing status surface, and next-segment directory
+completion is accepted with Tab or its visible pointer control.
+
+The same component provides configurable Places and recent destinations.
+Places can be added, removed, and reordered from pointer controls or keyboard
+actions. Recents are newest-first, de-duplicated, bounded, and clearable from
+both input modes. Breadcrumb ancestors, Places, and recents jump directly to
+their stored path. Breadcrumb and Place context requests expose immutable path
+data and focused anchors for the shared action registry without introducing
+private menus.
+
+Appearance and navigation preferences now share the existing versioned file.
+Counted, percent-encoded Place and recent records preserve arbitrary UTF-8
+labels and absolute paths, cap collection sizes, ignore duplicates, and fall
+back safely when stored values are unknown, incomplete, or corrupt. Defaults
+contain only the filesystem root; user- and machine-specific paths are learned
+at runtime and no such values appear in tracked fixtures.
+
+Verification covered warning-clean release and sanitizer builds, complete core,
+adapter, component, and rendered-shell tests, scoped static analysis, C++ and
+QML formatting, QML lint/module/runner-scope checks, repository-safety and
+file-length guards, and silent software and OpenGL smoke launches.
+
 ## 2026-08-03 -- Close entry-interaction parity gaps
 
 Context menus now use one shared popup per list or grid instead of constructing

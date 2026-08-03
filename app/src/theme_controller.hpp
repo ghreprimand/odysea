@@ -15,6 +15,8 @@
 #include <QQmlEngine>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include "odysea/core/appearance.hpp"
 
@@ -90,6 +92,13 @@ class ThemeController : public QObject {
     Q_PROPERTY(int longFormFontPixelSize READ longFormFontPixelSize NOTIFY appearanceChanged)
     Q_PROPERTY(qreal longFormLineHeight READ longFormLineHeight NOTIFY appearanceChanged)
     Q_PROPERTY(int longFormMeasure READ longFormMeasure NOTIFY appearanceChanged)
+
+    // Navigation preferences share the same versioned settings object and
+    // file as appearance. This prevents two independent writers from
+    // clobbering one another while keeping the filesystem core Qt-free.
+    Q_PROPERTY(QVariantList places READ places NOTIFY navigationSettingsChanged)
+    Q_PROPERTY(
+        QStringList recentDestinations READ recentDestinations NOTIFY navigationSettingsChanged)
 
     // Color roles, resolved from the active family and the high-contrast
     // override.
@@ -204,6 +213,14 @@ class ThemeController : public QObject {
     [[nodiscard]] qreal longFormLineHeight() const;
     [[nodiscard]] int longFormMeasure() const;
 
+    [[nodiscard]] QVariantList places() const;
+    [[nodiscard]] QStringList recentDestinations() const;
+    Q_INVOKABLE bool addPlace(const QVariantMap& place);
+    Q_INVOKABLE bool removePlace(int index);
+    Q_INVOKABLE bool movePlace(int from, int to);
+    Q_INVOKABLE bool recordRecentDestination(const QString& path);
+    Q_INVOKABLE bool clearRecentDestinations();
+
     [[nodiscard]] QColor background() const;
     [[nodiscard]] QColor backgroundDeep() const;
     [[nodiscard]] QColor well() const;
@@ -236,6 +253,7 @@ class ThemeController : public QObject {
 
   signals:
     void appearanceChanged();
+    void navigationSettingsChanged();
     void storagePathChanged();
 
   private:

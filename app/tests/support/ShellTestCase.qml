@@ -40,6 +40,9 @@ TestCase {
         property int activatedRow: -1
         property int navigateToPathCalls: 0
         property string navigatedPath: ""
+        property int navigateFromInputCalls: 0
+        property string navigationInput: ""
+        property bool navigationInputAccepted: true
         property int dropSelectionCalls: 0
         property string dropDestination: ""
         property bool dropMove: false
@@ -146,6 +149,28 @@ TestCase {
             navigateToPathCalls += 1;
             navigatedPath = destination;
             path = destination;
+        }
+        function navigateFromInput(input) {
+            navigateFromInputCalls += 1;
+            navigationInput = input;
+            if (navigationInputAccepted) {
+                path = input;
+            }
+            return navigationInputAccepted;
+        }
+        function navigationCompletion(input) {
+            if (input.endsWith("/sa")) {
+                return {
+                    "completed": input + "mple/",
+                    "suffix": "mple/",
+                    "candidates": ["sample"]
+                };
+            }
+            return {
+                "completed": input,
+                "suffix": "",
+                "candidates": []
+            };
         }
         function collectSelectedFileUrls() {
             const urls = [];
@@ -327,6 +352,9 @@ TestCase {
             activatedRow = -1;
             navigateToPathCalls = 0;
             navigatedPath = "";
+            navigateFromInputCalls = 0;
+            navigationInput = "";
+            navigationInputAccepted = true;
             dropSelectionCalls = 0;
             dropDestination = "";
             dropMove = false;
@@ -393,6 +421,14 @@ TestCase {
         fakeModelObject.operationErrorString = "";
         shellWindow.gridMode = false;
         shellWindow.clearTypeAhead();
+        const pathNavigator = findChild(shellWindow.contentItem, "pathNavigator");
+        pathNavigator.editing = false;
+        pathNavigator.retainedDraft = false;
+        pathNavigator.draftText = fakeModelObject.path;
+        const locationsPopup = findChild(shellWindow, "locationsPopup");
+        if (locationsPopup !== null) {
+            locationsPopup.close();
+        }
         populateRows(4);
         fakeModelObject.resetTelemetry();
     }

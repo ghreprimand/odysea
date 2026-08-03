@@ -12,6 +12,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <atomic>
 #include <cstdint>
@@ -117,6 +118,9 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void activate(int row);
     Q_INVOKABLE void activateCurrent();
     Q_INVOKABLE void navigateToPath(const QString& path);
+    Q_INVOKABLE bool navigateFromInput(const QString& input);
+    Q_INVOKABLE static QVariantMap navigationCompletion(const QString& input);
+    [[nodiscard]] static QString resolveNavigationInput(const QString& input);
     Q_INVOKABLE QVariantList breadcrumbSegments() const;
     [[nodiscard]] QStringList selectedFileUrls() const;
     Q_INVOKABLE bool rowSelected(int row) const;

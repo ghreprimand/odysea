@@ -8,8 +8,11 @@
 
 #include "theme_palettes.hpp"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QList>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
@@ -61,6 +64,14 @@ namespace {
 
 [[nodiscard]] int scaled(int base, qreal factor) noexcept {
     return std::max(1, static_cast<int>(std::lround(base * factor)));
+}
+
+[[nodiscard]] QString cleanNavigationPath(const QString& path) {
+    const QString trimmed = path.trimmed();
+    if (trimmed.isEmpty() || !QDir::isAbsolutePath(trimmed)) {
+        return {};
+    }
+    return QDir::cleanPath(trimmed);
 }
 
 /// The preferred fixed-width families, tried in order. The first entry is the
@@ -139,6 +150,7 @@ void ThemeController::setStoragePath(const QString& path) {
         // A read failure keeps the shipped defaults; the next change writes a
         // fresh file. Appearance state is never worth failing startup over.
         emit appearanceChanged();
+        emit navigationSettingsChanged();
     }
     emit storagePathChanged();
 }
@@ -468,6 +480,111 @@ int ThemeController::longFormMeasure() const {
     return scaled(densityLongFormMeasure(settings_.density), settings_.scale);
 }
 
+QVariantList ThemeController::places() const {
+    QVariantList result;
+    result.reserve(static_cast<qsizetype>(settings_.places.size()));
+    for (const core::NavigationPlace& place : settings_.places) {
+        QVariantMap value;
+        value.insert(QStringLiteral("label"), QString::fromStdString(place.label));
+        value.insert(QStringLiteral("path"), QString::fromStdString(place.path));
+        result.push_back(value);
+    }
+    return result;
+}
+
+QStringList ThemeController::recentDestinations() const {
+    QStringList result;
+    result.reserve(static_cast<qsizetype>(settings_.recent_destinations.size()));
+    for (const std::string& path : settings_.recent_destinations) {
+        result.push_back(QString::fromStdString(path));
+    }
+    return result;
+}
+
+bool ThemeController::addPlace(const QVariantMap& place) {
+    const QString cleanPath = cleanNavigationPath(place.value(QStringLiteral("path")).toString());
+    if (cleanPath.isEmpty()) {
+        return false;
+    }
+    const std::string storedPath = cleanPath.toStdString();
+    if (std::ranges::any_of(settings_.places, [&storedPath](const core::NavigationPlace& stored) {
+            return stored.path == storedPath;
+        })) {
+        return false;
+    }
+
+    QString cleanLabel = place.value(QStringLiteral("label")).toString().trimmed();
+    if (cleanLabel.isEmpty()) {
+        cleanLabel = QFileInfo(cleanPath).fileName();
+        if (cleanLabel.isEmpty()) {
+            cleanLabel = tr("Filesystem");
+        }
+    }
+    core::AppearanceSettings next = settings_;
+    next.places.push_back(
+        core::NavigationPlace{.label = cleanLabel.toStdString(), .path = storedPath});
+    next = core::clamp_appearance(next);
+    if (next == settings_) {
+        return false;
+    }
+    settings_ = std::move(next);
+    persist();
+    emit navigationSettingsChanged();
+    return true;
+}
+
+bool ThemeController::removePlace(int index) {
+    if (index < 0 || std::cmp_greater_equal(index, settings_.places.size())) {
+        return false;
+    }
+    settings_.places.erase(settings_.places.begin() + index);
+    persist();
+    emit navigationSettingsChanged();
+    return true;
+}
+
+bool ThemeController::movePlace(int from, int to) {
+    const int count = static_cast<int>(settings_.places.size());
+    if (from < 0 || from >= count || to < 0 || to >= count || from == to) {
+        return false;
+    }
+    core::NavigationPlace place = std::move(settings_.places.at(static_cast<std::size_t>(from)));
+    settings_.places.erase(settings_.places.begin() + from);
+    settings_.places.insert(settings_.places.begin() + to, std::move(place));
+    persist();
+    emit navigationSettingsChanged();
+    return true;
+}
+
+bool ThemeController::recordRecentDestination(const QString& path) {
+    const QString cleanPath = cleanNavigationPath(path);
+    if (cleanPath.isEmpty()) {
+        return false;
+    }
+    const std::string storedPath = cleanPath.toStdString();
+    core::AppearanceSettings next = settings_;
+    std::erase(next.recent_destinations, storedPath);
+    next.recent_destinations.insert(next.recent_destinations.begin(), storedPath);
+    next = core::clamp_appearance(next);
+    if (next == settings_) {
+        return false;
+    }
+    settings_ = std::move(next);
+    persist();
+    emit navigationSettingsChanged();
+    return true;
+}
+
+bool ThemeController::clearRecentDestinations() {
+    if (settings_.recent_destinations.empty()) {
+        return false;
+    }
+    settings_.recent_destinations.clear();
+    persist();
+    emit navigationSettingsChanged();
+    return true;
+}
+
 QColor ThemeController::lifted(const QColor& ink) const {
     // Text lift is the palette-side half of the presentation pipeline: it
     // multiplies chromatic inks toward white, which both brightens them and
@@ -615,6 +732,7 @@ void ThemeController::resetToDefaults() {
     persist();
     if (changed) {
         emit appearanceChanged();
+        emit navigationSettingsChanged();
     }
 }
 
@@ -638,7 +756,7 @@ void ThemeController::persist() {
     std::error_code ec;
     core::save_appearance(std::filesystem::path(storagePath_.toStdString()), settings_, ec);
     // A failed write leaves the live state authoritative; the next successful
-    // save catches up. Appearance persistence must never interrupt use.
+    // save catches up. Preference persistence must never interrupt use.
 }
 
 } // namespace odysea::app

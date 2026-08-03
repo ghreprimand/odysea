@@ -51,8 +51,9 @@ int main(int argc, char* argv[]) {
     DirectoryListModel model(thumbnailProvider);
     model.setPath(start);
 
-    // Appearance preferences persist in the per-user application config
-    // location. The scene owns the appearance state; it only needs the path.
+    // Appearance and navigation preferences persist together in the per-user
+    // application config location. The scene owns the state and only needs the
+    // path, so no machine-local value enters a tracked fixture.
     const QString themeStorage =
         QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
         QStringLiteral("/appearance.conf");

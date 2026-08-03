@@ -11,8 +11,10 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 
 namespace odysea::core {
 
@@ -29,6 +31,8 @@ constexpr double kTextLiftMax = 1.5;
 constexpr double kScaleMin = 0.75;
 constexpr double kScaleMax = 2.0;
 constexpr double kGlassOpacityMin = 0.2;
+constexpr std::size_t kMaximumStoredLabelLength = 128;
+constexpr std::size_t kMaximumStoredPathLength = 4096;
 
 [[nodiscard]] double clamped(double value, double lo, double hi) noexcept {
     // NaN compares false against both bounds, so std::clamp would pass it
@@ -82,6 +86,90 @@ constexpr double kGlassOpacityMin = 0.2;
         return false;
     }
     return fallback;
+}
+
+[[nodiscard]] std::optional<std::size_t> parse_size(std::string_view text) noexcept {
+    std::size_t value = 0;
+    const char* const first = text.data();
+    const char* const last =
+        first + text.size(); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+    const auto [ptr, err] = std::from_chars(first, last, value);
+    if (err != std::errc() || ptr != last) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+[[nodiscard]] bool is_unreserved(unsigned char byte) noexcept {
+    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+           (byte >= '0' && byte <= '9') || byte == '-' || byte == '_' || byte == '.' ||
+           byte == '~' || byte == '/';
+}
+
+[[nodiscard]] std::string encode_setting_value(std::string_view value) {
+    static constexpr std::string_view hex = "0123456789ABCDEF";
+    std::string encoded;
+    encoded.reserve(value.size());
+    for (const char character : value) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (is_unreserved(byte)) {
+            encoded.push_back(character);
+            continue;
+        }
+        encoded.push_back('%');
+        encoded.push_back(hex.at((byte >> 4U) & 0x0FU));
+        encoded.push_back(hex.at(byte & 0x0FU));
+    }
+    return encoded;
+}
+
+[[nodiscard]] int hex_value(char character) noexcept {
+    if (character >= '0' && character <= '9') {
+        return character - '0';
+    }
+    if (character >= 'A' && character <= 'F') {
+        return character - 'A' + 10;
+    }
+    if (character >= 'a' && character <= 'f') {
+        return character - 'a' + 10;
+    }
+    return -1;
+}
+
+[[nodiscard]] std::optional<std::string> decode_setting_value(std::string_view value) {
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (value.at(index) != '%') {
+            decoded.push_back(value.at(index));
+            continue;
+        }
+        if (index + 2 >= value.size()) {
+            return std::nullopt;
+        }
+        const int high = hex_value(value.at(index + 1));
+        const int low = hex_value(value.at(index + 2));
+        if (high < 0 || low < 0) {
+            return std::nullopt;
+        }
+        decoded.push_back(static_cast<char>((high << 4) | low));
+        index += 2;
+    }
+    return decoded;
+}
+
+[[nodiscard]] std::optional<NavigationPlace> parse_place(std::string_view value) {
+    const std::size_t separator = value.find('|');
+    if (separator == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const std::optional<std::string> label = decode_setting_value(value.substr(0, separator));
+    const std::optional<std::string> path = decode_setting_value(value.substr(separator + 1));
+    if (!label || !path) {
+        return std::nullopt;
+    }
+    return NavigationPlace{.label = *label, .path = *path};
 }
 
 [[nodiscard]] std::string_view trimmed(std::string_view text) noexcept {
@@ -160,6 +248,37 @@ AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept
     result.glass_opacity = clamped(settings.glass_opacity, kGlassOpacityMin, 1.0);
     result.surface_opacity = clamped(settings.surface_opacity, 0.0, 1.0);
     result.custom = clamp_effect_levels(settings.custom);
+
+    result.places.clear();
+    std::unordered_set<std::string> place_paths;
+    for (const NavigationPlace& place : settings.places) {
+        NavigationPlace clean{.label = without_control_characters(place.label),
+                              .path = without_control_characters(place.path)};
+        clean.label.resize(std::min(clean.label.size(), kMaximumStoredLabelLength));
+        clean.path.resize(std::min(clean.path.size(), kMaximumStoredPathLength));
+        if (clean.label.empty() || clean.path.empty() || clean.path.front() != '/' ||
+            !place_paths.insert(clean.path).second) {
+            continue;
+        }
+        result.places.push_back(std::move(clean));
+        if (result.places.size() == AppearanceSettings::maximum_places) {
+            break;
+        }
+    }
+
+    result.recent_destinations.clear();
+    std::unordered_set<std::string> recent_paths;
+    for (const std::string& stored_path : settings.recent_destinations) {
+        std::string clean = without_control_characters(stored_path);
+        clean.resize(std::min(clean.size(), kMaximumStoredPathLength));
+        if (clean.empty() || clean.front() != '/' || !recent_paths.insert(clean).second) {
+            continue;
+        }
+        result.recent_destinations.push_back(std::move(clean));
+        if (result.recent_destinations.size() == AppearanceSettings::maximum_recent_destinations) {
+            break;
+        }
+    }
     return result;
 }
 
@@ -276,11 +395,24 @@ std::string serialize_appearance(const AppearanceSettings& settings) {
     append_key(out, "custom_text_lift", s.custom.text_lift);
     append_key(out, "reduced_motion", s.reduced_motion);
     append_key(out, "high_contrast", s.high_contrast);
+    append_key(out, "places_count", std::to_string(s.places.size()));
+    for (const NavigationPlace& place : s.places) {
+        append_key(out, "place",
+                   encode_setting_value(place.label) + '|' + encode_setting_value(place.path));
+    }
+    append_key(out, "recent_count", std::to_string(s.recent_destinations.size()));
+    for (const std::string& path : s.recent_destinations) {
+        append_key(out, "recent", encode_setting_value(path));
+    }
     return out;
 }
 
 AppearanceSettings parse_appearance(std::string_view text) {
     AppearanceSettings s;
+    std::optional<std::size_t> expected_places;
+    std::optional<std::size_t> expected_recents;
+    std::vector<NavigationPlace> parsed_places;
+    std::vector<std::string> parsed_recents;
     std::string_view rest = text;
     while (!rest.empty()) {
         const size_t newline = rest.find('\n');
@@ -332,8 +464,29 @@ AppearanceSettings parse_appearance(std::string_view text) {
             s.reduced_motion = parse_bool(value, s.reduced_motion);
         } else if (key == "high_contrast") {
             s.high_contrast = parse_bool(value, s.high_contrast);
+        } else if (key == "places_count") {
+            expected_places = parse_size(value);
+        } else if (key == "place" && parsed_places.size() < AppearanceSettings::maximum_places) {
+            if (const std::optional<NavigationPlace> place = parse_place(value)) {
+                parsed_places.push_back(*place);
+            }
+        } else if (key == "recent_count") {
+            expected_recents = parse_size(value);
+        } else if (key == "recent" &&
+                   parsed_recents.size() < AppearanceSettings::maximum_recent_destinations) {
+            if (const std::optional<std::string> path = decode_setting_value(value)) {
+                parsed_recents.push_back(*path);
+            }
         }
         // The version key and unknown keys fall through: tolerated, unused.
+    }
+    if (expected_places && *expected_places <= AppearanceSettings::maximum_places &&
+        parsed_places.size() == *expected_places) {
+        s.places = std::move(parsed_places);
+    }
+    if (expected_recents && *expected_recents <= AppearanceSettings::maximum_recent_destinations &&
+        parsed_recents.size() == *expected_recents) {
+        s.recent_destinations = std::move(parsed_recents);
     }
     return clamp_appearance(s);
 }

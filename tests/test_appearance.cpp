@@ -29,6 +29,10 @@ void test_defaults_are_the_shipped_configuration() {
     check(!s.reduced_motion && !s.high_contrast, "accessibility overrides start off");
     check(s.custom == effect_profile_levels(EffectProfile::Balanced),
           "a fresh custom profile is seeded from balanced");
+    check(s.places ==
+              std::vector<NavigationPlace>{NavigationPlace{.label = "Filesystem", .path = "/"}},
+          "the filesystem root is the only shipped Place");
+    check(s.recent_destinations.empty(), "recent destinations start empty");
 }
 
 void test_profile_presets_are_distinct_and_ordered() {
@@ -130,9 +134,43 @@ void test_serialization_round_trips() {
     s.custom.text_lift = 1.4;
     s.reduced_motion = true;
     s.high_contrast = true;
+    s.places = {NavigationPlace{.label = "Projects | active", .path = "/synthetic/projects"},
+                NavigationPlace{.label = "Archive % 2026", .path = "/synthetic/archive 2026"}};
+    s.recent_destinations = {"/synthetic/projects/alpha", "/synthetic/archive 2026"};
 
     const AppearanceSettings back = parse_appearance(serialize_appearance(s));
     check(back == s, "a serialized settings value parses back identically");
+}
+
+void test_navigation_settings_are_bounded_and_tolerant() {
+    AppearanceSettings settings;
+    settings.places.clear();
+    for (std::size_t index = 0; index < AppearanceSettings::maximum_places + 4; ++index) {
+        settings.places.push_back(
+            NavigationPlace{.label = "Place " + std::to_string(index),
+                            .path = "/synthetic/place-" + std::to_string(index)});
+    }
+    settings.places.push_back(NavigationPlace{.label = "Duplicate", .path = "/synthetic/place-0"});
+    settings.places.push_back(NavigationPlace{.label = "Relative", .path = "relative/place"});
+    settings.recent_destinations = {"/synthetic/recent", "/synthetic/recent", "relative"};
+
+    const AppearanceSettings clean = clamp_appearance(settings);
+    check(clean.places.size() == AppearanceSettings::maximum_places,
+          "Places clamp to their documented bound");
+    check(clean.recent_destinations == std::vector<std::string>{"/synthetic/recent"},
+          "recent destinations reject relative and duplicate paths");
+
+    const AppearanceSettings damaged =
+        parse_appearance("version=999\nplaces_count=2\nplace=bad%escape\n"
+                         "recent_count=1\nrecent=%ZZ\n");
+    check(damaged.places == AppearanceSettings{}.places,
+          "a damaged Places payload falls back to shipped defaults");
+    check(damaged.recent_destinations.empty(),
+          "a damaged recent payload falls back to an empty list");
+
+    const AppearanceSettings intentionally_empty =
+        parse_appearance("version=2\nplaces_count=0\nrecent_count=0\n");
+    check(intentionally_empty.places.empty(), "an explicitly empty Places list stays empty");
 }
 
 void test_parsing_tolerates_damage_and_the_future() {
@@ -270,6 +308,7 @@ int main() {
     test_effective_levels_resolve_the_profile();
     test_accessibility_overrides_shape_the_effective_levels();
     test_serialization_round_trips();
+    test_navigation_settings_are_bounded_and_tolerant();
     test_parsing_tolerates_damage_and_the_future();
     test_non_finite_numbers_never_survive();
     test_stored_strings_cannot_inject_keys();

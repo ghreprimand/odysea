@@ -60,7 +60,13 @@ class tst_ThemeController : public QObject {
     void typography_roles_bound_fallback_reflow();
     void long_form_role_is_readable();
     void no_op_writes_do_not_notify();
+    void places_have_safe_defaults_and_can_be_added();
+    void places_can_be_reordered_and_removed();
+    void recent_destinations_are_bounded_and_deduplicated();
+    void recent_destinations_can_be_cleared();
+    void corrupt_navigation_settings_fall_back_safely();
     void state_persists_across_instances();
+    void navigation_settings_persist_across_instances();
     void reset_restores_and_persists_the_defaults();
     void text_lift_brightens_chromatic_inks_from_effective_state();
 };
@@ -305,7 +311,7 @@ void tst_ThemeController::reset_repairs_a_damaged_settings_file() {
     const QByteArray text = repaired.readAll();
     QVERIFY(!text.contains("nan"));
     QVERIFY(!text.contains("nonsense"));
-    QVERIFY(text.contains("version=1"));
+    QVERIFY(text.contains("version=2"));
 
     ThemeController restored;
     restored.setStoragePath(path);
@@ -447,6 +453,77 @@ void tst_ThemeController::no_op_writes_do_not_notify() {
     QCOMPARE(changed.count(), 1);
 }
 
+void tst_ThemeController::places_have_safe_defaults_and_can_be_added() {
+    ThemeController theme;
+    QSignalSpy changed(&theme, &ThemeController::navigationSettingsChanged);
+
+    QCOMPARE(theme.places().size(), 1);
+    QCOMPARE(theme.places().front().toMap().value(QStringLiteral("path")).toString(),
+             QStringLiteral("/"));
+    QVERIFY(theme.addPlace({{QStringLiteral("label"), QStringLiteral("Projects")},
+                            {QStringLiteral("path"), QStringLiteral("/synthetic/projects")}}));
+    QVERIFY(theme.addPlace({{QStringLiteral("path"), QStringLiteral("/synthetic/archive")}}));
+    QVERIFY(!theme.addPlace({{QStringLiteral("label"), QStringLiteral("Duplicate")},
+                             {QStringLiteral("path"), QStringLiteral("/synthetic/projects")}}));
+    QCOMPARE(theme.places().size(), 3);
+    QCOMPARE(theme.places().at(2).toMap().value(QStringLiteral("label")).toString(),
+             QStringLiteral("archive"));
+    QCOMPARE(changed.count(), 2);
+}
+
+void tst_ThemeController::places_can_be_reordered_and_removed() {
+    ThemeController theme;
+    QVERIFY(theme.addPlace({{QStringLiteral("label"), QStringLiteral("Projects")},
+                            {QStringLiteral("path"), QStringLiteral("/synthetic/projects")}}));
+    QVERIFY(theme.addPlace({{QStringLiteral("path"), QStringLiteral("/synthetic/archive")}}));
+
+    QVERIFY(theme.movePlace(2, 1));
+    QCOMPARE(theme.places().at(1).toMap().value(QStringLiteral("path")).toString(),
+             QStringLiteral("/synthetic/archive"));
+    QVERIFY(theme.removePlace(1));
+    QCOMPARE(theme.places().size(), 2);
+}
+
+void tst_ThemeController::recent_destinations_are_bounded_and_deduplicated() {
+    ThemeController theme;
+    for (int index = 0;
+         index <
+         static_cast<int>(odysea::core::AppearanceSettings::maximum_recent_destinations) + 3;
+         ++index) {
+        QVERIFY(theme.recordRecentDestination(QStringLiteral("/synthetic/recent-%1").arg(index)));
+    }
+    QCOMPARE(theme.recentDestinations().size(),
+             static_cast<qsizetype>(odysea::core::AppearanceSettings::maximum_recent_destinations));
+    QCOMPARE(theme.recentDestinations().front(), QStringLiteral("/synthetic/recent-14"));
+    QVERIFY(theme.recordRecentDestination(QStringLiteral("/synthetic/recent-6")));
+    QCOMPARE(theme.recentDestinations().front(), QStringLiteral("/synthetic/recent-6"));
+}
+
+void tst_ThemeController::recent_destinations_can_be_cleared() {
+    ThemeController theme;
+    QVERIFY(theme.recordRecentDestination(QStringLiteral("/synthetic/recent")));
+    QVERIFY(theme.clearRecentDestinations());
+    QVERIFY(theme.recentDestinations().isEmpty());
+    QVERIFY(!theme.clearRecentDestinations());
+}
+
+void tst_ThemeController::corrupt_navigation_settings_fall_back_safely() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("appearance.conf"));
+    QFile damaged(path);
+    QVERIFY(damaged.open(QIODevice::WriteOnly));
+    damaged.write("version=999\nplaces_count=2\nplace=%GG\nrecent_count=1\nrecent=%ZZ\n");
+    damaged.close();
+
+    ThemeController restored;
+    restored.setStoragePath(path);
+    QCOMPARE(restored.places().size(), 1);
+    QCOMPARE(restored.places().front().toMap().value(QStringLiteral("path")).toString(),
+             QStringLiteral("/"));
+    QVERIFY(restored.recentDestinations().isEmpty());
+}
+
 void tst_ThemeController::state_persists_across_instances() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -469,6 +546,26 @@ void tst_ThemeController::state_persists_across_instances() {
     QCOMPARE(restored.density(), ThemeController::Compact);
     QCOMPARE(restored.uiScale(), 1.25);
     QVERIFY(restored.reducedMotion());
+}
+
+void tst_ThemeController::navigation_settings_persist_across_instances() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("appearance.conf"));
+    {
+        ThemeController theme;
+        theme.setStoragePath(path);
+        QVERIFY(theme.addPlace({{QStringLiteral("label"), QStringLiteral("Projects")},
+                                {QStringLiteral("path"), QStringLiteral("/synthetic/projects")}}));
+        QVERIFY(theme.recordRecentDestination(QStringLiteral("/synthetic/recent")));
+    }
+
+    ThemeController restored;
+    restored.setStoragePath(path);
+    QCOMPARE(restored.places().size(), 2);
+    QCOMPARE(restored.places().at(1).toMap().value(QStringLiteral("path")).toString(),
+             QStringLiteral("/synthetic/projects"));
+    QCOMPARE(restored.recentDestinations(), QStringList{QStringLiteral("/synthetic/recent")});
 }
 
 void tst_ThemeController::reset_restores_and_persists_the_defaults() {

@@ -16,6 +16,17 @@ ActionRegistry {
 
     required property var shellModel
     required property var shell
+    required property var navigationSettings
+
+    function placeIndex(path) {
+        const places = actionSet.navigationSettings.places;
+        for (let index = 0; index < places.length; ++index) {
+            if (places[index].path === path) {
+                return index;
+            }
+        }
+        return -1;
+    }
 
     ShellAction {
         actionId: "entry.open"
@@ -43,6 +54,59 @@ ActionRegistry {
             actionSet.shellModel.addTab();
             actionSet.shellModel.navigateToPath(context.path);
         }
+    }
+    ShellAction {
+        actionId: "place.addCurrent"
+        label: qsTr("Add current location to Places")
+        shortLabel: qsTr("Add current location")
+        iconName: "add"
+        enabledFor: context => typeof context.path === "string" && context.path.length > 0 && actionSet.placeIndex(context.path) < 0
+        perform: context => actionSet.navigationSettings.addPlace({
+                "label": "",
+                "path": context.path
+            })
+    }
+    ShellAction {
+        actionId: "place.moveUp"
+        label: qsTr("Move Place up")
+        shortLabel: qsTr("Up")
+        iconName: "up"
+        surfaces: ["place"]
+        enabledFor: context => actionSet.placeIndex(context.path) > 0
+        perform: context => {
+            const index = actionSet.placeIndex(context.path);
+            actionSet.navigationSettings.movePlace(index, index - 1);
+        }
+    }
+    ShellAction {
+        actionId: "place.moveDown"
+        label: qsTr("Move Place down")
+        shortLabel: qsTr("Down")
+        surfaces: ["place"]
+        enabledFor: context => {
+            const index = actionSet.placeIndex(context.path);
+            return index >= 0 && index + 1 < actionSet.navigationSettings.places.length;
+        }
+        perform: context => {
+            const index = actionSet.placeIndex(context.path);
+            actionSet.navigationSettings.movePlace(index, index + 1);
+        }
+    }
+    ShellAction {
+        actionId: "place.remove"
+        labelFor: context => qsTr("Remove %1 from Places").arg(context.label)
+        shortLabel: qsTr("Remove")
+        iconName: "close"
+        surfaces: ["place"]
+        enabledFor: context => actionSet.placeIndex(context.path) >= 0
+        perform: context => actionSet.navigationSettings.removePlace(actionSet.placeIndex(context.path))
+    }
+    ShellAction {
+        actionId: "recent.clear"
+        label: qsTr("Clear recent destinations")
+        shortLabel: label
+        enabled: actionSet.navigationSettings.recentDestinations.length > 0
+        perform: () => actionSet.navigationSettings.clearRecentDestinations()
     }
     ShellAction {
         actionId: "selection.copy"
@@ -211,6 +275,18 @@ ActionRegistry {
             }
         ]
         perform: () => actionSet.shell.focusAddressField()
+    }
+    ShellAction {
+        actionId: "focus.locations"
+        label: qsTr("Places and recent destinations")
+        shortLabel: qsTr("Places")
+        iconName: "folder"
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+L"
+            }
+        ]
+        perform: () => actionSet.shell.openLocations()
     }
     ShellAction {
         actionId: "focus.filter"

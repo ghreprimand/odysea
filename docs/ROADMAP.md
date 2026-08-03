@@ -27,6 +27,8 @@ graphical shell grows around it.
 - [x] Keyboard navigation and type-ahead.
 - [x] Mouse interaction parity: double-click open, context menus,
       drag-and-drop (internal + drag-out), clickable breadcrumbs.
+- [x] Calm path orientation, direct entry and completion, configurable Places,
+      bounded recent destinations, and direct ancestor/shortcut jumps.
 - [ ] Command palette.
 
 ## M3 — Power features

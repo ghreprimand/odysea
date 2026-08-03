@@ -46,6 +46,63 @@ Support.ShellTestCase {
         });
     }
 
+    function test_pathOrientationAndDirectEntryKeyboardAndPointerParity() {
+        const navigator = child("pathNavigator");
+        const editor = child("pathEditorRow");
+        verify(!navigator.editing);
+        verify(!editor.visible);
+
+        keySequence("Ctrl+L");
+        tryVerify(function () {
+            return navigator.editing;
+        });
+        const field = child("pathEntryField");
+        tryCompare(field, "selectedText", fakeModel.path);
+        navigator.draftText = "/sample/sa";
+        field.forceActiveFocus();
+        keyClick(Qt.Key_Tab);
+        compare(navigator.draftText, "/sample/sample/");
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "navigateFromInputCalls", 1);
+        compare(fakeModel.navigationInput, "/sample/sample/");
+        verify(!navigator.editing);
+
+        mouseClick(child("editLocationButton"));
+        verify(navigator.editing);
+        navigator.draftText = "/sample/sa";
+        mouseClick(child("pathCompletionButton"));
+        compare(navigator.draftText, "/sample/sample/");
+        mouseClick(child("commitPathButton"));
+        tryCompare(fakeModel, "navigateFromInputCalls", 2);
+        verify(!navigator.editing);
+
+        mouseClick(child("editLocationButton"));
+        navigator.draftText = "/sample/retained";
+        keyClick(Qt.Key_Escape);
+        verify(!navigator.editing);
+        verify(navigator.retainedDraft);
+        compare(navigator.draftText, "/sample/retained");
+        mouseClick(child("editLocationButton"));
+        compare(navigator.draftText, "/sample/retained");
+        mouseClick(child("hidePathEditorButton"));
+        verify(!navigator.editing);
+    }
+
+    function test_placesPanelKeyboardAndPointerSummon() {
+        const navigator = child("pathNavigator");
+        keySequence("Ctrl+Shift+L");
+        const popup = child("locationsPopup");
+        tryCompare(popup, "opened", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(popup, "opened", false);
+        wait(50);
+
+        mouseClick(child("locationsButton"));
+        tryCompare(popup, "opened", true);
+        popup.close();
+        tryCompare(popup, "opened", false);
+    }
+
     function test_ctrlClickReachesSelectionModel() {
         clickRow(1, Qt.LeftButton, Qt.ControlModifier);
         tryCompare(fakeModel, "selectRowCalls", 1);

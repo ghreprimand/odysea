@@ -70,6 +70,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/FilesystemDialogs.qml
         qml/LongFormText.qml
         qml/PanePlaceholder.qml
+        qml/PathNavigator.qml
         qml/PresentationLayer.qml
         qml/ShellAction.qml
         qml/ShellActions.qml

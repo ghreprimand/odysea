@@ -5,6 +5,7 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QDir>
 #include <QPersistentModelIndex>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -169,6 +170,11 @@ class DirectoryListModelTest : public QObject {
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
     void sameParentCopyCreatesSiblingDuplicate();
     void directDirectoryActivationNavigates();
+    void navigationInputResolvesTilde();
+    void directPathInputValidatesDirectory();
+    void invalidDirectPathInputDoesNotNavigate();
+    void sharedPathCompletionFinishesTheNextSegmentPrefix();
+    void uniquePathCompletionFinishesTheDirectoryName();
     void activationBreadcrumbsAndDropContracts();
     void symlinkTargetDirectoryChangesRefreshRole();
     void operationsReachCoreAndReportFailures();
@@ -616,6 +622,98 @@ void DirectoryListModelTest::directDirectoryActivationNavigates() {
     model.activate(folderRow);
     QVERIFY(waitForScan(model));
     QCOMPARE(model.path(), QString::fromStdString(folder.string()));
+}
+
+void DirectoryListModelTest::navigationInputResolvesTilde() {
+    QCOMPARE(DirectoryListModel::resolveNavigationInput(QStringLiteral("~")), QDir::homePath());
+    QCOMPARE(DirectoryListModel::resolveNavigationInput(QStringLiteral("~/synthetic")),
+             QDir::cleanPath(QDir::homePath() + QStringLiteral("/synthetic")));
+    QCOMPARE(DirectoryListModel::navigationCompletion(QStringLiteral("~"))
+                 .value(QStringLiteral("completed"))
+                 .toString(),
+             QStringLiteral("~/"));
+    QVERIFY(
+        DirectoryListModel::resolveNavigationInput(QStringLiteral("~someone/elsewhere")).isEmpty());
+}
+
+void DirectoryListModelTest::directPathInputValidatesDirectory() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path folder = root / "folder";
+    fs::create_directories(folder);
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QVERIFY(waitForScan(model));
+    QVERIFY(model.navigateFromInput(QString::fromStdString(folder.string())));
+    QVERIFY(waitForScan(model));
+    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
+    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Opened ")));
+}
+
+void DirectoryListModelTest::invalidDirectPathInputDoesNotNavigate() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path document = root / "document.txt";
+    writeFile(document);
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QVERIFY(waitForScan(model));
+    QVERIFY(!model.navigateFromInput(QStringLiteral("relative/path")));
+    QVERIFY(model.statusMessage().contains(QStringLiteral("absolute path")));
+    QVERIFY(!model.navigateFromInput(QString::fromStdString(document.string())));
+    QVERIFY(model.statusMessage().contains(QStringLiteral("reachable directory")));
+    QVERIFY(!model.navigateFromInput(QString::fromStdString((root / "missing").string())));
+    QCOMPARE(model.path(), fixture.path());
+}
+
+void DirectoryListModelTest::sharedPathCompletionFinishesTheNextSegmentPrefix() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    fs::create_directories(root / "profile");
+    fs::create_directories(root / "projects");
+    fs::create_directories(root / "prose");
+    fs::create_directories(root / ".private");
+    writeFile(root / "project-file.txt");
+
+    const QString prefix = fixture.path() + QStringLiteral("/pr");
+    const QVariantMap shared = DirectoryListModel::navigationCompletion(prefix);
+    QCOMPARE(shared.value(QStringLiteral("completed")).toString(),
+             fixture.path() + QStringLiteral("/pro"));
+    QCOMPARE(shared.value(QStringLiteral("suffix")).toString(), QStringLiteral("o"));
+    QCOMPARE(shared.value(QStringLiteral("candidates")).toStringList(),
+             QStringList(
+                 {QStringLiteral("profile"), QStringLiteral("projects"), QStringLiteral("prose")}));
+}
+
+void DirectoryListModelTest::uniquePathCompletionFinishesTheDirectoryName() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    fs::create_directories(root / "projects");
+    fs::create_directories(root / ".private");
+    writeFile(root / "project-file.txt");
+
+    const QString uniquePrefix = fixture.path() + QStringLiteral("/proj");
+    const QVariantMap unique = DirectoryListModel::navigationCompletion(uniquePrefix);
+    QCOMPARE(unique.value(QStringLiteral("completed")).toString(),
+             fixture.path() + QStringLiteral("/projects/"));
+    QCOMPARE(unique.value(QStringLiteral("suffix")).toString(), QStringLiteral("ects/"));
+    QCOMPARE(unique.value(QStringLiteral("candidates")).toStringList(),
+             QStringList{QStringLiteral("projects")});
+
+    const QVariantMap hidden =
+        DirectoryListModel::navigationCompletion(fixture.path() + QStringLiteral("/.p"));
+    QCOMPARE(hidden.value(QStringLiteral("completed")).toString(),
+             fixture.path() + QStringLiteral("/.private/"));
+    QVERIFY(DirectoryListModel::navigationCompletion(QStringLiteral("relative"))
+                .value(QStringLiteral("candidates"))
+                .toStringList()
+                .isEmpty());
 }
 
 void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {

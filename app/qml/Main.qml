@@ -33,6 +33,7 @@ ApplicationWindow {
     readonly property ShellActions actions: ShellActions {
         shellModel: root.shellModel
         shell: root
+        navigationSettings: root.shellTheme
     }
 
     objectName: "mainWindow"
@@ -158,7 +159,11 @@ ApplicationWindow {
     // Focus and surface entry points the registry's actions target. The
     // declarations call these instead of reaching into chrome internals.
     function focusAddressField() {
-        navigationToolBar.focusAddressField();
+        pathNavigator.beginEditing();
+    }
+
+    function openLocations() {
+        pathNavigator.openLocations();
     }
 
     function focusFilterField() {
@@ -236,18 +241,15 @@ ApplicationWindow {
                 theme: root.shellTheme
             }
 
-            BreadcrumbBar {
+            PathNavigator {
+                id: pathNavigator
+
                 Layout.fillWidth: true
                 shellModel: root.shellModel
                 navigationController: root
-                backgroundColor: Qt.alpha(root.panelColor, root.shellTheme.surfaceOpacity)
-                borderColor: root.borderColor
-                primaryTextColor: root.primaryTextColor
-                accentColor: root.accentColor
-                hoverColor: root.shellTheme.hover
-                pressedColor: root.shellTheme.pressed
-                pathFontFamily: root.shellTheme.pathFontFamily
-                pathFontPixelSize: root.shellTheme.pathFontPixelSize
+                registry: root.actions
+                settings: root.shellTheme
+                theme: root.shellTheme
             }
 
             TabStrip {
@@ -318,6 +320,14 @@ ApplicationWindow {
                 shellModel: root.shellModel
                 theme: root.shellTheme
             }
+        }
+    }
+
+    Connections {
+        target: root.shellModel
+
+        function onPathChanged() {
+            root.shellTheme.recordRecentDestination(root.shellModel.path);
         }
     }
 

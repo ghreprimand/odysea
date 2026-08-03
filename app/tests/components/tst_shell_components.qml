@@ -40,6 +40,9 @@ Item {
         property string operationErrorString: ""
         property string errorString: ""
         property string statusMessage: "ready"
+        property bool navigateAccepted: true
+        property string completionText: "/synthetic/projects/"
+        property string completionSuffix: "ojects/"
 
         function record(name) {
             const seen = calls;
@@ -58,9 +61,6 @@ Item {
         }
         function activate(row) {
             record("activate:" + row);
-        }
-        function navigateToPath(path) {
-            record("navigateToPath:" + path);
         }
         function refresh() {
             record("refresh");
@@ -98,11 +98,116 @@ Item {
         function requestTrash() {
             record("requestTrash");
         }
+        function breadcrumbSegments() {
+            const root = {
+                "label": "/",
+                "path": "/",
+                "url": "file:///"
+            };
+            if (path === "/") {
+                return [root];
+            }
+            return [root,
+                {
+                    "label": "synthetic",
+                    "path": "/synthetic",
+                    "url": "file:///synthetic"
+                },
+                {
+                    "label": "fixture",
+                    "path": path,
+                    "url": "file://" + path
+                }
+            ];
+        }
+        function navigateToPath(destination) {
+            record("navigateToPath:" + destination);
+            path = destination;
+        }
+        function navigateFromInput(input) {
+            record("navigateFromInput:" + input);
+            if (navigateAccepted) {
+                path = input;
+            }
+            return navigateAccepted;
+        }
+        function navigationCompletion(input) {
+            return {
+                "completed": completionText,
+                "suffix": completionSuffix,
+                "candidates": ["projects"]
+            };
+        }
+        function dropSelection(destination, move, conflictMode) {
+            record("dropSelection:" + destination + ":" + move + ":" + conflictMode);
+            return true;
+        }
+    }
+
+    component RecordingSettings: QtObject {
+        property var calls: []
+        property var places: [
+            {
+                "label": "Filesystem",
+                "path": "/"
+            },
+            {
+                "label": "Projects",
+                "path": "/synthetic/projects"
+            }
+        ]
+        property var recentDestinations: ["/synthetic/recent-a", "/synthetic/recent-b"]
+
+        function record(name) {
+            const seen = calls;
+            seen.push(name);
+            calls = seen;
+        }
+        function addPlace(place) {
+            const label = place.label;
+            const path = place.path;
+            record("addPlace:" + label + ":" + path);
+            const next = places.slice();
+            next.push({
+                "label": label.length > 0 ? label : "Current",
+                "path": path
+            });
+            places = next;
+            return true;
+        }
+        function removePlace(index) {
+            record("removePlace:" + index);
+            const next = places.slice();
+            next.splice(index, 1);
+            places = next;
+            return true;
+        }
+        function movePlace(from, to) {
+            record("movePlace:" + from + ":" + to);
+            if (from === to) {
+                return false;
+            }
+            const next = places.slice();
+            const moved = next.splice(from, 1)[0];
+            next.splice(to, 0, moved);
+            places = next;
+            return true;
+        }
+        function recordRecentDestination(path) {
+            record("recordRecentDestination:" + path);
+            return true;
+        }
+        function clearRecentDestinations() {
+            record("clearRecentDestinations");
+            recentDestinations = [];
+            return true;
+        }
     }
 
     component RecordingController: QtObject {
         property var calls: []
         property bool gridMode: false
+        property var pathNavigator: null
 
         function record(name) {
             const seen = calls;
@@ -122,12 +227,31 @@ Item {
         }
         function focusAddressField() {
             record("focusAddressField");
+            if (pathNavigator !== null) {
+                pathNavigator.beginEditing();
+            }
+        }
+        function openLocations() {
+            record("openLocations");
+            if (pathNavigator !== null) {
+                pathNavigator.openLocations();
+            }
         }
         function focusFilterField() {
             record("focusFilterField");
         }
         function openAppearancePanel() {
             record("openAppearancePanel");
+        }
+        function clearTypeAhead() {
+            const seen = calls;
+            seen.push("clearTypeAhead");
+            calls = seen;
+        }
+        function focusCurrentView() {
+            const seen = calls;
+            seen.push("focusCurrentView");
+            calls = seen;
         }
     }
 
@@ -150,6 +274,12 @@ Item {
         id: registryFactory
 
         ShellActions {}
+    }
+
+    Component {
+        id: settingsFactory
+
+        RecordingSettings {}
     }
 
     Component {
@@ -184,6 +314,16 @@ Item {
 
         TabStrip {
             width: harness.width
+            theme: theme
+        }
+    }
+
+    Component {
+        id: pathNavigatorFactory
+
+        PathNavigator {
+            width: harness.width
+            height: 48
             theme: theme
         }
     }
@@ -226,10 +366,12 @@ Item {
             wait(20);
         }
 
-        function makeRegistry(model, controller) {
+        function makeRegistry(model, controller, settings) {
+            const navigationSettings = settings === undefined ? createTemporaryObject(settingsFactory, harness) : settings;
             return createTemporaryObject(registryFactory, harness, {
                 "shellModel": model,
-                "shell": controller
+                "shell": controller,
+                "navigationSettings": navigationSettings
             });
         }
 
@@ -321,31 +463,187 @@ Item {
             verify(!listButton.checked);
         }
 
-        function test_toolBarAddressFieldRoundTrip() {
+        function test_pathNavigatorCalmEditorRetainsDraft() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const registry = makeRegistry(model, controller, settings);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
                 "shellModel": model,
-                "registry": makeRegistry(model, controller)
+                "navigationController": controller,
+                "registry": registry,
+                "settings": settings
             });
-            verify(bar !== null);
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
             flush();
 
-            const address = findChild(bar, "addressField");
-            verify(address !== null);
-            compare(address.text, "/synthetic/fixture");
+            verify(findChild(navigator, "calmPathRow").visible);
+            verify(!findChild(navigator, "pathEditorRow").visible);
+            mouseClick(findChild(navigator, "editLocationButton"));
+            verify(navigator.editing);
+            const address = findChild(navigator, "pathEntryField");
+            tryVerify(function () {
+                return address.activeFocus;
+            });
+            navigator.draftText = "/synthetic/unfinished";
+            mouseClick(findChild(navigator, "hidePathEditorButton"));
+            verify(!navigator.editing);
+            verify(navigator.retainedDraft);
+            verify(findChild(navigator, "retainedPathIndicator").visible);
 
-            // The keyboard entry point selects everything, so typing
-            // replaces the path and Return commits it to the model.
-            bar.focusAddressField();
-            verify(address.activeFocus);
-            keyClick(Qt.Key_A);
+            mouseClick(findChild(navigator, "editLocationButton"));
+            compare(address.text, "/synthetic/unfinished");
+            keyClick(Qt.Key_Escape);
+            verify(!navigator.editing);
+            compare(navigator.draftText, "/synthetic/unfinished");
+        }
+
+        function test_pathNavigatorRegistryFocusRouteSelectsExistingPath() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const registry = makeRegistry(model, controller, settings);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+                "shellModel": model,
+                "navigationController": controller,
+                "registry": registry,
+                "settings": settings
+            });
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
+
+            verify(registry.trigger("focus.address", registry.globalContext(undefined)));
+            const address = findChild(navigator, "pathEntryField");
+            tryVerify(function () {
+                return navigator.editing && address.activeFocus;
+            });
+            compare(address.selectedText, "/synthetic/fixture");
+        }
+
+        function test_pathNavigatorCompletionAndDirectEntryParity() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+                "shellModel": model,
+                "navigationController": controller,
+                "registry": makeRegistry(model, controller, settings),
+                "settings": settings
+            });
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
+            flush();
+
+            navigator.beginEditing();
+            navigator.draftText = "/synthetic/pr";
+            const address = findChild(navigator, "pathEntryField");
+            address.forceActiveFocus();
+            keyClick(Qt.Key_Tab);
+            compare(navigator.draftText, "/synthetic/projects/");
             keyClick(Qt.Key_Return);
-            compare(model.path, "a");
+            compare(model.calls[model.calls.length - 1], "navigateFromInput:/synthetic/projects/");
+            verify(!navigator.editing);
 
-            // A model-side change lands in the unfocused field.
-            model.path = "/other/place";
-            compare(address.text, "/other/place");
+            mouseClick(findChild(navigator, "editLocationButton"));
+            navigator.draftText = "/synthetic/pr";
+            mouseClick(findChild(navigator, "pathCompletionButton"));
+            compare(navigator.draftText, "/synthetic/projects/");
+            mouseClick(findChild(navigator, "commitPathButton"));
+            compare(model.calls[model.calls.length - 1], "navigateFromInput:/synthetic/projects/");
+
+            model.navigateAccepted = false;
+            navigator.beginEditing();
+            navigator.draftText = "relative";
+            mouseClick(findChild(navigator, "commitPathButton"));
+            verify(navigator.editing, "a rejected path stays editable");
+        }
+
+        function test_pathNavigatorPlaceManagementPointerAndKeyboard() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+                "shellModel": model,
+                "navigationController": controller,
+                "registry": makeRegistry(model, controller, settings),
+                "settings": settings
+            });
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
+            flush();
+
+            mouseClick(findChild(navigator, "locationsButton"));
+            const popup = findChild(navigator, "locationsPopup");
+            tryCompare(popup, "opened", true);
+            const popupContent = popup.contentItem;
+            mouseClick(findChild(popupContent, "addCurrentPlaceButton"));
+            compare(settings.calls[settings.calls.length - 1], "addPlace::/synthetic/fixture");
+
+            const add = findChild(popupContent, "addCurrentPlaceButton");
+            add.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(settings.calls[settings.calls.length - 1], "addPlace::/synthetic/fixture");
+
+            mouseClick(findChild(popupContent, "movePlaceDownButton-0"));
+            verify(settings.calls[settings.calls.length - 1].startsWith("movePlace:"));
+            let place = findChild(popupContent, "placeButton-1");
+            place.forceActiveFocus();
+            keyClick(Qt.Key_Up, Qt.AltModifier);
+            verify(settings.calls[settings.calls.length - 1].startsWith("movePlace:"));
+
+            mouseClick(findChild(popupContent, "removePlaceButton-1"));
+            verify(settings.calls[settings.calls.length - 1].startsWith("removePlace:"));
+            place = findChild(popupContent, "placeButton-0");
+            place.forceActiveFocus();
+            keyClick(Qt.Key_Delete);
+            verify(settings.calls[settings.calls.length - 1].startsWith("removePlace:"));
+        }
+
+        function test_pathNavigatorFastJumpsAndRecentClearParity() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+                "shellModel": model,
+                "navigationController": controller,
+                "registry": makeRegistry(model, controller, settings),
+                "settings": settings
+            });
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
+            flush();
+
+            navigator.openLocations();
+            const popup = findChild(navigator, "locationsPopup");
+            const popupContent = popup.contentItem;
+            mouseClick(findChild(popupContent, "placeButton-1"));
+            compare(model.calls[model.calls.length - 1], "navigateToPath:/synthetic/projects");
+            navigator.openLocations();
+            const place = findChild(popupContent, "placeButton-0");
+            place.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(model.calls[model.calls.length - 1], "navigateToPath:/");
+
+            navigator.openLocations();
+            mouseClick(findChild(popupContent, "clearRecentsButton"));
+            compare(settings.calls[settings.calls.length - 1], "clearRecentDestinations");
+            settings.recentDestinations = ["/synthetic/recent-c"];
+            const clear = findChild(popupContent, "clearRecentsButton");
+            clear.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(settings.calls[settings.calls.length - 1], "clearRecentDestinations");
+
+            model.path = "/synthetic/fixture";
+            flush();
+            mouseClick(findChild(navigator, "breadcrumb-0"));
+            compare(model.calls[model.calls.length - 1], "navigateToPath:/");
+            model.path = "/synthetic/fixture";
+            flush();
+            const ancestor = findChild(navigator, "breadcrumb-1");
+            ancestor.forceActiveFocus();
+            keyClick(Qt.Key_Return);
+            compare(model.calls[model.calls.length - 1], "navigateToPath:/synthetic");
         }
 
         function test_toolBarAppearanceRoutesThroughRegistry() {

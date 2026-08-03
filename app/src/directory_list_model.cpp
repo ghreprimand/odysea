@@ -25,6 +25,33 @@ bool entriesMatch(const odysea::core::Entry& left, const odysea::core::Entry& ri
            left.target_is_directory == right.target_is_directory;
 }
 
+QString resolveNavigationText(const QString& input) {
+    const QString trimmed = input.trimmed();
+    if (trimmed == QStringLiteral("~")) {
+        return QDir::homePath();
+    }
+    if (trimmed.startsWith(QStringLiteral("~/"))) {
+        return QDir::cleanPath(QDir::homePath() + trimmed.sliced(1));
+    }
+    if (trimmed.startsWith(QLatin1Char('~')) || !QDir::isAbsolutePath(trimmed)) {
+        return {};
+    }
+    return QDir::cleanPath(trimmed);
+}
+
+QString commonPrefix(const QStringList& values) {
+    if (values.isEmpty()) {
+        return {};
+    }
+    QString prefix = values.front();
+    for (const QString& value : values) {
+        while (!value.startsWith(prefix) && !prefix.isEmpty()) {
+            prefix.chop(1);
+        }
+    }
+    return prefix;
+}
+
 } // namespace
 
 int DirectoryListModel::rowCount(const QModelIndex& parent) const {
@@ -237,6 +264,71 @@ void DirectoryListModel::activateCurrent() {
 
 void DirectoryListModel::navigateToPath(const QString& path) {
     navigateTo(path, true);
+}
+
+bool DirectoryListModel::navigateFromInput(const QString& input) {
+    const QString target = resolveNavigationInput(input);
+    if (target.isEmpty()) {
+        setStatusMessage(tr("Enter an absolute path or a path beginning with ~/."));
+        return false;
+    }
+    const QFileInfo information(target);
+    if (!information.exists() || !information.isDir() || !information.isReadable()) {
+        setStatusMessage(tr("Location is not a reachable directory: %1").arg(input.trimmed()));
+        return false;
+    }
+    navigateTo(target, true);
+    setStatusMessage(tr("Opened %1.").arg(target));
+    return true;
+}
+
+QString DirectoryListModel::resolveNavigationInput(const QString& input) {
+    return resolveNavigationText(input);
+}
+
+QVariantMap DirectoryListModel::navigationCompletion(const QString& input) {
+    QVariantMap result{{QStringLiteral("completed"), input},
+                       {QStringLiteral("suffix"), QString()},
+                       {QStringLiteral("candidates"), QStringList{}}};
+    const QString trimmed = input.trimmed();
+    if (trimmed == QStringLiteral("~")) {
+        result.insert(QStringLiteral("completed"), QStringLiteral("~/"));
+        result.insert(QStringLiteral("suffix"), QStringLiteral("/"));
+        return result;
+    }
+    const QString expanded = resolveNavigationInput(trimmed);
+    if (expanded.isEmpty()) {
+        return result;
+    }
+
+    const qsizetype separator = expanded.lastIndexOf(QLatin1Char('/'));
+    const QString parentPath = separator <= 0 ? QDir::rootPath() : expanded.left(separator);
+    const QString leaf = expanded.sliced(separator + 1);
+    QDir parent(parentPath);
+    if (!parent.exists() || !parent.isReadable()) {
+        return result;
+    }
+    const QStringList entries =
+        parent.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot, QDir::Name);
+    QStringList matches;
+    for (const QString& entry : entries) {
+        if (entry.startsWith(leaf, Qt::CaseSensitive)) {
+            matches.push_back(entry);
+        }
+    }
+    if (matches.isEmpty()) {
+        return result;
+    }
+
+    const qsizetype displaySeparator = trimmed.lastIndexOf(QLatin1Char('/'));
+    QString completed = trimmed.left(displaySeparator + 1) + commonPrefix(matches);
+    if (matches.size() == 1) {
+        completed += QLatin1Char('/');
+    }
+    result.insert(QStringLiteral("completed"), completed);
+    result.insert(QStringLiteral("suffix"), completed.sliced(trimmed.size()));
+    result.insert(QStringLiteral("candidates"), matches);
+    return result;
 }
 
 QVariantList DirectoryListModel::breadcrumbSegments() const {

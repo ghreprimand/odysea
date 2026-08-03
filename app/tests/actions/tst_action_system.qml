@@ -114,11 +114,62 @@ Item {
         function focusAddressField() {
             record("focusAddressField");
         }
+        function openLocations() {
+            record("openLocations");
+        }
         function focusFilterField() {
             record("focusFilterField");
         }
         function openAppearancePanel() {
             record("openAppearancePanel");
+        }
+    }
+
+    component RecordingNavigationSettings: QtObject {
+        property var calls: []
+        property var places: [
+            {
+                "label": "Filesystem",
+                "path": "/"
+            },
+            {
+                "label": "Fixture",
+                "path": "/synthetic"
+            }
+        ]
+        property var recentDestinations: ["/synthetic/recent"]
+
+        function record(name) {
+            const seen = calls;
+            seen.push(name);
+            calls = seen;
+        }
+        function addPlace(place) {
+            record("addPlace:" + place.path);
+            const next = places.slice();
+            next.push(place);
+            places = next;
+            return true;
+        }
+        function removePlace(index) {
+            record("removePlace:" + index);
+            const next = places.slice();
+            next.splice(index, 1);
+            places = next;
+            return true;
+        }
+        function movePlace(from, to) {
+            record("movePlace:" + from + ":" + to);
+            const next = places.slice();
+            const moved = next.splice(from, 1)[0];
+            next.splice(to, 0, moved);
+            places = next;
+            return true;
+        }
+        function clearRecentDestinations() {
+            record("clearRecentDestinations");
+            recentDestinations = [];
+            return true;
         }
     }
 
@@ -130,11 +181,16 @@ Item {
         id: fakeShell
     }
 
+    RecordingNavigationSettings {
+        id: fakeNavigationSettings
+    }
+
     ShellActions {
         id: shellActions
 
         shellModel: fakeModel
         shell: fakeShell
+        navigationSettings: fakeNavigationSettings
     }
 
     // A deliberately conflicting declaration set, proving the detector
@@ -192,6 +248,18 @@ Item {
             fakeModel.paneCount = 1;
             fakeShell.calls = [];
             fakeShell.gridMode = false;
+            fakeNavigationSettings.calls = [];
+            fakeNavigationSettings.places = [
+                {
+                    "label": "Filesystem",
+                    "path": "/"
+                },
+                {
+                    "label": "Fixture",
+                    "path": "/synthetic"
+                }
+            ];
+            fakeNavigationSettings.recentDestinations = ["/synthetic/recent"];
             if (menu.opened) {
                 menu.close();
                 tryCompare(menu, "visible", false);
@@ -297,12 +365,43 @@ Item {
             const breadcrumbIds = shellActions.actionsFor(shellActions.breadcrumbContext("/synthetic")).map(action => action.actionId);
             compare(breadcrumbIds.join(","), "location.open,location.openNewTab");
             const placeIds = shellActions.actionsFor(shellActions.placeContext("/synthetic", "Fixture")).map(action => action.actionId);
-            compare(placeIds.join(","), "location.open,location.openNewTab");
+            compare(placeIds.join(","), "location.open,location.openNewTab,place.moveUp,place.moveDown,place.remove");
             const deviceIds = shellActions.actionsFor(shellActions.deviceContext("/synthetic", "Volume")).map(action => action.actionId);
             compare(deviceIds.join(","), "location.open,location.openNewTab");
 
             compare(shellActions.trigger("location.openNewTab", shellActions.breadcrumbContext("/synthetic/target")), true);
             compare(fakeModel.calls.join(","), "addTab,navigateToPath:/synthetic/target");
+        }
+
+        function test_navigationChromeActionsUseRegistryShortcutsWithoutConflicts() {
+            const entries = shellActions.shortcutEntries();
+            compare(entries.filter(entry => entry.actionId === "focus.address")[0].sequence, "Ctrl+L");
+            compare(entries.filter(entry => entry.actionId === "focus.locations")[0].sequence, "Ctrl+Shift+L");
+            compare(shellActions.trigger("focus.address", shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("focus.locations", shellActions.globalContext(undefined)), true);
+            compare(fakeShell.calls.join(","), "focusAddressField,openLocations");
+            compare(shellActions.shortcutConflicts().length, 0);
+        }
+
+        function test_placeActionsResolveTheLiveTargetByPath() {
+            const place = shellActions.placeContext("/synthetic", "Fixture");
+            compare(shellActions.trigger("place.moveUp", place), true);
+            compare(fakeNavigationSettings.calls.join(","), "movePlace:1:0");
+            compare(fakeNavigationSettings.places[0].path, "/synthetic");
+            compare(shellActions.trigger("place.moveDown", place), true);
+            compare(fakeNavigationSettings.calls.join(","), "movePlace:1:0,movePlace:0:1");
+            compare(shellActions.trigger("place.remove", place), true);
+            compare(fakeNavigationSettings.calls.join(","), "movePlace:1:0,movePlace:0:1,removePlace:1");
+        }
+
+        function test_placeAddAndRecentClearRouteThroughRegistry() {
+            const current = shellActions.breadcrumbContext("/synthetic/new-place");
+            compare(shellActions.trigger("place.addCurrent", current), true);
+            compare(fakeNavigationSettings.calls.join(","), "addPlace:/synthetic/new-place");
+            compare(shellActions.trigger("recent.clear", shellActions.globalContext(undefined)), true);
+            compare(fakeNavigationSettings.calls.join(","), "addPlace:/synthetic/new-place,clearRecentDestinations");
+            compare(fakeNavigationSettings.recentDestinations.length, 0);
+            compare(shellActions.trigger("recent.clear", shellActions.globalContext(undefined)), false);
         }
 
         function test_ordinalTabShortcutsCarryArguments() {

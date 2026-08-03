@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace odysea::core {
 
@@ -35,6 +36,17 @@ enum class FontSource { Bundled, System, Named };
 
 /// Vertical spacing of list and grid content.
 enum class Density { Compact, Cozy, Comfortable };
+
+/// A user-managed shortcut to a directory.
+///
+/// Labels are presentation text; paths are absolute Linux paths. Both remain
+/// plain UTF-8 strings so the settings model stays independent of Qt.
+struct NavigationPlace {
+    std::string label;
+    std::string path;
+
+    [[nodiscard]] bool operator==(const NavigationPlace& other) const noexcept = default;
+};
 
 /// One resolved set of screen-effect intensities.
 ///
@@ -76,7 +88,9 @@ struct EffectLevels {
 /// A default-constructed value is the shipped configuration.
 struct AppearanceSettings {
     /// Version of the persisted schema this build reads and writes.
-    static constexpr int current_version = 1;
+    static constexpr int current_version = 2;
+    static constexpr std::size_t maximum_places = 32;
+    static constexpr std::size_t maximum_recent_destinations = 12;
 
     /// Identifier of the active color family. The core does not interpret the
     /// value; the presentation layer resolves unknown identifiers to the
@@ -105,6 +119,13 @@ struct AppearanceSettings {
 
     bool reduced_motion = false;
     bool high_contrast = false;
+
+    /// Navigation preferences share this versioned file with appearance so
+    /// concurrent settings surfaces never overwrite one another through
+    /// independent stores. The filesystem root is the only shipped Place;
+    /// user- and machine-specific paths are learned at runtime.
+    std::vector<NavigationPlace> places{NavigationPlace{.label = "Filesystem", .path = "/"}};
+    std::vector<std::string> recent_destinations;
 
     [[nodiscard]] bool operator==(const AppearanceSettings& other) const noexcept = default;
 };
