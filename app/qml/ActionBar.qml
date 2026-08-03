@@ -1,8 +1,8 @@
 // The action row: the folder filter, sort order, hidden-file toggle, and
-// the selection operations. Buttons gate themselves on the live selection
-// and operation state, so a disabled surface always reflects the model.
-// Every pointer action names its keyboard sequence in its tooltip; the
-// sequences themselves live on the shell's shortcut table.
+// the selection operations. The operation buttons render from the shared
+// action registry, so their enablement is the same live declaration the
+// context menus and shortcuts evaluate — a surface here can never gate
+// differently from the rest of the shell.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,6 +11,7 @@ ChromeStrip {
     id: bar
 
     required property var shellModel
+    required property ActionRegistry registry
 
     /// Keyboard entry point for the filter field (Ctrl+F on the shell).
     function focusFilterField() {
@@ -55,62 +56,43 @@ ChromeStrip {
             objectName: "hiddenToggle"
             text: qsTr("Hidden")
             checked: bar.shellModel.showHidden
-            onToggled: bar.shellModel.showHidden = checked
+            onToggled: bar.registry.trigger("view.toggleHidden", null)
         }
 
-        ShellButton {
+        ActionButton {
             objectName: "selectAllButton"
             theme: bar.theme
-            iconName: "select-all"
-            text: qsTr("Select all")
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Select all entries (Ctrl+A)")
-            onClicked: bar.shellModel.selectAll()
+            registry: bar.registry
+            actionId: "selection.all"
         }
 
         Item {
             Layout.fillWidth: true
         }
 
-        ShellButton {
+        ActionButton {
             objectName: "copyButton"
             theme: bar.theme
-            iconName: "copy"
-            text: qsTr("Copy")
-            enabled: bar.shellModel.selectedCount > 0 && !bar.shellModel.operationBusy
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Copy selection (Ctrl+C)")
-            onClicked: bar.shellModel.requestCopy()
+            registry: bar.registry
+            actionId: "selection.copy"
         }
-        ShellButton {
+        ActionButton {
             objectName: "moveButton"
             theme: bar.theme
-            iconName: "move"
-            text: qsTr("Move")
-            enabled: bar.shellModel.selectedCount > 0 && !bar.shellModel.operationBusy
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Move selection (Ctrl+X)")
-            onClicked: bar.shellModel.requestMove()
+            registry: bar.registry
+            actionId: "selection.move"
         }
-        ShellButton {
+        ActionButton {
             objectName: "renameButton"
             theme: bar.theme
-            iconName: "rename"
-            text: qsTr("Rename")
-            enabled: bar.shellModel.selectedCount === 1 && !bar.shellModel.operationBusy
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Rename selection (F2)")
-            onClicked: bar.shellModel.requestRename()
+            registry: bar.registry
+            actionId: "selection.rename"
         }
-        ShellButton {
+        ActionButton {
             objectName: "trashButton"
             theme: bar.theme
-            iconName: "trash"
-            text: qsTr("Trash")
-            enabled: bar.shellModel.selectedCount > 0 && !bar.shellModel.operationBusy
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Move selection to trash (Delete)")
-            onClicked: bar.shellModel.requestTrash()
+            registry: bar.registry
+            actionId: "selection.trash"
         }
     }
 }

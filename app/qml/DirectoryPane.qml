@@ -16,6 +16,7 @@ FocusScope {
 
     required property var shellModel
     required property var navigationController
+    required property var registry
     required property var theme
     /// Whether the grid or the list renders. The mode is workspace state,
     /// so it lives on the shell and arrives here as a binding.
@@ -26,6 +27,11 @@ FocusScope {
     property int persistenceDurationMs: 0
     /// Optional protected-content mask layer for grid thumbnails.
     property WellMaskLayer wellLayer: null
+
+    /// The pane's one shared context menu. Both views open it for entry,
+    /// selection, and blank-canvas targets; the menu builds its items from
+    /// the registry for whichever context each invocation passes.
+    readonly property ActionMenu actionMenu: paneActionMenu
 
     function focusCurrentView() {
         if (pane.gridMode) {
@@ -81,6 +87,7 @@ FocusScope {
         captionFontPixelSize: pane.theme.captionFontPixelSize
         highContrast: pane.theme.highContrast
         persistenceDurationMs: pane.persistenceDurationMs
+        actionMenu: pane.actionMenu
     }
 
     DirectoryGridView {
@@ -113,5 +120,14 @@ FocusScope {
         cellHeight: pane.theme.gridCellHeight
         persistenceDurationMs: pane.persistenceDurationMs
         wellLayer: pane.wellLayer
+        actionMenu: pane.actionMenu
+    }
+
+    ActionMenu {
+        id: paneActionMenu
+
+        objectName: "paneActionMenu"
+        registry: pane.registry
+        theme: pane.theme
     }
 }

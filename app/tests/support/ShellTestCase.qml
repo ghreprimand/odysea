@@ -472,8 +472,12 @@ TestCase {
     }
 
     function shortcutForSequence(sequence) {
-        for (let index = 0; index < shellWindow.contentData.length; ++index) {
-            const candidate = shellWindow.contentData[index];
+        const table = findChild(shellWindow, "shortcutTable");
+        if (table === null) {
+            return null;
+        }
+        for (let index = 0; index < table.count; ++index) {
+            const candidate = table.objectAt(index);
             if (candidate !== null && candidate.sequence !== undefined && candidate.sequence.toString() === sequence) {
                 return candidate;
             }

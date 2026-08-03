@@ -3,9 +3,10 @@
 //
 // The window composes the module's reusable chrome components — toolbar,
 // breadcrumbs, tab strip, action row, directory panes, and status strip —
-// and owns what is genuinely shell-wide: the theme instance, the shortcut
-// table, the type-ahead engine, view-mode state, and the presentation
-// pipeline that processes everything beneath the popup overlay.
+// and owns what is genuinely shell-wide: the theme instance, the action
+// registry with its instantiated shortcut table, the type-ahead engine,
+// view-mode state, and the presentation pipeline that processes everything
+// beneath the popup overlay.
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
@@ -25,6 +26,13 @@ ApplicationWindow {
     property string themeStoragePath: ""
     readonly property ShellTheme shellTheme: ShellTheme {
         storagePath: root.themeStoragePath
+    }
+
+    /// The single action declaration site. Every menu, button, and key
+    /// sequence in the shell renders from these declarations.
+    readonly property ShellActions actions: ShellActions {
+        shellModel: root.shellModel
+        shell: root
     }
 
     objectName: "mainWindow"
@@ -147,6 +155,20 @@ ApplicationWindow {
         }
     }
 
+    // Focus and surface entry points the registry's actions target. The
+    // declarations call these instead of reaching into chrome internals.
+    function focusAddressField() {
+        navigationToolBar.focusAddressField();
+    }
+
+    function focusFilterField() {
+        actionBar.focusFilterField();
+    }
+
+    function openAppearancePanel() {
+        appearancePanel.open();
+    }
+
     Timer {
         id: typeAheadTimer
 
@@ -154,142 +176,28 @@ ApplicationWindow {
         onTriggered: root.typeAheadBuffer = ""
     }
 
-    Shortcut {
-        sequence: "Alt+Left"
-        enabled: root.shellModel.canGoBack
-        onActivated: root.shellModel.goBack()
-    }
-    Shortcut {
-        sequence: "Alt+Right"
-        enabled: root.shellModel.canGoForward
-        onActivated: root.shellModel.goForward()
-    }
-    Shortcut {
-        sequence: "Alt+Up"
-        enabled: root.shellModel.canGoUp
-        onActivated: root.shellModel.goUp()
-    }
-    Shortcut {
-        sequence: "F5"
-        onActivated: root.shellModel.refresh()
-    }
-    Shortcut {
-        sequence: "Ctrl+H"
-        onActivated: root.shellModel.showHidden = !root.shellModel.showHidden
-    }
-    Shortcut {
-        sequence: "Ctrl+1"
-        enabled: root.shellModel.tabCount > 0
-        onActivated: root.activateTabIndex(0)
-    }
-    Shortcut {
-        sequence: "Ctrl+2"
-        enabled: root.shellModel.tabCount > 1
-        onActivated: root.activateTabIndex(1)
-    }
-    Shortcut {
-        sequence: "Ctrl+3"
-        enabled: root.shellModel.tabCount > 2
-        onActivated: root.activateTabIndex(2)
-    }
-    Shortcut {
-        sequence: "Ctrl+4"
-        enabled: root.shellModel.tabCount > 3
-        onActivated: root.activateTabIndex(3)
-    }
-    Shortcut {
-        sequence: "Ctrl+5"
-        enabled: root.shellModel.tabCount > 4
-        onActivated: root.activateTabIndex(4)
-    }
-    Shortcut {
-        sequence: "Ctrl+6"
-        enabled: root.shellModel.tabCount > 5
-        onActivated: root.activateTabIndex(5)
-    }
-    Shortcut {
-        sequence: "Ctrl+7"
-        enabled: root.shellModel.tabCount > 6
-        onActivated: root.activateTabIndex(6)
-    }
-    Shortcut {
-        sequence: "Ctrl+8"
-        enabled: root.shellModel.tabCount > 7
-        onActivated: root.activateTabIndex(7)
-    }
-    Shortcut {
-        sequence: "Ctrl+9"
-        enabled: root.shellModel.tabCount > 8
-        onActivated: root.activateTabIndex(8)
-    }
-    Shortcut {
-        sequence: "Ctrl+Shift+1"
-        onActivated: root.switchView(false)
-    }
-    Shortcut {
-        sequence: "Ctrl+Shift+2"
-        onActivated: root.switchView(true)
-    }
-    Shortcut {
-        sequence: "Ctrl+Shift+S"
-        onActivated: root.shellModel.sortMode = (root.shellModel.sortMode + 1) % 3
-    }
-    Shortcut {
-        sequence: "Ctrl+L"
-        onActivated: navigationToolBar.focusAddressField()
-    }
-    Shortcut {
-        sequence: "Ctrl+F"
-        onActivated: actionBar.focusFilterField()
-    }
-    Shortcut {
-        sequence: "Ctrl+T"
-        onActivated: root.shellModel.addTab()
-    }
-    Shortcut {
-        sequence: "Ctrl+W"
-        onActivated: root.shellModel.closeTab(root.shellModel.activeTab)
-    }
-    Shortcut {
-        sequence: "Ctrl+Tab"
-        onActivated: root.activateRelativeTab(1)
-    }
-    Shortcut {
-        sequence: "Ctrl+Shift+Tab"
-        onActivated: root.activateRelativeTab(-1)
-    }
-    Shortcut {
-        sequence: "Ctrl+Shift+P"
-        onActivated: root.shellModel.setDualPaneEnabled(root.shellModel.paneCount === 1)
-    }
-    Shortcut {
-        sequence: "F6"
-        enabled: root.shellModel.paneCount === 2
-        onActivated: root.shellModel.activatePane(root.shellModel.activePane === 0 ? 1 : 0)
-    }
-    Shortcut {
-        sequence: "Ctrl+A"
-        onActivated: root.shellModel.selectAll()
-    }
-    Shortcut {
-        sequence: "Ctrl+C"
-        onActivated: root.shellModel.requestCopy()
-    }
-    Shortcut {
-        sequence: "Ctrl+X"
-        onActivated: root.shellModel.requestMove()
-    }
-    Shortcut {
-        sequence: "F2"
-        onActivated: root.shellModel.requestRename()
-    }
-    Shortcut {
-        sequence: "Delete"
-        onActivated: root.shellModel.requestTrash()
-    }
-    Shortcut {
-        sequence: "Ctrl+,"
-        onActivated: appearancePanel.open()
+    // The shortcut table is instantiated from the registry's declarations:
+    // one Shortcut per declared sequence, firing through the registry so
+    // enablement is revalidated at activation. The declarations themselves
+    // live with the actions in ShellActions.
+    Instantiator {
+        objectName: "shortcutTable"
+        model: root.actions.shortcutEntries()
+
+        delegate: Shortcut {
+            id: boundShortcut
+
+            required property var modelData
+            readonly property var action: root.actions.find(modelData.actionId)
+            readonly property var actionContext: root.actions.globalContext(modelData.argument)
+
+            sequence: modelData.sequence
+            // isEnabled reads live model state inside the predicates, so
+            // this binding re-evaluates with the model; triggering
+            // revalidates once more before the handler runs.
+            enabled: root.actions.isEnabled(action, actionContext)
+            onActivated: root.actions.trigger(modelData.actionId, actionContext)
+        }
     }
 
     AppearancePanel {
@@ -324,9 +232,8 @@ ApplicationWindow {
 
                 Layout.fillWidth: true
                 shellModel: root.shellModel
-                navigationController: root
+                registry: root.actions
                 theme: root.shellTheme
-                onAppearanceRequested: appearancePanel.open()
             }
 
             BreadcrumbBar {
@@ -346,6 +253,7 @@ ApplicationWindow {
             TabStrip {
                 Layout.fillWidth: true
                 shellModel: root.shellModel
+                registry: root.actions
                 theme: root.shellTheme
             }
 
@@ -354,6 +262,7 @@ ApplicationWindow {
 
                 Layout.fillWidth: true
                 shellModel: root.shellModel
+                registry: root.actions
                 theme: root.shellTheme
             }
 
@@ -378,6 +287,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     shellModel: root.shellModel
+                    registry: root.actions
                     theme: root.shellTheme
                     paneIndex: 0
                 }
@@ -387,6 +297,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     shellModel: root.shellModel
+                    registry: root.actions
                     theme: root.shellTheme
                     paneIndex: 1
                 }
@@ -416,6 +327,7 @@ ApplicationWindow {
         DirectoryPane {
             shellModel: root.shellModel
             navigationController: root
+            registry: root.actions
             theme: root.shellTheme
             gridMode: root.gridMode
             persistenceDurationMs: presentationLayer.motionDurationMs

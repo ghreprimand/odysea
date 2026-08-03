@@ -56,6 +56,12 @@ Item {
         function goUp() {
             record("goUp");
         }
+        function activate(row) {
+            record("activate:" + row);
+        }
+        function navigateToPath(path) {
+            record("navigateToPath:" + path);
+        }
         function refresh() {
             record("refresh");
         }
@@ -98,11 +104,30 @@ Item {
         property var calls: []
         property bool gridMode: false
 
-        function switchView(useGrid) {
+        function record(name) {
             const seen = calls;
-            seen.push("switchView:" + useGrid);
+            seen.push(name);
             calls = seen;
+        }
+
+        function switchView(useGrid) {
+            record("switchView:" + useGrid);
             gridMode = useGrid;
+        }
+        function activateTabIndex(index) {
+            record("activateTabIndex:" + index);
+        }
+        function activateRelativeTab(offset) {
+            record("activateRelativeTab:" + offset);
+        }
+        function focusAddressField() {
+            record("focusAddressField");
+        }
+        function focusFilterField() {
+            record("focusFilterField");
+        }
+        function openAppearancePanel() {
+            record("openAppearancePanel");
         }
     }
 
@@ -116,6 +141,15 @@ Item {
         id: controllerFactory
 
         RecordingController {}
+    }
+
+    // Each test builds the real declaration set against its recording
+    // stand-ins, so the chrome under test renders from the same registry
+    // the shell uses.
+    Component {
+        id: registryFactory
+
+        ShellActions {}
     }
 
     Component {
@@ -192,6 +226,13 @@ Item {
             wait(20);
         }
 
+        function makeRegistry(model, controller) {
+            return createTemporaryObject(registryFactory, harness, {
+                "shellModel": model,
+                "shell": controller
+            });
+        }
+
         function test_buttonPointerAndKeyboardActivation() {
             const button = createTemporaryObject(buttonFactory, harness);
             verify(button !== null);
@@ -244,7 +285,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness);
             const bar = createTemporaryObject(toolBarFactory, harness, {
                 "shellModel": model,
-                "navigationController": controller
+                "registry": makeRegistry(model, controller)
             });
             verify(bar !== null);
             flush();
@@ -263,7 +304,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness);
             const bar = createTemporaryObject(toolBarFactory, harness, {
                 "shellModel": model,
-                "navigationController": controller
+                "registry": makeRegistry(model, controller)
             });
             verify(bar !== null);
             flush();
@@ -285,7 +326,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness);
             const bar = createTemporaryObject(toolBarFactory, harness, {
                 "shellModel": model,
-                "navigationController": controller
+                "registry": makeRegistry(model, controller)
             });
             verify(bar !== null);
             flush();
@@ -307,28 +348,26 @@ Item {
             compare(address.text, "/other/place");
         }
 
-        function test_toolBarAppearanceSignal() {
+        function test_toolBarAppearanceRoutesThroughRegistry() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
             const bar = createTemporaryObject(toolBarFactory, harness, {
                 "shellModel": model,
-                "navigationController": controller
+                "registry": makeRegistry(model, controller)
             });
             verify(bar !== null);
             flush();
 
-            let requests = 0;
-            bar.appearanceRequested.connect(function () {
-                ++requests;
-            });
             mouseClick(findChild(bar, "appearanceButton"));
-            compare(requests, 1);
+            compare(controller.calls[controller.calls.length - 1], "openAppearancePanel");
         }
 
         function test_tabStripActivationAndLifecycle() {
             const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
             const strip = createTemporaryObject(tabStripFactory, harness, {
-                "shellModel": model
+                "shellModel": model,
+                "registry": makeRegistry(model, controller)
             });
             verify(strip !== null);
             flush();
@@ -337,13 +376,20 @@ Item {
             verify(secondTab !== null);
             compare(secondTab.text, "tab 1");
             mouseClick(secondTab);
-            compare(model.calls[model.calls.length - 1], "activateTab:1");
+            compare(controller.calls[controller.calls.length - 1], "activateTabIndex:1");
+
+            const closeButton = findChild(strip, "closeTabButton");
+            verify(closeButton !== null);
+            verify(closeButton.enabled, "three tabs are open, closing is allowed");
+            mouseClick(closeButton);
+            compare(model.calls[model.calls.length - 1], "closeTab:0");
         }
 
         function test_actionBarGatesOnSelectionAndBusyState() {
             const model = createTemporaryObject(modelFactory, harness);
             const bar = createTemporaryObject(actionBarFactory, harness, {
-                "shellModel": model
+                "shellModel": model,
+                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
             verify(bar !== null);
             flush();
@@ -372,7 +418,8 @@ Item {
         function test_actionBarFilterReachesModel() {
             const model = createTemporaryObject(modelFactory, harness);
             const bar = createTemporaryObject(actionBarFactory, harness, {
-                "shellModel": model
+                "shellModel": model,
+                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
             verify(bar !== null);
             flush();
@@ -387,7 +434,8 @@ Item {
         function test_actionBarHiddenToggle() {
             const model = createTemporaryObject(modelFactory, harness);
             const bar = createTemporaryObject(actionBarFactory, harness, {
-                "shellModel": model
+                "shellModel": model,
+                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
             verify(bar !== null);
             flush();
@@ -415,9 +463,12 @@ Item {
         }
 
         function test_placeholderClickActivatesItsPane() {
-            const model = createTemporaryObject(modelFactory, harness);
+            const model = createTemporaryObject(modelFactory, harness, {
+                "paneCount": 2
+            });
             const placeholder = createTemporaryObject(placeholderFactory, harness, {
                 "shellModel": model,
+                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness)),
                 "paneIndex": 1
             });
             verify(placeholder !== null);

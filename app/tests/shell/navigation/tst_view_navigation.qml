@@ -258,7 +258,7 @@ Support.ShellTestCase {
         fakeModel.selectRow(2, Qt.NoModifier);
         fakeModel.resetTelemetry();
         keyClick(Qt.Key_Menu);
-        let menu = child("gridKeyboardContextMenu");
+        let menu = child("paneActionMenu");
         tryCompare(menu, "opened", true);
         const currentCell = cellAt(2);
         compare(menu.anchorItem, currentCell);

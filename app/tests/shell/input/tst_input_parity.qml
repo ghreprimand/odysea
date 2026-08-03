@@ -139,7 +139,7 @@ Support.ShellTestCase {
         fakeModel.resetTelemetry();
 
         keyClick(Qt.Key_Menu);
-        let menu = child("listKeyboardContextMenu");
+        let menu = child("paneActionMenu");
         tryCompare(menu, "opened", true);
         const currentRow = rowAt(1);
         compare(menu.anchorItem, currentRow);
@@ -513,6 +513,20 @@ Support.ShellTestCase {
         tryCompare(fakeModel, "performTrashCalls", 2);
     }
 
+    function menuItemByName(menu, objectName) {
+        // The menu builds its items from the registry when it opens; their
+        // geometry settles on the following frame, so a click synthesized
+        // in the opening frame would map against pre-layout positions.
+        waitForRendering(menu.contentItem);
+        for (let i = 0; i < menu.count; ++i) {
+            const item = menu.itemAt(i);
+            if (item !== null && item.objectName === objectName) {
+                return item;
+            }
+        }
+        return null;
+    }
+
     function test_contextOperationActionsRemainReachable() {
         let entryMenu = rowAt(0).entryContextMenu;
         verify(entryMenu !== null);
@@ -520,25 +534,30 @@ Support.ShellTestCase {
 
         clickRow(0, Qt.RightButton, Qt.NoModifier);
         tryCompare(entryMenu, "opened", true);
-        mouseClick(entryMenu.itemAt(2));
+        mouseClick(menuItemByName(entryMenu, "menuAction-selection.copy"));
         tryCompare(fakeModel, "requestCopyCalls", 1);
         mouseClick(child("transferCancelButton"));
 
         clickRow(0, Qt.RightButton, Qt.NoModifier);
         tryCompare(entryMenu, "opened", true);
-        mouseClick(entryMenu.itemAt(3));
+        mouseClick(menuItemByName(entryMenu, "menuAction-selection.move"));
         tryCompare(fakeModel, "requestMoveCalls", 1);
         mouseClick(child("transferCancelButton"));
 
         clickRow(0, Qt.RightButton, Qt.NoModifier);
         tryCompare(entryMenu, "opened", true);
-        mouseClick(entryMenu.itemAt(4));
+        mouseClick(menuItemByName(entryMenu, "menuAction-selection.rename"));
         tryCompare(fakeModel, "requestRenameCalls", 1);
         mouseClick(child("renameCancelButton"));
 
         clickRow(0, Qt.RightButton, Qt.NoModifier);
         tryCompare(entryMenu, "opened", true);
-        mouseClick(entryMenu.itemAt(5));
+        // The destructive action renders last, after the separator, and
+        // its label states the target count.
+        const trashItem = menuItemByName(entryMenu, "menuAction-selection.trash");
+        compare(entryMenu.itemAt(entryMenu.count - 1), trashItem);
+        compare(trashItem.text, "Move 1 entry to Trash");
+        mouseClick(trashItem);
         tryCompare(fakeModel, "requestTrashCalls", 1);
         mouseClick(child("trashCancelButton"));
     }

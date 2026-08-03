@@ -1,6 +1,9 @@
 // The tab strip: one button per open tab plus the add and close actions.
-// Pointer activation lives here; the keyboard equivalents (Ctrl+1..9,
-// Ctrl+Tab, Ctrl+T, Ctrl+W) live on the shell's shortcut table.
+// Activation, creation, and closing all route through the shared action
+// registry, and one shared context menu serves every tab, parameterized
+// by the tab it was opened for. A pointer opens the menu at the press
+// position on the tab; the Menu key opens it anchored to the focused
+// tab, never at a pointer position.
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
@@ -10,6 +13,7 @@ ChromeStrip {
     id: strip
 
     required property var shellModel
+    required property ActionRegistry registry
 
     implicitHeight: Math.max(40, strip.theme.chromeFontPixelSize + 18)
 
@@ -39,7 +43,13 @@ ChromeStrip {
                     objectName: "tabButton-" + index
                     implicitWidth: 140
                     text: strip.shellModel.tabLabel(index)
-                    onClicked: strip.shellModel.activateTab(index)
+                    onClicked: strip.registry.trigger("tab.activate", strip.registry.tabContext(index))
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier) !== 0)) {
+                            tabMenu.openFor(strip.registry.tabContext(tabButton.index), tabButton, Qt.point(tabButton.width / 2, tabButton.height), tabButton);
+                            event.accepted = true;
+                        }
+                    }
 
                     contentItem: Text {
                         text: tabButton.text
@@ -54,26 +64,37 @@ ChromeStrip {
                         border.color: tabButton.checked ? strip.theme.accent : strip.theme.border
                         radius: 5
                     }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        onPressed: mouse => tabMenu.openFor(strip.registry.tabContext(tabButton.index), tabButton, Qt.point(mouse.x, mouse.y), tabButton)
+                    }
                 }
             }
         }
 
-        ShellButton {
-            Accessible.name: qsTr("New tab")
+        ActionButton {
+            objectName: "newTabButton"
             theme: strip.theme
-            iconName: "add"
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("New tab (Ctrl+T)")
-            onClicked: strip.shellModel.addTab()
+            registry: strip.registry
+            actionId: "tab.new"
+            showLabel: false
         }
-        ShellButton {
-            Accessible.name: qsTr("Close tab")
+        ActionButton {
+            objectName: "closeTabButton"
             theme: strip.theme
-            iconName: "close"
-            enabled: strip.shellModel.tabCount > 1
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Close tab (Ctrl+W)")
-            onClicked: strip.shellModel.closeTab(strip.shellModel.activeTab)
+            registry: strip.registry
+            actionId: "tab.close"
+            showLabel: false
         }
+    }
+
+    ActionMenu {
+        id: tabMenu
+
+        objectName: "tabActionMenu"
+        registry: strip.registry
+        theme: strip.theme
     }
 }

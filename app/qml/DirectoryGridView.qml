@@ -8,6 +8,9 @@ FocusScope {
 
     required property var shellModel
     required property var navigationController
+    /// The hosting pane's shared context menu; every entry, selection,
+    /// and blank-canvas invocation in this view parameterizes it.
+    required property var actionMenu
     required property color backgroundColor
     required property color panelColor
     required property color borderColor
@@ -200,8 +203,10 @@ FocusScope {
         }
 
         function openCurrentContextMenu() {
+            const registry = pane.actionMenu.registry;
             const row = pane.shellModel.currentIndex;
             if (row < 0) {
+                pane.actionMenu.openFor(registry.canvasContext(pane.shellModel.path), directoryGrid, Qt.point(directoryGrid.width / 2, directoryGrid.height / 2), directoryGrid);
                 return;
             }
             if (pane.shellModel.rowSelected(row)) {
@@ -210,11 +215,12 @@ FocusScope {
                 pane.shellModel.selectRow(row, Qt.NoModifier);
             }
             directoryGrid.revealCurrent();
+            const context = registry.entryContext(row, pane.shellModel.rowIsDirectory(row), Math.max(1, pane.shellModel.selectedCount));
             const delegate = directoryGrid.itemAtIndex(row);
             if (delegate !== null) {
-                sharedContextMenu.openFor(row, pane.shellModel.rowIsDirectory(row), delegate, Qt.point(delegate.width / 2, delegate.height / 2));
+                pane.actionMenu.openFor(context, delegate, Qt.point(delegate.width / 2, delegate.height / 2), directoryGrid);
             } else {
-                sharedContextMenu.openFor(row, pane.shellModel.rowIsDirectory(row), directoryGrid, Qt.point(directoryGrid.width / 2, directoryGrid.height / 2));
+                pane.actionMenu.openFor(context, directoryGrid, Qt.point(directoryGrid.width / 2, directoryGrid.height / 2), directoryGrid);
             }
         }
 
@@ -270,7 +276,7 @@ FocusScope {
             required property string entryPath
             required property string thumbnailSource
             required property bool thumbnailLoading
-            readonly property var entryContextMenu: sharedContextMenu
+            readonly property var entryContextMenu: pane.actionMenu
             readonly property var dragMimeData: ({
                     "text/uri-list": pane.shellModel.selectedFileUrls.length > 0 ? pane.shellModel.selectedFileUrls.join("\r\n") + "\r\n" : ""
                 })
@@ -290,7 +296,8 @@ FocusScope {
             Component.onDestruction: pane.shellModel.releaseThumbnail(entryPath)
 
             function openContextMenu(position) {
-                sharedContextMenu.openFor(index, isDir, entryCell, position);
+                const registry = pane.actionMenu.registry;
+                pane.actionMenu.openFor(registry.entryContext(entryCell.index, entryCell.isDir, Math.max(1, pane.shellModel.selectedCount)), entryCell, position, directoryGrid);
             }
 
             function dragActionForModifiers(modifiers) {
@@ -544,6 +551,26 @@ FocusScope {
         z: 2
     }
 
+    // Blank-canvas context menu, pointer path. Mirrors the blank
+    // rubber-band region's geometry instead of restating it; right button
+    // only, so band selection below is untouched.
+    MouseArea {
+        id: blankContextPointer
+
+        objectName: "gridBlankContextArea"
+        acceptedButtons: Qt.RightButton
+        x: blankBandPointer.x
+        y: blankBandPointer.y
+        width: blankBandPointer.width
+        height: blankBandPointer.height
+        z: 3
+        onPressed: mouse => {
+            pane.navigationController.clearTypeAhead();
+            directoryGrid.forceActiveFocus();
+            pane.actionMenu.openFor(pane.actionMenu.registry.canvasContext(pane.shellModel.path), blankContextPointer, Qt.point(mouse.x, mouse.y), directoryGrid);
+        }
+    }
+
     GridBandArea {
         id: gutterBandPointer
 
@@ -566,16 +593,5 @@ FocusScope {
         color: pane.rubberBandColor
         border.color: pane.accentColor
         radius: 3
-    }
-
-    EntryContextMenu {
-        id: sharedContextMenu
-
-        objectName: "gridKeyboardContextMenu"
-        shellModel: pane.shellModel
-        focusTarget: directoryGrid
-        iconInk: pane.iconInkColor
-        textInk: pane.primaryTextColor
-        highContrast: pane.highContrast
     }
 }

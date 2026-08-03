@@ -1,8 +1,8 @@
 // The navigation toolbar: history and refresh actions, the direct-entry
 // address field, and the workspace toggles for panes, view mode, and
-// appearance. Every action here is a pointer path whose keyboard
-// equivalent lives on the shell's shortcut table; the tooltips name those
-// sequences so both paths stay discoverable.
+// appearance. Every button renders from the shared action registry, so
+// its label, icon, enablement, and the key sequence its tooltip names
+// all come from the same declaration the menus and shortcuts use.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,12 +11,8 @@ ToolBar {
     id: bar
 
     required property var shellModel
-    required property var navigationController
+    required property ActionRegistry registry
     required property var theme
-
-    /// The shell opens the appearance surface; the toolbar only requests it,
-    /// so the button works in any scene that hosts the bar.
-    signal appearanceRequested
 
     /// Keyboard entry point for direct path entry (Ctrl+L on the shell).
     function focusAddressField() {
@@ -33,44 +29,33 @@ ToolBar {
         anchors.margins: 6
         spacing: 6
 
-        ShellButton {
+        ActionButton {
             objectName: "backButton"
-            Accessible.name: qsTr("Back")
             theme: bar.theme
-            iconName: "back"
-            enabled: bar.shellModel.canGoBack
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Back (Alt+Left)")
-            onClicked: bar.shellModel.goBack()
+            registry: bar.registry
+            actionId: "nav.back"
+            showLabel: false
         }
-        ShellButton {
+        ActionButton {
             objectName: "forwardButton"
-            Accessible.name: qsTr("Forward")
             theme: bar.theme
-            iconName: "forward"
-            enabled: bar.shellModel.canGoForward
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Forward (Alt+Right)")
-            onClicked: bar.shellModel.goForward()
+            registry: bar.registry
+            actionId: "nav.forward"
+            showLabel: false
         }
-        ShellButton {
+        ActionButton {
             objectName: "upButton"
-            Accessible.name: qsTr("Up")
             theme: bar.theme
-            iconName: "up"
-            enabled: bar.shellModel.canGoUp
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Up (Alt+Up)")
-            onClicked: bar.shellModel.goUp()
+            registry: bar.registry
+            actionId: "nav.up"
+            showLabel: false
         }
-        ShellButton {
+        ActionButton {
             objectName: "refreshButton"
-            Accessible.name: qsTr("Refresh")
             theme: bar.theme
-            iconName: "refresh"
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Refresh (F5)")
-            onClicked: bar.shellModel.refresh()
+            registry: bar.registry
+            actionId: "nav.refresh"
+            showLabel: false
         }
 
         ShellTextField {
@@ -100,44 +85,29 @@ ToolBar {
             }
         }
 
-        ShellButton {
+        ActionButton {
+            objectName: "paneToggleButton"
             theme: bar.theme
-            iconName: "panes"
-            text: bar.shellModel.paneCount === 2 ? qsTr("1 pane") : qsTr("2 panes")
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Toggle pane workspace (Ctrl+Shift+P)")
-            onClicked: bar.shellModel.setDualPaneEnabled(bar.shellModel.paneCount === 1)
+            registry: bar.registry
+            actionId: "pane.toggleDual"
         }
-        ShellButton {
+        ActionButton {
             objectName: "listViewButton"
             theme: bar.theme
-            iconName: "list"
-            text: qsTr("List")
-            checkable: true
-            checked: !bar.navigationController.gridMode
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("List view (Ctrl+Shift+1)")
-            onClicked: bar.navigationController.switchView(false)
+            registry: bar.registry
+            actionId: "view.list"
         }
-        ShellButton {
+        ActionButton {
             objectName: "gridViewButton"
             theme: bar.theme
-            iconName: "grid"
-            text: qsTr("Grid")
-            checkable: true
-            checked: bar.navigationController.gridMode
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Grid view (Ctrl+Shift+2)")
-            onClicked: bar.navigationController.switchView(true)
+            registry: bar.registry
+            actionId: "view.grid"
         }
-        ShellButton {
+        ActionButton {
             objectName: "appearanceButton"
             theme: bar.theme
-            iconName: "appearance"
-            text: qsTr("Appearance")
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Appearance settings (Ctrl+,)")
-            onClicked: bar.appearanceRequested()
+            registry: bar.registry
+            actionId: "appearance.open"
         }
     }
 }

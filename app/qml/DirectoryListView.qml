@@ -8,6 +8,9 @@ FocusScope {
 
     required property var shellModel
     required property var navigationController
+    /// The hosting pane's shared context menu; every entry, selection,
+    /// and blank-canvas invocation in this view parameterizes it.
+    required property var actionMenu
     required property int rowHeight
     required property color accentColor
     required property color primaryTextColor
@@ -136,8 +139,10 @@ FocusScope {
         }
 
         function openCurrentContextMenu() {
+            const registry = pane.actionMenu.registry;
             const row = pane.shellModel.currentIndex;
             if (row < 0) {
+                pane.actionMenu.openFor(registry.canvasContext(pane.shellModel.path), directoryList, Qt.point(pane.selectionGutterWidth, 8), directoryList);
                 return;
             }
             if (pane.shellModel.rowSelected(row)) {
@@ -146,12 +151,13 @@ FocusScope {
                 pane.shellModel.selectRow(row, Qt.NoModifier);
             }
             directoryList.revealCurrent();
+            const context = registry.entryContext(row, pane.shellModel.rowIsDirectory(row), Math.max(1, pane.shellModel.selectedCount));
             const delegate = directoryList.itemAtIndex(row);
             if (delegate !== null) {
-                sharedContextMenu.openFor(row, pane.shellModel.rowIsDirectory(row), delegate, Qt.point(pane.selectionGutterWidth, delegate.height));
+                pane.actionMenu.openFor(context, delegate, Qt.point(pane.selectionGutterWidth, delegate.height), directoryList);
             } else {
                 const rowY = Math.max(0, Math.min(directoryList.height, row * pane.rowHeight - directoryList.contentY));
-                sharedContextMenu.openFor(row, pane.shellModel.rowIsDirectory(row), directoryList, Qt.point(pane.selectionGutterWidth, rowY));
+                pane.actionMenu.openFor(context, directoryList, Qt.point(pane.selectionGutterWidth, rowY), directoryList);
             }
         }
 
@@ -202,7 +208,7 @@ FocusScope {
             required property bool selected
             required property bool recoveryEntry
             required property string entryPath
-            readonly property var entryContextMenu: sharedContextMenu
+            readonly property var entryContextMenu: pane.actionMenu
             readonly property var dragMimeData: ({
                     "text/uri-list": pane.shellModel.selectedFileUrls.length > 0 ? pane.shellModel.selectedFileUrls.join("\r\n") + "\r\n" : ""
                 })
@@ -215,7 +221,8 @@ FocusScope {
             z: 1
 
             function openContextMenu(position) {
-                sharedContextMenu.openFor(index, isDir, entryRow, position);
+                const registry = pane.actionMenu.registry;
+                pane.actionMenu.openFor(registry.entryContext(entryRow.index, entryRow.isDir, Math.max(1, pane.shellModel.selectedCount)), entryRow, position, directoryList);
             }
 
             function dragActionForModifiers(modifiers) {
@@ -404,6 +411,27 @@ FocusScope {
             z: 0
         }
 
+        // Blank-canvas context menu, pointer path. The area mirrors the
+        // blank rubber-band region's geometry instead of restating it, and
+        // accepts only the right button so left-press band selection below
+        // is untouched.
+        MouseArea {
+            id: blankContextPointer
+
+            objectName: "blankContextArea"
+            acceptedButtons: Qt.RightButton
+            x: blankBandPointer.x
+            y: blankBandPointer.y
+            width: blankBandPointer.width
+            height: blankBandPointer.height
+            z: 1
+            onPressed: mouse => {
+                pane.navigationController.clearTypeAhead();
+                directoryList.forceActiveFocus();
+                pane.actionMenu.openFor(pane.actionMenu.registry.canvasContext(pane.shellModel.path), blankContextPointer, Qt.point(mouse.x, mouse.y), directoryList);
+            }
+        }
+
         RubberBandArea {
             id: gutterBandPointer
 
@@ -434,16 +462,5 @@ FocusScope {
 
             width: 8
         }
-    }
-
-    EntryContextMenu {
-        id: sharedContextMenu
-
-        objectName: "listKeyboardContextMenu"
-        shellModel: pane.shellModel
-        focusTarget: directoryList
-        iconInk: pane.iconInkColor
-        textInk: pane.primaryTextColor
-        highContrast: pane.highContrast
     }
 }
