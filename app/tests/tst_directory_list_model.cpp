@@ -41,6 +41,22 @@ int rowForName(const DirectoryListModel& model, const QString& name) {
     return -1;
 }
 
+bool waitForScan(DirectoryListModel& model) {
+    if (!model.busy()) {
+        return true;
+    }
+    QSignalSpy finished(&model, &DirectoryListModel::busyChanged);
+    return finished.wait(5000) && !model.busy();
+}
+
+bool waitForOperation(DirectoryListModel& model) {
+    if (!model.operationBusy()) {
+        return true;
+    }
+    QSignalSpy finished(&model, &DirectoryListModel::operationBusyChanged);
+    return finished.wait(5000) && !model.operationBusy();
+}
+
 QString selectedName(const DirectoryListModel& model) {
     for (int row = 0; row < model.rowCount(); ++row) {
         if (model.data(model.index(row), DirectoryListModel::SelectedRole).toBool()) {
@@ -151,6 +167,8 @@ class DirectoryListModelTest : public QObject {
     void selectionSurvivesSortFilterAndRefresh();
     void explicitGeometricSelectionUsesRowSet();
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
+    void sameParentCopyCreatesSiblingDuplicate();
+    void directDirectoryActivationNavigates();
     void activationBreadcrumbsAndDropContracts();
     void symlinkTargetDirectoryChangesRefreshRole();
     void operationsReachCoreAndReportFailures();
@@ -557,6 +575,49 @@ void DirectoryListModelTest::cursorMovementAndPrefixSearchPreserveSelectionContr
                           QStringLiteral("beta.txt")}));
 }
 
+void DirectoryListModelTest::sameParentCopyCreatesSiblingDuplicate() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path source = root / "source";
+    const fs::path document = source / "document.txt";
+    fs::create_directories(source);
+    writeFile(document);
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(source.string()));
+    QVERIFY(waitForScan(model));
+
+    const int documentRow = rowForName(model, QStringLiteral("document.txt"));
+    QVERIFY(documentRow >= 0);
+    model.selectRow(documentRow, Qt::NoModifier);
+    QVERIFY(model.canDropSelection(QString::fromStdString(source.string()), false));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string()), true));
+    QVERIFY(model.dropSelection(QString::fromStdString(source.string()), false,
+                                DirectoryListModel::ConflictFail));
+    QVERIFY(waitForOperation(model));
+    QVERIFY(fs::exists(source / "document (2).txt"));
+}
+
+void DirectoryListModelTest::directDirectoryActivationNavigates() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path source = root / "source";
+    const fs::path folder = source / "folder";
+    fs::create_directories(folder);
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(source.string()));
+    QVERIFY(waitForScan(model));
+
+    const int folderRow = rowForName(model, QStringLiteral("folder"));
+    QVERIFY(folderRow >= 0);
+    model.activate(folderRow);
+    QVERIFY(waitForScan(model));
+    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
+}
+
 void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -616,8 +677,7 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     QCOMPARE(openSpy.count(), 2);
     QVERIFY(model.statusMessage().startsWith(QStringLiteral("Could not open ")));
 
-    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string())));
-    QVERIFY(model.canDropSelection(QString::fromStdString(destination.string())));
+    QVERIFY(model.canDropSelection(QString::fromStdString(destination.string()), false));
     QVERIFY(model.dropSelection(QString::fromStdString(destination.string()), false,
                                 DirectoryListModel::ConflictFail));
     QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
@@ -627,13 +687,14 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     const int remoteLinkRow = rowForName(model, QStringLiteral("remote-link"));
     QVERIFY(remoteLinkRow >= 0);
     model.selectRow(remoteLinkRow, Qt::NoModifier);
-    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string())));
+    QVERIFY(model.canDropSelection(QString::fromStdString(source.string()), false));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string()), true));
 
     const int folderLinkRow = rowForName(model, QStringLiteral("folder-link"));
     QVERIFY(model.rowIsDirectory(folderLinkRow));
     QVERIFY(model.data(model.index(folderLinkRow), DirectoryListModel::IsDirRole).toBool());
     model.selectRow(documentRow, Qt::NoModifier);
-    QVERIFY(model.canDropSelection(QString::fromStdString(folderLink.string())));
+    QVERIFY(model.canDropSelection(QString::fromStdString(folderLink.string()), false));
     model.activate(folderLinkRow);
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QCOMPARE(model.path(), QString::fromStdString(folderLink.string()));
@@ -645,8 +706,8 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     const int folderRow = rowForName(model, QStringLiteral("folder"));
     QVERIFY(model.rowIsDirectory(folderRow));
     model.selectRow(folderRow, Qt::NoModifier);
-    QVERIFY(!model.canDropSelection(QString::fromStdString(folder.string())));
-    QVERIFY(!model.canDropSelection(QString::fromStdString(descendant.string())));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(folder.string()), false));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(descendant.string()), false));
     QVERIFY(!model.dropSelection(QString::fromStdString(descendant.string()), true,
                                  DirectoryListModel::ConflictFail));
     QVERIFY(model.statusMessage().contains(QStringLiteral("cannot be transferred")));
@@ -661,7 +722,8 @@ void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
     const int remoteDocumentRow = rowForName(model, QStringLiteral("remote-document.txt"));
     QVERIFY(remoteDocumentRow >= 0);
     model.selectRow(remoteDocumentRow, Qt::NoModifier);
-    QVERIFY(!model.canDropSelection(QString::fromStdString(remoteLink.string())));
+    QVERIFY(model.canDropSelection(QString::fromStdString(remoteLink.string()), false));
+    QVERIFY(!model.canDropSelection(QString::fromStdString(remoteLink.string()), true));
 }
 
 void DirectoryListModelTest::symlinkTargetDirectoryChangesRefreshRole() {

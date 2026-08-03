@@ -1,0 +1,567 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtTest
+import OdySea
+import "../../support" as Support
+
+Support.ShellTestCase {
+    id: testCase
+
+    name: "InputParity"
+
+    SignalSpy {
+        id: dragStartedSpy
+
+        signalName: "transferDragStarted"
+    }
+
+    function test_blankAreaRubberBand() {
+        verifyBandDrag(child("rubberBandBlankArea"), false);
+    }
+
+    function test_appearancePanelKeyboardAndMouseParity() {
+        const panel = child("appearancePanel");
+        verify(!panel.opened);
+
+        // Keyboard path.
+        keySequence("Ctrl+,");
+        tryVerify(function () {
+            return panel.opened;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !panel.opened;
+        });
+
+        // Mouse path.
+        mouseClick(child("appearanceButton"));
+        tryVerify(function () {
+            return panel.opened;
+        });
+        const closeButton = findChild(panel.contentItem, "closeAppearanceButton");
+        verify(closeButton !== null);
+        mouseClick(closeButton);
+        tryVerify(function () {
+            return !panel.opened;
+        });
+    }
+
+    function test_ctrlClickReachesSelectionModel() {
+        clickRow(1, Qt.LeftButton, Qt.ControlModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 1);
+        verify((fakeModel.selectedModifiers & Qt.ControlModifier) !== 0);
+    }
+
+    function test_copyDialogKeyboardAndMouseParity() {
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_C, Qt.ControlModifier);
+        tryCompare(fakeModel, "requestCopyCalls", 1);
+        let transferDialog = child("transferDialog");
+        tryCompare(transferDialog, "opened", true);
+        let destinationField = child("operationDestinationField");
+        destinationField.text = "/destination/keyboard";
+        destinationField.forceActiveFocus();
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "performCopyCalls", 1);
+        compare(fakeModel.performedDestination, "/destination/keyboard");
+        tryCompare(transferDialog, "opened", false);
+
+        mouseClick(child("copyButton"));
+        tryCompare(fakeModel, "requestCopyCalls", 2);
+        tryCompare(transferDialog, "opened", true);
+        destinationField.text = "/destination/pointer";
+        mouseClick(child("transferConfirmButton"));
+        tryCompare(fakeModel, "performCopyCalls", 2);
+        compare(fakeModel.performedDestination, "/destination/pointer");
+        tryCompare(transferDialog, "opened", false);
+    }
+
+    function test_doubleClickReachesActivationModel() {
+        let row = rowAt(2);
+        mouseDoubleClickSequence(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activateCalls", 1);
+        compare(fakeModel.activatedRow, 2);
+    }
+
+    function test_enterAndDoubleClickShareActivationPath() {
+        let list = child("directoryList");
+        fakeModel.selectRow(1, Qt.NoModifier);
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "activateCalls", 1);
+        compare(fakeModel.activatedRow, 1);
+
+        let row = rowAt(1);
+        mouseDoubleClickSequence(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activateCalls", 2);
+        compare(fakeModel.activatedRow, 1);
+    }
+
+    function test_breadcrumbPointerAndKeyboardNavigation() {
+        let rootCrumb = child("breadcrumb-0");
+        let sampleCrumb = child("breadcrumb-1");
+        compare(rootCrumb.segmentPath, "/");
+        compare(rootCrumb.segmentUrl, "file:///");
+        compare(sampleCrumb.segmentPath, "/sample");
+        compare(sampleCrumb.segmentUrl, "file:///sample");
+
+        rootCrumb.forceActiveFocus();
+        keyClick(Qt.Key_Right);
+        tryVerify(function () {
+            return sampleCrumb.activeFocus;
+        });
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "navigateToPathCalls", 1);
+        compare(fakeModel.navigatedPath, "/sample");
+        tryVerify(function () {
+            return child("directoryList").activeFocus;
+        });
+
+        mouseClick(rootCrumb);
+        tryCompare(fakeModel, "navigateToPathCalls", 2);
+        compare(fakeModel.navigatedPath, "/");
+        tryVerify(function () {
+            return child("directoryList").activeFocus;
+        });
+    }
+
+    function test_contextMenuKeyboardPathsPreserveSelectionAndRestoreFocus() {
+        let list = child("directoryList");
+        fakeModel.selectRow(2, Qt.NoModifier);
+        fakeModel.selectRow(1, Qt.ControlModifier);
+        compare(selectedRows().join(","), "1,2");
+        list.forceActiveFocus();
+        fakeModel.resetTelemetry();
+
+        keyClick(Qt.Key_Menu);
+        let menu = child("listKeyboardContextMenu");
+        tryCompare(menu, "opened", true);
+        const currentRow = rowAt(1);
+        compare(menu.anchorItem, currentRow);
+        compare(menu.parent, currentRow);
+        compare(menu.anchorPosition.x, 28);
+        compare(menu.anchorPosition.y, currentRow.height);
+        compare(selectedRows().join(","), "1,2");
+        compare(fakeModel.movedToRow, 1);
+        compare(fakeModel.movedPreservingSelection, true);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+
+        keyClick(Qt.Key_F10, Qt.ShiftModifier);
+        tryCompare(menu, "opened", true);
+        compare(selectedRows().join(","), "1,2");
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+    }
+
+    function test_dragMimeUrlsModifiersAndDirectoryTargets() {
+        fakeModel.selectRow(0, Qt.NoModifier);
+        fakeModel.selectRow(1, Qt.ControlModifier);
+        fakeModel.setProperty(3, "isDir", true);
+        fakeModel.setProperty(3, "entryPath", "/sample/folder");
+        waitForRendering(shellWindow.contentItem);
+
+        let row = rowAt(0);
+        compare(row.dragMimeData["text/uri-list"], "file:///sample/sample-0.txt\r\nfile:///sample/sample-1.txt\r\n");
+        compare(row.dragProposedAction, Qt.MoveAction);
+        mousePress(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ControlModifier);
+        compare(row.dragProposedAction, Qt.CopyAction);
+        mouseRelease(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ControlModifier);
+        mousePress(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ShiftModifier);
+        compare(row.dragProposedAction, Qt.MoveAction);
+        mouseRelease(row, row.width / 2, row.height / 2, Qt.LeftButton, Qt.ShiftModifier);
+
+        compare(child("entryDropTarget-0").enabled, false);
+        compare(child("entryDropTarget-3").enabled, true);
+        verify(child("breadcrumbDropTarget-0").enabled);
+        verify(rowAt(3).dropSelectedEntries(Qt.CopyAction));
+        compare(fakeModel.dropSelectionCalls, 1);
+        compare(fakeModel.dropDestination, "/sample/folder");
+        compare(fakeModel.dropMove, false);
+        compare(fakeModel.dropConflictMode, 0);
+        verify(child("breadcrumb-0").dropSelectedEntries(Qt.MoveAction));
+        compare(fakeModel.dropSelectionCalls, 2);
+        compare(fakeModel.dropDestination, "/");
+        compare(fakeModel.dropMove, true);
+        compare(fakeModel.dropConflictMode, 0);
+        fakeModel.dropAccepted = false;
+        verify(!rowAt(3).dropSelectedEntries(Qt.MoveAction));
+        compare(fakeModel.dropSelectionCalls, 3);
+    }
+
+    function test_horizontalPointerGestureStartsAndEndsARealDrag() {
+        fakeModel.selectRow(0, Qt.NoModifier);
+        const row = rowAt(0);
+        const centerX = row.width / 2;
+        const centerY = row.height / 2;
+        fakeModel.resetTelemetry();
+        dragStartedSpy.target = row;
+        dragStartedSpy.clear();
+
+        mousePress(row, centerX, centerY, Qt.LeftButton, Qt.ShiftModifier);
+        mouseMove(row, centerX + 20, centerY, 10, Qt.LeftButton, Qt.ShiftModifier);
+        compare(dragStartedSpy.count, 1);
+        compare(dragStartedSpy.signalArguments[0][0], Qt.MoveAction);
+        compare(row.dragProposedAction, Qt.MoveAction);
+        mouseRelease(row, centerX + 20, centerY, Qt.LeftButton, Qt.ShiftModifier);
+        tryCompare(row, "dragActive", false);
+        compare(fakeModel.dropSelectionCalls, 0);
+        compare(fakeModel.beginRubberBandCalls, 0);
+        dragStartedSpy.target = null;
+    }
+
+    function test_verticalRowScrollDoesNotStartTransfer() {
+        let list = prepareScrollableRows(300);
+        let row = rowAt(10);
+        const initialContentY = list.contentY;
+        mouseDrag(row, row.width / 2, row.height / 2, 0, -100, Qt.LeftButton, Qt.NoModifier, 10);
+        tryVerify(function () {
+            return list.contentY !== initialContentY;
+        });
+        compare(fakeModel.dropSelectionCalls, 0);
+        compare(fakeModel.beginRubberBandCalls, 0);
+    }
+
+    function test_filledViewportRubberBand() {
+        populateRows(40);
+        fakeModel.resetTelemetry();
+        let blankArea = child("rubberBandBlankArea");
+        tryCompare(blankArea, "height", 0);
+        verifyBandDrag(child("rubberBandGutter"), true);
+    }
+
+    function test_bandAnchorSurvivesContentMovement() {
+        let list = prepareScrollableRows(300);
+        let gutter = child("rubberBandGutter");
+        let pointerX = gutter.width / 2;
+
+        mousePress(gutter, pointerX, 100, Qt.LeftButton, Qt.NoModifier);
+        list.contentY = 368;
+        tryCompare(list, "contentY", 368);
+        mouseMove(gutter, pointerX, 150, 10, Qt.LeftButton, Qt.NoModifier);
+        mouseRelease(gutter, pointerX, 150, Qt.LeftButton, Qt.NoModifier);
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1);
+        verify(fakeModel.updateRubberBandCalls > 0);
+        compare(fakeModel.rubberBandRows[0], Math.floor(400 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(517 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(517 / 34));
+        compare(fakeModel.endRubberBandCalls, 1);
+    }
+
+    function test_scrolledDownwardFilledViewportRubberBand() {
+        let list = prepareScrollableRows(300);
+        let gutter = child("rubberBandGutter");
+
+        mouseDrag(gutter, gutter.width / 2, 30, 0, 140, Qt.LeftButton, Qt.NoModifier, 10);
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1);
+        verify(fakeModel.updateRubberBandCalls > 2);
+        compare(fakeModel.rubberBandRows[0], Math.floor(330 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(469 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(469 / 34));
+        compare(fakeModel.endRubberBandCalls, 1);
+        compare(list.contentY, 300);
+    }
+
+    function test_scrolledUpwardFilledViewportRubberBand() {
+        let list = prepareScrollableRows(300);
+        let gutter = child("rubberBandGutter");
+
+        mouseDrag(gutter, gutter.width / 2, 200, 0, -140, Qt.LeftButton, Qt.NoModifier, 10);
+
+        tryCompare(fakeModel, "beginRubberBandCalls", 1);
+        verify(fakeModel.updateRubberBandCalls > 2);
+        compare(fakeModel.rubberBandRows[0], Math.floor(360 / 34));
+        compare(fakeModel.rubberBandRows[fakeModel.rubberBandRows.length - 1], Math.floor(499 / 34));
+        compare(fakeModel.rubberBandCurrentRow, Math.floor(360 / 34));
+        compare(fakeModel.endRubberBandCalls, 1);
+        compare(list.contentY, 300);
+    }
+
+    function test_gridPointerActivationAndSelection() {
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        compare(cellAt(0).entryContextMenu, cellAt(1).entryContextMenu);
+
+        clickCell(1, Qt.LeftButton, Qt.ControlModifier);
+        tryCompare(fakeModel, "selectedRow", 1);
+        verify((fakeModel.selectedModifiers & Qt.ControlModifier) !== 0);
+
+        let cell = cellAt(2);
+        mouseDoubleClickSequence(cell, cell.width / 2, cell.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activatedRow", 2);
+
+        clickCell(3, Qt.RightButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectedRow", 3);
+        keyClick(Qt.Key_Escape);
+    }
+
+    function test_gridRubberBandUsesTwoDimensionalRows() {
+        populateRows(40);
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        fakeModel.resetTelemetry();
+
+        let gutter = child("gridRubberBandGutter");
+        tryVerify(function () {
+            return gutter.width > 4 && gutter.height > 200;
+        });
+        mouseDrag(gutter, gutter.width / 2, 20, -220, 190, Qt.LeftButton, Qt.NoModifier, 10);
+        tryCompare(fakeModel, "beginRubberBandCalls", 1);
+        verify(fakeModel.updateRubberBandCalls > 0);
+        compare(fakeModel.endRubberBandCalls, 1);
+        verify(fakeModel.rubberBandRows.length > 2);
+        let containsGap = false;
+        for (let index = 1; index < fakeModel.rubberBandRows.length; ++index) {
+            if (fakeModel.rubberBandRows[index] - fakeModel.rubberBandRows[index - 1] > 1) {
+                containsGap = true;
+            }
+        }
+        verify(containsGap);
+    }
+
+    function test_gridCellDragScrollsWithoutSelecting() {
+        populateRows(60);
+        mouseClick(child("gridViewButton"));
+        let grid = child("directoryGrid");
+        tryCompare(grid, "visible", true);
+        verify(grid.count > 0);
+        grid.interactive = false;
+        grid.contentY = 154;
+        grid.interactive = true;
+        tryCompare(grid, "contentY", 154);
+        fakeModel.resetTelemetry();
+
+        let cell = cellAt(14);
+        const initialContentY = grid.contentY;
+        mouseDrag(cell, cell.width / 2, cell.height / 2, 0, -100, Qt.LeftButton, Qt.NoModifier, 10);
+        tryVerify(function () {
+            return grid.contentY !== initialContentY;
+        });
+        compare(fakeModel.selectRowCalls, 0);
+        compare(fakeModel.beginRubberBandCalls, 0);
+        compare(fakeModel.dropSelectionCalls, 0);
+    }
+
+    function test_moveDialogKeyboardAndMouseParity() {
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_X, Qt.ControlModifier);
+        tryCompare(fakeModel, "requestMoveCalls", 1);
+        let transferDialog = child("transferDialog");
+        tryCompare(transferDialog, "opened", true);
+        let destinationField = child("operationDestinationField");
+        destinationField.text = "/destination/move-keyboard";
+        destinationField.forceActiveFocus();
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "performMoveCalls", 1);
+
+        mouseClick(child("moveButton"));
+        tryCompare(fakeModel, "requestMoveCalls", 2);
+        tryCompare(transferDialog, "opened", true);
+        destinationField.text = "/destination/move-pointer";
+        mouseClick(child("transferConfirmButton"));
+        tryCompare(fakeModel, "performMoveCalls", 2);
+        compare(fakeModel.performedDestination, "/destination/move-pointer");
+    }
+
+    function test_plainClickReachesSelectionModel() {
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 0);
+        compare(fakeModel.selectedModifiers, Qt.NoModifier);
+    }
+
+    function test_scrolledRowClickPathsRemainIndependent() {
+        prepareScrollableRows(300);
+
+        clickRow(10, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 10);
+        compare(fakeModel.beginRubberBandCalls, 0);
+
+        let doubleRow = rowAt(11);
+        mouseDoubleClickSequence(doubleRow, doubleRow.width / 2, doubleRow.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "activateCalls", 1);
+        compare(fakeModel.activatedRow, 11);
+        compare(fakeModel.beginRubberBandCalls, 0);
+
+        clickRow(12, Qt.RightButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectedRow", 12);
+        compare(fakeModel.beginRubberBandCalls, 0);
+        keyClick(Qt.Key_Escape);
+    }
+
+    function test_scrolledRowWheelRemainsIndependent() {
+        let list = prepareScrollableRows(300);
+        let row = rowAt(10);
+        const initialContentY = list.contentY;
+
+        mouseWheel(row, row.width / 2, row.height / 2, 0, -120, Qt.NoButton, Qt.NoModifier, 10);
+
+        tryVerify(function () {
+            return list.contentY !== initialContentY;
+        });
+        list.interactive = false;
+        list.cancelFlick();
+
+        list.contentY = 300;
+        list.interactive = true;
+        tryCompare(list, "contentY", 300);
+        let gutter = child("rubberBandGutter");
+        mouseWheel(gutter, gutter.width / 2, gutter.height / 2, 0, -120, Qt.NoButton, Qt.NoModifier, 10);
+        tryVerify(function () {
+            return list.contentY !== 300;
+        });
+        list.interactive = false;
+        list.cancelFlick();
+        list.interactive = true;
+
+        compare(fakeModel.beginRubberBandCalls, 0);
+        compare(fakeModel.selectRowCalls, 0);
+    }
+
+    function test_rightClickReachesSelectionModel() {
+        clickRow(1, Qt.RightButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 1);
+        keyClick(Qt.Key_Escape);
+    }
+
+    function test_rightClickSelectsAndOpensOnPress() {
+        const row = rowAt(1);
+        const menu = row.entryContextMenu;
+
+        mousePress(row, row.width / 2, row.height / 2, Qt.RightButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 1);
+        tryCompare(menu, "opened", true);
+        compare(menu.anchorItem, row);
+        compare(menu.parent, row);
+        mouseRelease(row, row.width / 2, row.height / 2, Qt.RightButton, Qt.NoModifier);
+        keyClick(Qt.Key_Escape);
+    }
+
+    function test_renameDialogKeyboardAndMouseParity() {
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_F2);
+        tryCompare(fakeModel, "requestRenameCalls", 1);
+        let renameDialog = child("renameDialog");
+        tryCompare(renameDialog, "opened", true);
+        let renameField = child("renameField");
+        renameField.text = "keyboard-name.txt";
+        renameField.forceActiveFocus();
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeModel, "performRenameCalls", 1);
+        compare(fakeModel.performedName, "keyboard-name.txt");
+
+        mouseClick(child("renameButton"));
+        tryCompare(fakeModel, "requestRenameCalls", 2);
+        tryCompare(renameDialog, "opened", true);
+        renameField.text = "pointer-name.txt";
+        mouseClick(child("renameConfirmButton"));
+        tryCompare(fakeModel, "performRenameCalls", 2);
+        compare(fakeModel.performedName, "pointer-name.txt");
+    }
+
+    function test_shiftClickReachesSelectionModel() {
+        clickRow(2, Qt.LeftButton, Qt.ShiftModifier);
+        tryCompare(fakeModel, "selectRowCalls", 1);
+        compare(fakeModel.selectedRow, 2);
+        verify((fakeModel.selectedModifiers & Qt.ShiftModifier) !== 0);
+    }
+
+    function test_trashConfirmationKeyboardAndMouseParity() {
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+        let list = child("directoryList");
+        list.forceActiveFocus();
+
+        keyClick(Qt.Key_Delete);
+        tryCompare(fakeModel, "requestTrashCalls", 1);
+        let trashDialog = child("trashDialog");
+        tryCompare(trashDialog, "opened", true);
+        let confirmButton = child("trashConfirmButton");
+        tryVerify(function () {
+            return confirmButton.activeFocus;
+        });
+        keyClick(Qt.Key_Space);
+        tryCompare(fakeModel, "performTrashCalls", 1);
+
+        mouseClick(child("trashButton"));
+        tryCompare(fakeModel, "requestTrashCalls", 2);
+        tryCompare(trashDialog, "opened", true);
+        mouseClick(confirmButton);
+        tryCompare(fakeModel, "performTrashCalls", 2);
+    }
+
+    function test_contextOperationActionsRemainReachable() {
+        let entryMenu = rowAt(0).entryContextMenu;
+        verify(entryMenu !== null);
+        compare(entryMenu, rowAt(1).entryContextMenu);
+
+        clickRow(0, Qt.RightButton, Qt.NoModifier);
+        tryCompare(entryMenu, "opened", true);
+        mouseClick(entryMenu.itemAt(2));
+        tryCompare(fakeModel, "requestCopyCalls", 1);
+        mouseClick(child("transferCancelButton"));
+
+        clickRow(0, Qt.RightButton, Qt.NoModifier);
+        tryCompare(entryMenu, "opened", true);
+        mouseClick(entryMenu.itemAt(3));
+        tryCompare(fakeModel, "requestMoveCalls", 1);
+        mouseClick(child("transferCancelButton"));
+
+        clickRow(0, Qt.RightButton, Qt.NoModifier);
+        tryCompare(entryMenu, "opened", true);
+        mouseClick(entryMenu.itemAt(4));
+        tryCompare(fakeModel, "requestRenameCalls", 1);
+        mouseClick(child("renameCancelButton"));
+
+        clickRow(0, Qt.RightButton, Qt.NoModifier);
+        tryCompare(entryMenu, "opened", true);
+        mouseClick(entryMenu.itemAt(5));
+        tryCompare(fakeModel, "requestTrashCalls", 1);
+        mouseClick(child("trashCancelButton"));
+    }
+
+    function test_operationErrorFeedback() {
+        fakeModel.operationErrorString = "Synthetic operation failure";
+        let errorDialog = child("operationErrorDialog");
+        tryCompare(errorDialog, "opened", true);
+        errorDialog.close();
+    }
+
+    function test_selectAllKeyboardAndMouseParity() {
+        let list = child("directoryList");
+        list.forceActiveFocus();
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+
+        keyClick(Qt.Key_A, Qt.ControlModifier);
+        tryCompare(fakeModel, "selectAllCalls", 1);
+
+        let selectAllButton = child("selectAllButton");
+        mouseClick(selectAllButton, selectAllButton.width / 2, selectAllButton.height / 2, Qt.LeftButton, Qt.NoModifier);
+        tryCompare(fakeModel, "selectAllCalls", 2);
+    }
+}

@@ -64,7 +64,9 @@ terminal file manager. Achieving both at once is a deliberate design target.
 - **Entry activation and menus.** Return and double-click share the same model
   activation path. Directories navigate within the current tab; regular files
   pass through an injectable desktop-launcher boundary. Right-click, Menu, and
-  Shift+F10 open the same context actions. Opening a menu on an existing
+  Shift+F10 open the same shared context actions. A secondary-button press
+  opens at its pointer position; a keyboard request anchors to the current
+  delegate instead of consulting pointer state. Opening a menu on an existing
   selection preserves that selection and restores focus to its directory view
   when the menu closes. Directory symlinks retain their symlink metadata but
   navigate and accept drops as directories when their targets resolve.
@@ -75,9 +77,11 @@ terminal file manager. Achieving both at once is a deliberate design target.
   reject no-op and recursive targets before scheduling, and capture stable
   paths rather than model rows. Same-parent checks use the unresolved source
   identity so symlink targets elsewhere cannot bypass them; canonical paths are
-  reserved for containment checks. Breadcrumbs expose every absolute path
-  segment, including the filesystem root, through pointer and keyboard paths in
-  a horizontally scrollable strip.
+  reserved for containment checks. A same-parent move remains a no-op and is
+  rejected; a same-parent copy uses automatic collision-safe renaming so it
+  creates a sibling duplicate without replacing the source. Breadcrumbs expose
+  every absolute path segment, including the filesystem root, through pointer
+  and keyboard paths in a horizontally scrollable strip.
 - **Parity rule for contributors.** No primary action may be keyboard-only or
   mouse-only. When a feature adds an interaction, it is wired for both paths.
 - **Views.** Planned view models include a single-pane list/grid, a dual-pane

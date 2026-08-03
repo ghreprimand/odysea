@@ -7,6 +7,38 @@ and architecture decisions.
 
 ---
 
+## 2026-08-03 -- Close entry-interaction parity gaps
+
+Context menus now use one shared popup per list or grid instead of constructing
+a popup and five actions for every realized delegate. Secondary-button presses
+select the target and open the shared menu immediately at the press point.
+Menu-key and Shift+F10 requests preserve the existing selection and anchor the
+same popup to the current row or cell, so keyboard placement no longer depends
+on the last pointer position. Closing the popup still restores view focus.
+
+Transfer modifiers now state both sides of the contract: Ctrl requests a copy
+and Shift explicitly requests a move in list and grid gestures. A real
+horizontal pointer gesture is covered from press through drag start and
+release. Same-parent moves remain rejected as no-ops, while same-parent copies
+select collision-safe automatic renaming and create a sibling duplicate. A
+direct regular-directory activation case now complements the symlink-directory
+coverage, and the breadcrumb binding documents its deliberate dependency on
+the current path.
+
+The rendered-shell parity suite is split along responsibility boundaries.
+Pointer, operation, menu, drag, selection, appearance, and icon cases occupy
+one populated leaf runner; keyboard navigation, type-ahead, tabs, and view
+state occupy another. Shared synthetic model and window support lives outside
+both runner scopes, keeping each test file comfortably below the source-length
+ceiling without duplicating the harness.
+
+Verification covered warning-clean release and sanitizer builds, both complete
+test suites, scoped static analysis, C++ and QML formatting, QML lint/module/
+runner-scope checks, public-repository and file-length guards, and silent
+software and OpenGL RHI smoke launches.
+
+---
+
 ## 2026-08-03 -- Reusable shell chrome components
 
 The shell window carried its chrome inline: the toolbar, tab strip, action

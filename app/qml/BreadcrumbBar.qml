@@ -19,6 +19,9 @@ FocusScope {
     property color hoverColor: "#382b22"
     property color pressedColor: "#4a392b"
 
+    // Reading path creates the binding dependency that refreshes the derived
+    // segment list after navigation; breadcrumbSegments() is invokable and
+    // cannot advertise that dependency to the QML engine by itself.
     readonly property var segments: shellModel.path.length >= 0 ? shellModel.breadcrumbSegments() : []
 
     implicitHeight: Math.max(36, pathFontPixelSize + 18)

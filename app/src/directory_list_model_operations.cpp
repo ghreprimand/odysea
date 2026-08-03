@@ -41,6 +41,12 @@ bool isSameOrDescendant(const fs::path& candidate, const fs::path& ancestor) {
     return relative == "." || (first != relative.end() && *first != "..");
 }
 
+bool hasDestinationParent(const fs::path& sourceIdentity, const fs::path& destinationIdentity,
+                          const fs::path& destination) {
+    return sourceIdentity.parent_path() == destinationIdentity ||
+           sourceIdentity.parent_path() == destination;
+}
+
 } // namespace
 
 bool DirectoryListModel::operationBusy() const noexcept {
@@ -116,7 +122,7 @@ void DirectoryListModel::performMove(const QString& destinationDirectory, int co
     startOperation(std::move(request));
 }
 
-bool DirectoryListModel::canDropSelection(const QString& destinationDirectory) const {
+bool DirectoryListModel::canDropSelection(const QString& destinationDirectory, bool move) const {
     if (operationBusy_) {
         return false;
     }
@@ -136,9 +142,8 @@ bool DirectoryListModel::canDropSelection(const QString& destinationDirectory) c
     for (const QString& sourceText : sources) {
         const fs::path sourceIdentity =
             fs::path(normalizedPath(sourceText).toStdString()).lexically_normal();
-        if (sourceIdentity == destinationIdentity ||
-            sourceIdentity.parent_path() == destinationIdentity || sourceIdentity == destination ||
-            sourceIdentity.parent_path() == destination) {
+        if (sourceIdentity == destinationIdentity || sourceIdentity == destination ||
+            (move && hasDestinationParent(sourceIdentity, destinationIdentity, destination))) {
             return false;
         }
         error.clear();
@@ -160,14 +165,32 @@ bool DirectoryListModel::canDropSelection(const QString& destinationDirectory) c
 
 bool DirectoryListModel::dropSelection(const QString& destinationDirectory, bool move,
                                        int conflictMode) {
-    if (!canDropSelection(destinationDirectory)) {
+    if (!canDropSelection(destinationDirectory, move)) {
         setStatusMessage(tr("The selected entries cannot be transferred to that location."));
         return false;
     }
     if (move) {
         performMove(destinationDirectory, conflictMode);
     } else {
-        performCopy(destinationDirectory, conflictMode);
+        const fs::path destinationIdentity =
+            fs::path(normalizedPath(destinationDirectory).toStdString()).lexically_normal();
+        std::error_code error;
+        const fs::path destination = fs::weakly_canonical(destinationIdentity, error);
+        bool copiesIntoSourceParent = false;
+        if (!error) {
+            for (const QString& sourceText : selectedPaths()) {
+                const fs::path sourceIdentity =
+                    fs::path(normalizedPath(sourceText).toStdString()).lexically_normal();
+                if (hasDestinationParent(sourceIdentity, destinationIdentity, destination)) {
+                    copiesIntoSourceParent = true;
+                    break;
+                }
+            }
+        }
+        const int effectiveConflictMode = copiesIntoSourceParent && conflictMode == ConflictFail
+                                              ? ConflictAutoRename
+                                              : conflictMode;
+        performCopy(destinationDirectory, effectiveConflictMode);
     }
     return true;
 }

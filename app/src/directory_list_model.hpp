@@ -121,7 +121,7 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QStringList selectedFileUrls() const;
     Q_INVOKABLE bool rowSelected(int row) const;
     Q_INVOKABLE bool rowIsDirectory(int row) const;
-    Q_INVOKABLE bool canDropSelection(const QString& destinationDirectory) const;
+    Q_INVOKABLE bool canDropSelection(const QString& destinationDirectory, bool move) const;
     Q_INVOKABLE bool dropSelection(const QString& destinationDirectory, bool move,
                                    int conflictMode);
     Q_INVOKABLE void requestThumbnail(int row);

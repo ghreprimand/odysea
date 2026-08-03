@@ -181,7 +181,7 @@ qt_add_executable(odysea_shell_tests
     tests/tst_shell_quick.cpp)
 
 target_compile_definitions(odysea_shell_tests
-    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/shell")
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/shell/input")
 
 target_link_libraries(odysea_shell_tests
     PRIVATE
@@ -207,7 +207,24 @@ target_link_libraries(odysea_component_tests
         Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
         odysea_warnings odysea_sanitizers)
 
+# Keyboard navigation, type-ahead, tab, and view-state cases have their own
+# leaf runner so action-heavy pointer and dialog coverage can grow without
+# rebuilding another monolithic QML test file.
+qt_add_executable(odysea_shell_navigation_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_shell_navigation_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/shell/navigation")
+
+target_link_libraries(odysea_shell_navigation_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
 add_test(NAME shell_components COMMAND odysea_component_tests)
+
+add_test(NAME shell_navigation_input COMMAND odysea_shell_navigation_tests)
 
 # The presentation-pipeline tests run on the default RHI scene graph so the
 # effect chain actually renders. The uniform-binding assertions hold on any
@@ -334,9 +351,9 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 # does, while a deliberate project leak in the same code path stays fatal: the
 # suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
-    shell_input_parity shell_components shell_thumbnail_render
-    shell_entry_interactions shell_load_diagnostic app_theme_controller
-    shell_presentation_fallback
+    shell_input_parity shell_components shell_navigation_input
+    shell_thumbnail_render shell_entry_interactions shell_load_diagnostic
+    app_theme_controller shell_presentation_fallback
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 

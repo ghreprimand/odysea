@@ -12,11 +12,15 @@ Menu {
     required property bool highContrast
     property int entryIndex: -1
     property bool entryIsDirectory: false
+    property var anchorItem: null
+    property point anchorPosition: Qt.point(0, 0)
 
-    function openFor(index, isDirectory) {
+    function openFor(index, isDirectory, anchor, position) {
         entryIndex = index;
         entryIsDirectory = isDirectory;
-        popup();
+        anchorItem = anchor;
+        anchorPosition = position;
+        popup(anchor, position);
     }
 
     onClosed: focusTarget.forceActiveFocus()
