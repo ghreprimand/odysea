@@ -140,6 +140,19 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   identity. Default-application launching is an injectable application-layer
   service, so tests record launch requests without invoking desktop programs;
   the core itself never includes a Qt header.
+- **Reusable shell components.** The chrome is composed from module
+  components — the shared button and text field, the chrome strip material,
+  the navigation toolbar, tab strip, action row, status strip, the
+  inactive-pane placeholder, and the directory pane — each driven by the
+  semantic theme roles through a single bound theme object rather than
+  per-instance color plumbing. The directory pane is the one site that maps
+  theme roles onto the directory views' granular color and font properties,
+  and it deliberately adds no clip and no transform between the views and the
+  presentation layer: thumbnail well registration names the grid as its only
+  clipping viewport, and the mask layer maps well rectangles assuming that
+  single clip level and identity transforms. New surfaces build on these
+  components instead of restyling primitives inline, so palette, density,
+  scale, and contrast changes restyle every surface from one definition.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

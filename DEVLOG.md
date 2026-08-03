@@ -7,6 +7,47 @@ and architecture decisions.
 
 ---
 
+## 2026-08-03 -- Reusable shell chrome components
+
+The shell window carried its chrome inline: the toolbar, tab strip, action
+row, status strip, pane placeholders, and the button and field styling all
+lived as scene fragments inside one file, and the two directory-view
+instantiations each repeated some twenty theme bindings. Surfaces still to
+come — richer navigation, the shared action system, the command palette —
+would have grown by copying those fragments again.
+
+The chrome is now a set of reusable module components, each driven by the
+semantic theme roles through a single bound theme object: a shared button and
+text field, the translucent chrome-strip material, the navigation toolbar,
+tab strip, action row, status strip, inactive-pane placeholder, and the
+directory pane. The pane is the single site that maps theme roles onto the
+directory views' granular color and font properties, so a scene binds one
+theme instead of twenty values, and it adds no clip and no transform between
+the views and the presentation layer — thumbnail well registration names the
+grid as its only clipping viewport, and the mask layer's mapping assumes that
+single clip level. The views' interiors, including the rubber-band gutter
+geometry and grab ownership the design records as load-bearing, are unchanged.
+
+A dedicated component suite instantiates every chrome component standalone
+against a recording model stand-in and drives it through pointer and keyboard
+paths, so a component that silently depends on the shell scene fails even
+while the full-shell suites stay green. Deliberately broken wirings — a copy
+action stripped of its selection gate, an inverted view toggle, a pane
+component missing its view-mode binding — were each caught by the suite that
+owns them and reverted.
+
+The breadcrumb bar and entry context menu keep their granular color-property
+interfaces for now; migrating them onto the shared theme object is deferred
+work, not an accident.
+
+Verified with the QML format and lint gates across the enlarged corpus, the
+test-scope gate, release and ASan/UBSan builds and full suites including the
+real-GPU presentation entry, static analysis held at its baseline, the
+repository guards, and silent smoke launches on the software and OpenGL
+scene-graph backends.
+
+---
+
 ## 2026-08-03 -- Permit shell expansion syntax under the at-sign ban
 
 The public-repository guard banned the at-sign in every tracked file, and shell
@@ -49,6 +90,8 @@ literally, so its own tracked text is part of what it demonstrates.
 Verification: removing the shell scan, excusing a whole line, excusing a whole
 file, and restoring the blanket ban each fail the self-test, in the first three
 cases on the negative scenarios and in the last on the permitted forms.
+
+---
 
 ## 2026-08-02 -- Make a new static-analysis diagnostic visible
 
