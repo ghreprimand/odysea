@@ -203,6 +203,23 @@ Update `DEVLOG.md` with each accepted development milestone, in the same change
 as the code or documentation it records. Commit subjects and bodies stay
 factual and scoped.
 
+The record is split so that no single file approaches the 2,000-line ceiling.
+`DEVLOG.md` holds the entries for the current calendar month, and a new entry
+goes at the top of it. When a month closes, its entries move verbatim into
+`docs/devlog/YYYY-MM.md`, which is then linked from the live record, most
+recent first. Published entries are never edited, reordered, reworded, or
+removed; a correction is a new entry. Moving a month is a transcription rather
+than a rewrite, so prove byte identity mechanically instead of reading the
+result over. `devlog_archive_guard` enforces the structural half of this: every
+archive must be linked and every link must resolve to a tracked file, archive
+filenames must match the month of every entry they contain, the live record
+must hold no month that has already been archived, no entry may appear in two
+files, and the index must stay in reverse-chronological order.
+`devlog_archive_guard_self_test` holds the guard to that with throwaway
+repositories covering each of those failure modes plus an accepted layout,
+because a guard only ever observed passing cannot be told apart from one that
+never reaches its checks.
+
 Commits carry no attribution trailers. `Co-Authored-By`, `Assisted-by`,
 `Generated-by`, `Created-by`, `Authored-by`, `Signed-off-by`, and
 `On-behalf-of` are rejected in commit messages, amended messages, and squash

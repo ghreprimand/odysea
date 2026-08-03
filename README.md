@@ -81,7 +81,8 @@ cmake --preset asan && cmake --build build/asan && ctest --preset asan
 - [Design overview](docs/DESIGN.md)
 - [Technology stack](docs/STACK.md)
 - [Roadmap](docs/ROADMAP.md)
-- [Development log](DEVLOG.md)
+- [Development log](DEVLOG.md) — current month, with earlier months archived
+  under [docs/devlog/](docs/devlog/)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
