@@ -174,6 +174,10 @@ ApplicationWindow {
         appearancePanel.open();
     }
 
+    function openCommandPalette() {
+        commandPalette.openFor(null);
+    }
+
     Timer {
         id: typeAheadTimer
 
@@ -209,6 +213,14 @@ ApplicationWindow {
         id: appearancePanel
 
         parent: root.contentItem
+        theme: root.shellTheme
+    }
+
+    CommandPalette {
+        id: commandPalette
+
+        parent: root.contentItem
+        registry: root.actions
         theme: root.shellTheme
     }
 

@@ -60,6 +60,8 @@ TestCase {
         property bool searchedWithCycling: false
         property var scriptedPrefixRows: []
         property int toggleCurrentCalls: 0
+        property int setDualPaneEnabledCalls: 0
+        property bool dualPaneRequested: false
         property int clearSelectionCalls: 0
         property int beginRubberBandCalls: 0
         property bool rubberBandAdditive: false
@@ -274,6 +276,8 @@ TestCase {
             selectedCount = count;
         }
         function setDualPaneEnabled(enabled) {
+            setDualPaneEnabledCalls += 1;
+            dualPaneRequested = enabled;
         }
         function tabLabel(tab) {
             return "Sample " + tab;
@@ -371,6 +375,8 @@ TestCase {
             searchedWithCycling = false;
             scriptedPrefixRows = [];
             toggleCurrentCalls = 0;
+            setDualPaneEnabledCalls = 0;
+            dualPaneRequested = false;
             clearSelectionCalls = 0;
             beginRubberBandCalls = 0;
             rubberBandAdditive = false;

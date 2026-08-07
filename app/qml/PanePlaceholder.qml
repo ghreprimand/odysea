@@ -1,5 +1,5 @@
 // The inactive-pane stand-in: a labeled surface a pointer click
-// activates. The keyboard equivalents (F6, Ctrl+Shift+P) live on the
+// activates. The keyboard equivalents (F6, F3) live on the
 // registry's declared sequences; the label names the switch key so the
 // parked pane stays discoverable from either path. A right press opens
 // the shared pane menu parameterized by this pane.

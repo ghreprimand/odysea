@@ -422,7 +422,7 @@ ActionRegistry {
         surfaces: ["pane"]
         shortcuts: [
             {
-                "sequence": "Ctrl+Shift+P"
+                "sequence": "F3"
             }
         ]
         perform: () => actionSet.shellModel.setDualPaneEnabled(actionSet.shellModel.paneCount === 1)
@@ -456,5 +456,17 @@ ActionRegistry {
             }
         ]
         perform: () => actionSet.shellModel.requestTrash()
+    }
+    ShellAction {
+        actionId: "palette.open"
+        label: qsTr("Command palette")
+        shortLabel: qsTr("Commands")
+        iconName: "commands"
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+P"
+            }
+        ]
+        perform: () => actionSet.shell.openCommandPalette()
     }
 }

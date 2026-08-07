@@ -74,6 +74,12 @@ ToolBar {
             actionId: "view.grid"
         }
         ActionButton {
+            objectName: "paletteButton"
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "palette.open"
+        }
+        ActionButton {
             objectName: "appearanceButton"
             theme: bar.theme
             registry: bar.registry

@@ -51,6 +51,8 @@ Item {
             return "M5 7 L19 7 M9 7 L9 4 L15 4 L15 7 M7 7 L8 20 L16 20 L17 7 M10 11 L10 17 M14 11 L14 17";
         case "open":
             return "M5 5 L12 5 M5 5 L5 19 L19 19 L19 12 M12 12 L20 4 M14 4 L20 4 L20 10";
+        case "commands":
+            return "M4 6 L10 12 L4 18 M13 18 L20 18";
         default:
             return "";
         }

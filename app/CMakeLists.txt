@@ -59,6 +59,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/AppearancePanel.qml
         qml/BreadcrumbBar.qml
         qml/ChromeStrip.qml
+        qml/CommandPalette.qml
         qml/DeepFieldGround.qml
         qml/DirectoryGridView.qml
         qml/DirectoryListView.qml
@@ -248,6 +249,25 @@ target_link_libraries(odysea_action_tests
 
 add_test(NAME shell_action_system COMMAND odysea_action_tests)
 
+# The command palette, driven standalone against recording stand-ins. The
+# registry-sourcing invariants live here: a declaration added at runtime
+# becomes reachable with no palette-side change, disabled actions stay
+# listed with their declared reason, and activation cannot bypass the
+# registry's trigger-time revalidation.
+qt_add_executable(odysea_palette_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_palette_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/palette")
+
+target_link_libraries(odysea_palette_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_command_palette COMMAND odysea_palette_tests)
+
 add_test(NAME shell_navigation_input COMMAND odysea_shell_navigation_tests)
 
 # The presentation-pipeline tests run on the default RHI scene graph so the
@@ -376,7 +396,7 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 # suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
     shell_input_parity shell_components shell_navigation_input
-    shell_action_system
+    shell_action_system shell_command_palette
     shell_thumbnail_render shell_entry_interactions shell_load_diagnostic
     app_theme_controller shell_presentation_fallback
     PROPERTIES ENVIRONMENT

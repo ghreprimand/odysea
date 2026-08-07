@@ -19,6 +19,62 @@ Support.ShellTestCase {
         verifyBandDrag(child("rubberBandBlankArea"), false);
     }
 
+    function test_commandPaletteKeyboardAndMouseParity() {
+        const palette = child("commandPalette");
+        verify(!palette.opened);
+
+        // Keyboard path: the declared sequence opens it and moves focus
+        // to the filter field; Escape dismisses and hands focus back to
+        // where the palette was summoned from.
+        const list = child("directoryList");
+        list.forceActiveFocus();
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+        keySequence("Ctrl+Shift+P");
+        tryVerify(function () {
+            return palette.opened;
+        });
+        const field = findChild(palette.contentItem, "paletteFilterField");
+        verify(field !== null);
+        tryVerify(function () {
+            return field.activeFocus;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !palette.opened;
+        });
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+
+        // Mouse path: the toolbar button opens it, a press outside
+        // dismisses it, and focus leaves the palette with the dismissal.
+        mouseClick(child("paletteButton"));
+        tryVerify(function () {
+            return palette.opened;
+        });
+        mouseClick(shellWindow.contentItem, 5, shellWindow.height - 5);
+        tryVerify(function () {
+            return !palette.opened;
+        });
+        tryVerify(function () {
+            return shellWindow.activeFocusItem !== null && !field.activeFocus;
+        });
+    }
+
+    function test_dualPaneToggleMovedToFunctionKey() {
+        fakeModel.resetTelemetry();
+        keySequence("F3");
+        tryCompare(fakeModel, "setDualPaneEnabledCalls", 1);
+        compare(fakeModel.dualPaneRequested, true);
+
+        // The pointer path is unchanged: the toolbar toggle still routes
+        // through the same declaration.
+        mouseClick(child("paneToggleButton"));
+        tryCompare(fakeModel, "setDualPaneEnabledCalls", 2);
+    }
+
     function test_appearancePanelKeyboardAndMouseParity() {
         const panel = child("appearancePanel");
         verify(!panel.opened);

@@ -207,7 +207,9 @@ QtObject {
 
     /// Every labeled action, filtered by a case-insensitive substring of
     /// the label or id, with its live enablement for the given context.
-    /// The palette consumes this list; it never re-declares actions.
+    /// The palette consumes this list; it never re-declares actions. The
+    /// shortcut and disabled reason come from the declaration, so the
+    /// palette cannot restate either.
     function paletteEntries(filterText, context) {
         const needle = filterText === undefined ? "" : filterText.toLowerCase();
         const effective = context !== undefined && context !== null ? context : globalContext(undefined);
@@ -225,7 +227,10 @@ QtObject {
                 "actionId": action.actionId,
                 "label": label,
                 "sequence": primarySequence(action),
-                "enabled": isEnabled(action, effective)
+                "enabled": isEnabled(action, effective),
+                "reason": disabledReason(action, effective),
+                "destructive": action.destructive,
+                "icon": iconFor(action, effective)
             });
         }
         return entries;
