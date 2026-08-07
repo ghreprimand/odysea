@@ -13,6 +13,7 @@
 #include <QThreadPool>
 #include <QUrl>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -165,6 +166,9 @@ class DirectoryListModelTest : public QObject {
     void watcherBurstPreservesRenamedSelection();
     void hardLinksRemainDistinctAcrossRefreshAndRename();
     void uniqueInodeFallbackPreservesRename();
+    void recycledSubvolumeIdentityDoesNotMoveSelection();
+    void ambiguousIdentityDoesNotMoveSelection();
+    void recycledIdentityDoesNotMoveSelectionAcrossRefresh();
     void selectionSurvivesSortFilterAndRefresh();
     void explicitGeometricSelectionUsesRowSet();
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
@@ -460,6 +464,171 @@ void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("final.txt"));
     QCOMPARE(currentName(model), QStringLiteral("final.txt"));
+}
+
+// Reconciliation follows an entry across a rename by matching identity, and it
+// only does so when the match is unambiguous. That guard counts occurrences,
+// so it cannot help when a genuinely different entry presents the identity a
+// departed one had: both sides count exactly one and the match looks clean.
+//
+// Btrfs produces exactly that. A subvolume root always carries inode 256, and
+// its device number is an anonymous one the kernel returns to a pool when the
+// subvolume goes away and reissues to the next subvolume created. Removing one
+// subvolume and creating another therefore reproduces the earlier pair. The
+// pair is injected here rather than driven through a real Btrfs mount, because
+// the aliasing is a property of the identity function and provoking it for
+// real needs both a Btrfs filesystem and the privilege to manipulate
+// subvolumes. Selection must be dropped, never moved onto the newcomer.
+void DirectoryListModelTest::recycledSubvolumeIdentityDoesNotMoveSelection() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    fs::create_directory(root / "alpha");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("alpha")), Qt::NoModifier);
+    QCOMPARE(selectedName(model), QStringLiteral("alpha"));
+    model.watchService_.stop();
+
+    // Read the baseline identity from the scanned entries rather than by row,
+    // because presentation order is not scan order.
+    const auto scanned =
+        std::ranges::find(model.scannedEntries_, "alpha", &odysea::core::Entry::name);
+    QVERIFY(scanned != model.scannedEntries_.end());
+    const odysea::core::EntryIdentity departed = scanned->identity;
+    QVERIFY(departed.known());
+
+    fs::remove(root / "alpha");
+    fs::create_directory(root / "gamma");
+    odysea::core::Entry arrival = odysea::core::make_entry(fs::directory_entry(root / "gamma"));
+    QVERIFY(arrival.identity.known());
+    QVERIFY(!odysea::core::same_identity(arrival.identity, departed));
+
+    // Recycle the departed entry's device and inode onto the newcomer, exactly
+    // as the kernel does, and leave every other property its own.
+    arrival.identity.device = departed.device;
+    arrival.identity.inode = departed.inode;
+    QCOMPARE(arrival.identity.device, departed.device);
+    QCOMPARE(arrival.identity.inode, departed.inode);
+
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"alpha"},
+                                                .updatedEntries = {arrival},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(rowForName(model, QStringLiteral("alpha")), -1);
+    QVERIFY(rowForName(model, QStringLiteral("gamma")) >= 0);
+    QCOMPARE(selectedName(model), QString());
+    QCOMPARE(model.selectedCount(), 0);
+    QCOMPARE(currentName(model), QString());
+}
+
+// The other half of the guard. Identity is deliberately shared by hard links,
+// because they are the same file, but they are separate entries a user selects
+// independently. When a departed entry's identity still matches more than one
+// entry, there is no single answer to "where did it go", so selection is
+// dropped rather than guessed. Without the uniqueness requirement the search
+// would simply take the first match and move selection onto the other name.
+void DirectoryListModelTest::ambiguousIdentityDoesNotMoveSelection() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "first.txt");
+    fs::create_hard_link(root / "first.txt", root / "second.txt");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("first.txt")), Qt::NoModifier);
+    QCOMPARE(selectedName(model), QStringLiteral("first.txt"));
+    model.watchService_.stop();
+
+    // The fixture is only meaningful if the two names really do share one
+    // identity; otherwise the uniqueness requirement is never consulted.
+    const auto first =
+        std::ranges::find(model.scannedEntries_, "first.txt", &odysea::core::Entry::name);
+    const auto second =
+        std::ranges::find(model.scannedEntries_, "second.txt", &odysea::core::Entry::name);
+    QVERIFY(first != model.scannedEntries_.end());
+    QVERIFY(second != model.scannedEntries_.end());
+    QVERIFY(odysea::core::same_identity(first->identity, second->identity));
+
+    const odysea::core::Entry& survivor = *second;
+    fs::remove(root / "first.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"first.txt"},
+                                                .updatedEntries = {survivor},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(rowForName(model, QStringLiteral("first.txt")), -1);
+    QVERIFY(rowForName(model, QStringLiteral("second.txt")) >= 0);
+    QCOMPARE(selectedName(model), QString());
+    QCOMPARE(model.selectedCount(), 0);
+}
+
+// Reconciliation happens on two paths, and both have to reject a recycled
+// identity. The watcher path compares identities directly; a completed rescan
+// groups entries by a hashed spelling of the identity instead, because it
+// reconciles whole listings at once. A spelling that omitted any part of the
+// identity would collapse a recycled pair back onto the entry that held it,
+// which is why this exercise drives a full refresh rather than a watch update.
+void DirectoryListModelTest::recycledIdentityDoesNotMoveSelectionAcrossRefresh() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    fs::create_directory(root / "alpha");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("alpha")), Qt::NoModifier);
+    QCOMPARE(selectedName(model), QStringLiteral("alpha"));
+
+    fs::remove(root / "alpha");
+    fs::create_directory(root / "gamma");
+    const odysea::core::Entry arrival =
+        odysea::core::make_entry(fs::directory_entry(root / "gamma"));
+    QVERIFY(arrival.identity.known());
+    if (!arrival.identity.birth_known) {
+        // Separating a recycled pair depends on the filesystem recording a
+        // creation time. Where it records none, identity degrades to the pair
+        // by design and this exercise has nothing to assert. Skipping says so
+        // out loud instead of passing as though the guarantee held.
+        QSKIP("the temporary filesystem records no creation time");
+    }
+
+    // Give the departed entry the device and inode numbers the newcomer will
+    // report, exactly as the kernel does when it reissues them. The creation
+    // times are pinned to the same second and separated only in nanoseconds,
+    // which is what a real removal and creation produce: the two measured
+    // roughly two milliseconds apart. Relying on the fixture's own timing
+    // instead would leave the exercise passing for the wrong reason whenever
+    // the two creations happened to land in different seconds.
+    const auto departed =
+        std::ranges::find(model.scannedEntries_, "alpha", &odysea::core::Entry::name);
+    QVERIFY(departed != model.scannedEntries_.end());
+    departed->identity.device = arrival.identity.device;
+    departed->identity.inode = arrival.identity.inode;
+    departed->identity.birth_seconds = arrival.identity.birth_seconds;
+    departed->identity.birth_nanoseconds = arrival.identity.birth_nanoseconds + 1;
+    QCOMPARE(departed->identity.birth_seconds, arrival.identity.birth_seconds);
+    QVERIFY(!odysea::core::same_identity(departed->identity, arrival.identity));
+
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+
+    QCOMPARE(rowForName(model, QStringLiteral("alpha")), -1);
+    QVERIFY(rowForName(model, QStringLiteral("gamma")) >= 0);
+    QCOMPARE(selectedName(model), QString());
+    QCOMPARE(model.selectedCount(), 0);
 }
 
 void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {

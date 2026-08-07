@@ -234,22 +234,24 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
             continue;
         }
 
-        const QString identity = entryIdentity(*oldEntry);
-        if (identity.isEmpty()) {
+        // Follow a departed entry to its new name only when the identity picks
+        // out exactly one entry on each side. Counting and matching both go
+        // through the core, so the rule that an unknown identity matches
+        // nothing is stated once rather than restated per call site.
+        //
+        // Requiring exactly one match on the updated side is also what makes
+        // the search below safe to dereference. Relaxing either count to allow
+        // more than one would leave the search able to return the end
+        // iterator.
+        const odysea::core::EntryIdentity& identity = oldEntry->identity;
+        if (!identity.known()) {
             continue;
         }
-        const auto oldIdentityCount =
-            std::ranges::count_if(scannedEntries_, [this, &identity](const auto& entry) {
-                return entryIdentity(entry) == identity;
-            });
-        const auto newIdentityCount =
-            std::ranges::count_if(update.updatedEntries, [this, &identity](const auto& entry) {
-                return entryIdentity(entry) == identity;
-            });
-        if (oldIdentityCount == 1 && newIdentityCount == 1) {
+        if (odysea::core::count_identity(scannedEntries_, identity) == 1 &&
+            odysea::core::count_identity(update.updatedEntries, identity) == 1) {
             const auto newEntry =
-                std::ranges::find_if(update.updatedEntries, [this, &identity](const auto& entry) {
-                    return entryIdentity(entry) == identity;
+                std::ranges::find_if(update.updatedEntries, [&identity](const auto& entry) {
+                    return odysea::core::same_identity(entry.identity, identity);
                 });
             remapKey(*oldEntry, *newEntry);
         }

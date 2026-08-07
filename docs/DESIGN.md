@@ -151,6 +151,36 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   into, or ordering an entry — must ask the resolved question and must not read
   the kind as a proxy for it. A broken symlink keeps its symlink kind and is
   not navigable.
+- **Entry identity is a single value, and a device and inode pair is not
+  enough.** Selection, focus, and the selection anchor follow entries by
+  identity rather than by name, path, or row, so that renaming, sorting,
+  filtering, or refreshing a directory does not lose track of what the user
+  picked. Identity therefore carries two obligations at once: it must be
+  distinct, so following an entry can never land on a different one, and it
+  must be stable, so an entry that merely moved or changed still matches
+  itself. The device and inode numbers satisfy neither on their own. On Btrfs
+  every subvolume root carries inode number 256, and the device half is an
+  anonymous number the kernel allocates at runtime, releases when the subvolume
+  goes away, and reissues to the next subvolume created — so a removed
+  subvolume and an unrelated new one can present exactly the same pair. The
+  creation time closes that gap: it is the one timestamp neither a rename nor a
+  content write disturbs, so it separates a recycled identifier from the entry
+  that held it before without disturbing an entry that only moved. Identity is
+  a single comparable value rather than loose fields, because a caller that
+  compares only part of it reintroduces the collision. Filesystems that record
+  no creation time degrade to the pair, which is no worse than before.
+- **Identity is session-scoped and must never be persisted.** Because the
+  device half is an anonymous number on some filesystems, an identity is
+  meaningful only within one run against one live mount. It is never written to
+  disk, embedded in a cache key that outlives the process, or compared across a
+  remount. A consumer that needs a durable handle uses the path.
+- **An unknown identity matches nothing.** Metadata lookup can fail, and the
+  resulting identity holds zeroed fields. Comparing those by equality would
+  report every entry whose lookup failed as the same entry, so the comparison
+  used for following an entry rejects unknown identities outright: a failed
+  lookup means "cannot say", not "matches everything that also failed".
+  Following an entry additionally requires the match to be unique on both
+  sides, so an ambiguous identity drops selection rather than moving it.
 - **`app/` (Qt Quick).** The GPU-rendered shell: the QML scene, input handling,
   theming, and thumbnail decoding and presentation. A thin adapter
   (`DirectoryListModel`, a `QAbstractListModel`) is the single boundary that
@@ -328,6 +358,13 @@ effects, or a custom RHI/Vulkan pass) for the visual identity.
 
 - Directory I/O and metadata resolution run off the UI thread; the interface
   renders whatever is available and fills in asynchronously.
+- Per-entry metadata stays at one syscall. Entry identity needs a creation
+  time, which `lstat` cannot report, so listing uses `statx` instead — the same
+  single call per entry, requesting the creation time alongside the fields
+  `lstat` already supplied. Strengthening identity therefore costs no extra
+  syscalls, no allocation, and no second pass over the directory; comparing two
+  identities remains a comparison of integers. A kernel that does not provide
+  `statx` falls back to `lstat` and leaves the creation time unknown.
 - Refresh batches retain previously published entries until the completed scan
   identifies removals. Inserts, removals, metadata changes, and sorting publish
   granular model signals instead of invalidating the entire view.

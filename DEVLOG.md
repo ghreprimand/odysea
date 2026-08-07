@@ -17,6 +17,77 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Entry identity survives recycled device and inode numbers
+
+Selection, focus, and the selection anchor follow entries by filesystem
+identity, and that identity was the device and inode pair alone. The pair is
+not unique over time. On Btrfs every subvolume root carries inode number 256,
+and the device half is an anonymous number the kernel allocates at runtime,
+returns to a pool when the subvolume is removed, and hands to the next
+subvolume created. A removed subvolume and an unrelated new one therefore
+present exactly the same pair.
+
+That is not caught by requiring an unambiguous match. Reconciliation already
+declined to follow an entry whose identity appeared more than once on either
+side, but a recycled pair appears exactly once on each side, so the match looks
+clean and selection moves onto an unrelated directory.
+
+Identity is now a single comparable value in the core rather than loose fields,
+and it carries the entry's creation time alongside the device and inode
+numbers. Creation time is the one timestamp that neither a rename nor a content
+write disturbs, so it separates a recycled identifier from the entry that held
+it before while leaving an entry that merely moved or changed matching itself.
+Listing reads it with `statx` in place of `lstat`: the same single syscall per
+entry, so nothing about scanning got more expensive. Filesystems that record no
+creation time degrade to the device and inode pair, which is what identity was
+before. Comparison for following an entry also rejects unknown identities
+outright, because two entries whose metadata lookup failed hold identical
+zeroed fields and would otherwise compare as the same entry.
+
+Measured on Btrfs before the change: four sibling subvolume roots all reported
+inode 256 while their device numbers differed, so live siblings did not in fact
+collide; removing a subvolume and creating another reproduced the earlier
+device and inode pair on three attempts out of three, roughly two milliseconds
+apart, with creation times that differed in every case.
+
+Reconciliation runs on two paths and both were covered. The watcher path
+compares identities directly and now does so through the core, replacing a
+second copy of the counting and matching rules that had been restated in the
+application layer. A completed rescan groups whole listings by a hashed
+spelling of the identity, so that spelling has to carry every field the
+identity carries.
+
+Verification. New focused core exercises cover both halves of the contract:
+distinctness, including a recycled pair fed directly at the model boundary, an
+unknown identity matching nothing, and a partially known one refusing to match;
+and stability, that a renamed and rewritten file, and a renamed directory, keep
+the identity they had. Three model-level exercises drive the collision through
+each reconciliation path and require selection to be dropped rather than moved,
+including one that pins the two creation times to the same second so that only
+the sub-second component separates them, matching what the measurements showed.
+A further exercise covers the requirement that a match be unique, using hard
+links, which share one identity because they are one file while remaining
+entries a user selects separately.
+
+Seven independent mutations confirm the exercises discriminate: dropping the
+creation time from the rescan key, and dropping only its sub-second component,
+each fail one model check; comparing only the device and inode numbers fails
+four core checks and one model check; never reading the creation time fails two
+core checks and one model check; transposing the major and minor device numbers
+fails one core check; allowing unknown identities to match fails one core
+check; and removing the uniqueness requirement crashes the model suite outright,
+because that requirement is also what guarantees the subsequent search finds
+something to dereference.
+
+Known gaps. The `lstat` fallback taken when `statx` is unavailable has no
+automated coverage, because `statx` cannot be made to fail from a test without
+a seccomp filter or an older kernel; the device reassembly on the preferred
+path is pinned against `lstat` instead, so it cannot pass by being consistently
+wrong. Identity remains session-scoped and must not be persisted or compared
+across a remount.
+
+---
+
 ## 2026-08-03 -- Shared context-aware action system
 
 Every user-facing action is now declared once, in a registry the whole shell

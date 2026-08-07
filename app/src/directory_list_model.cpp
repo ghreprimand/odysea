@@ -20,7 +20,7 @@ constexpr int maximumSortMode = DirectoryListModel::SortByType;
 
 bool entriesMatch(const odysea::core::Entry& left, const odysea::core::Entry& right) {
     return left.name == right.name && left.path == right.path && left.kind == right.kind &&
-           left.size == right.size && left.device == right.device && left.inode == right.inode &&
+           left.size == right.size && left.identity == right.identity &&
            left.modified_seconds == right.modified_seconds &&
            left.target_is_directory == right.target_is_directory;
 }
@@ -609,12 +609,26 @@ QString DirectoryListModel::entryKey(const odysea::core::Entry& entry) const {
 }
 
 QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) const {
-    if (entry.device != 0 && entry.inode != 0) {
-        return QStringLiteral("inode:%1:%2")
-            .arg(static_cast<qulonglong>(entry.device))
-            .arg(static_cast<qulonglong>(entry.inode));
+    // A hashable spelling of the core identity, so reconciliation can group by
+    // it. Every field the core identity carries has to appear here: dropping
+    // the creation time would let a recycled device and inode pair match the
+    // entry that previously held it, and reconciliation would move selection
+    // onto an unrelated entry. An unknown identity spells to an empty string,
+    // which callers treat as "cannot follow this entry".
+    const odysea::core::EntryIdentity& identity = entry.identity;
+    if (!identity.known()) {
+        return {};
     }
-    return {};
+    if (!identity.birth_known) {
+        return QStringLiteral("inode:%1:%2")
+            .arg(static_cast<qulonglong>(identity.device))
+            .arg(static_cast<qulonglong>(identity.inode));
+    }
+    return QStringLiteral("inode:%1:%2:%3.%4")
+        .arg(static_cast<qulonglong>(identity.device))
+        .arg(static_cast<qulonglong>(identity.inode))
+        .arg(static_cast<qlonglong>(identity.birth_seconds))
+        .arg(static_cast<qulonglong>(identity.birth_nanoseconds));
 }
 
 int DirectoryListModel::rowForEntryKey(const QString& key) const {

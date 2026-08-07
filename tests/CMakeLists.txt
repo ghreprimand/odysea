@@ -18,6 +18,7 @@ endfunction()
 
 odysea_add_core_test(core_appearance test_appearance.cpp)
 odysea_add_core_test(core_directory_model test_directory_model.cpp)
+odysea_add_core_test(core_entry_identity test_entry_identity.cpp)
 odysea_add_core_test(core_file_operations test_file_operations.cpp)
 odysea_add_core_test(core_trash test_trash.cpp)
 odysea_add_core_test(core_directory_watcher test_directory_watcher.cpp)

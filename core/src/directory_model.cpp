@@ -2,12 +2,62 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 
 namespace odysea::core {
 namespace fs = std::filesystem;
 
 namespace {
+
+/// Record the entry's own metadata, never a symlink target's.
+///
+/// `statx` is preferred over `lstat` for one reason: it can report the
+/// creation time, which is what separates a recycled device and inode pair
+/// from the entry that previously held it. It costs the same single syscall,
+/// so the identity strengthening is free per entry.
+///
+/// A kernel or sandbox without `statx` falls back to `lstat` and leaves the
+/// creation time unknown, which degrades identity to the device and inode pair
+/// rather than losing it.
+///
+/// That fallback has no automated coverage: `statx` has been available since
+/// Linux 4.11 and cannot be made to fail from a test without a seccomp filter
+/// or an older kernel. The tests do pin the part of the preferred path that
+/// could fail silently — `statx` splits the device into major and minor
+/// numbers, and the value reassembled from them is checked against the one
+/// `lstat` reports for the same entry, so a wrong reassembly cannot pass by
+/// being consistently wrong everywhere.
+///
+/// A filesystem that records no creation time is a separate and expected case
+/// from a kernel without `statx`, and it is covered: the tests ask the
+/// filesystem directly and require identity to carry a creation time exactly
+/// when one is reported, so the field cannot quietly stop being read.
+void read_metadata(const fs::path& path, Entry& entry) {
+    struct ::statx details{};
+    const int flags = AT_SYMLINK_NOFOLLOW | AT_STATX_SYNC_AS_STAT;
+    if (::statx(AT_FDCWD, path.c_str(), flags, STATX_INO | STATX_MTIME | STATX_BTIME, &details) ==
+        0) {
+        entry.identity.device =
+            static_cast<std::uint64_t>(::makedev(details.stx_dev_major, details.stx_dev_minor));
+        entry.identity.inode = static_cast<std::uint64_t>(details.stx_ino);
+        entry.modified_seconds = static_cast<std::int64_t>(details.stx_mtime.tv_sec);
+        if ((details.stx_mask & STATX_BTIME) != 0) {
+            entry.identity.birth_known = true;
+            entry.identity.birth_seconds = static_cast<std::int64_t>(details.stx_btime.tv_sec);
+            entry.identity.birth_nanoseconds = details.stx_btime.tv_nsec;
+        }
+        return;
+    }
+
+    struct ::stat metadata{};
+    if (::lstat(path.c_str(), &metadata) == 0) {
+        entry.identity.device = static_cast<std::uint64_t>(metadata.st_dev);
+        entry.identity.inode = static_cast<std::uint64_t>(metadata.st_ino);
+        entry.modified_seconds = static_cast<std::int64_t>(metadata.st_mtim.tv_sec);
+    }
+}
 
 std::string to_lower(std::string value) {
     std::ranges::transform(value, value.begin(),
@@ -45,13 +95,22 @@ Entry make_entry(const fs::directory_entry& element) {
         entry.target_is_directory = element.is_directory(target_ec) && !target_ec;
     }
     entry.size = (entry.kind == EntryKind::File) ? element.file_size(ec) : 0;
-    struct ::stat metadata{};
-    if (::lstat(entry.path.c_str(), &metadata) == 0) {
-        entry.device = static_cast<std::uint64_t>(metadata.st_dev);
-        entry.inode = static_cast<std::uint64_t>(metadata.st_ino);
-        entry.modified_seconds = static_cast<std::int64_t>(metadata.st_mtim.tv_sec);
-    }
+    read_metadata(entry.path, entry);
     return entry;
+}
+
+bool same_identity(const EntryIdentity& left, const EntryIdentity& right) {
+    return left.known() && right.known() && left == right;
+}
+
+std::size_t count_identity(const std::vector<Entry>& entries, const EntryIdentity& identity) {
+    if (!identity.known()) {
+        return 0;
+    }
+    return static_cast<std::size_t>(
+        std::ranges::count_if(entries, [&identity](const Entry& candidate) {
+            return same_identity(candidate.identity, identity);
+        }));
 }
 
 bool entry_orders_before(const Entry& first, const Entry& second) {

@@ -266,7 +266,7 @@ int main() {
     auto beta = std::ranges::find_if(entries, [](const auto& e) { return e.name == "beta.txt"; });
     check(alpha != entries.end() && beta != entries.end() && alpha < beta,
           "file names should order case-insensitively");
-    check(alpha != entries.end() && alpha->device != 0 && alpha->inode != 0,
+    check(alpha != entries.end() && alpha->identity.known(),
           "entries expose a stable filesystem identity");
 
     // show_hidden reveals the dotfile.
