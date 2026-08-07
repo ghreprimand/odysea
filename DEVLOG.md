@@ -17,6 +17,43 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Command palette
+
+The shell has a command palette: every labeled action the registry declares,
+searchable by label or id, opened with `Ctrl+Shift+P` or a toolbar button and
+dismissed with Escape or a press outside. The palette is a registry surface
+in the same sense as the menus and the toolbar — it enumerates from the
+registry at open and on every filter change and holds no command list of its
+own, so an action declared in the shell is reachable in the palette with no
+palette-side change. Each row shows the action's declared key sequence, read
+from the declaration rather than restated. Disabled actions stay listed and
+render disabled with the reason their declaration states; keyboard navigation
+skips them, and activation — row click or Return — routes through the
+registry's trigger-time revalidation, so a listed row can never fire a dead
+action. The dual-pane toggle moved from `Ctrl+Shift+P` to `F3`, with its
+pointer path unchanged, to free the sequence for the palette; the
+shortcut-conflict assertion covers the new declaration set.
+
+Focus behavior: the filter field owns focus while the palette is open, and
+arrow keys steer the list from the field. Restoration on dismissal is the
+modal focus popup's platform behavior; a removal-style probe showed
+palette-side restore code is not observable over it, so none ships, and the
+full-shell input-parity suite pins the behavior instead — after Escape, focus
+returns to the directory view the palette was summoned from.
+
+Verification: a dedicated palette suite drives the popup standalone against
+recording stand-ins, including a declaration added to the registry at runtime
+becoming reachable and triggerable with no palette-side change, and a
+sequence-ownership case asserting `Ctrl+Shift+P` maps to the palette and `F3`
+to the dual-pane toggle. Deliberate defects were planted and caught before
+restoration: a palette holding a hardcoded command list, an activation path
+bypassing trigger-time revalidation, a dropped focus grab on open, and a
+reintroduced duplicate key sequence each failed at least one suite. Release
+tests pass 39/39 with the forced-OpenGL presentation entry running in full;
+the sanitizer suite passes 38/38; QML formatting and lint, the module
+manifest guard, the public-repository guard, and the file-length guard pass;
+release smoke launches on both the software and hardware scene-graph backends
+run silently.
 ## 2026-08-07 -- Entry identity survives recycled device and inode numbers
 
 Selection, focus, and the selection anchor follow entries by filesystem

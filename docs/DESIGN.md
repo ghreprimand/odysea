@@ -224,6 +224,17 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   destructive actions state their exact target count and render last, after a
   separator. Key sequences are declared with their actions, and a sequence
   declared by two actions is a test failure, not a runtime shadowing surprise.
+- **Command palette.** The palette is a registry surface, not a second command
+  list: it enumerates every labeled declaration at open and on each filter
+  change, so an action added to the declarations is reachable in the palette
+  with no palette-side change. Rows show the declared key sequence read from
+  the declaration; disabled actions stay listed with the reason their
+  declaration states and are skipped by keyboard navigation; activation
+  routes through the registry's trigger-time revalidation. The filter field
+  owns focus while open, and focus restoration on dismissal is the modal
+  focus popup's platform behavior, pinned by the full-shell input-parity
+  tests rather than duplicated in palette code. `Ctrl+Shift+P` opens the
+  palette; the dual-pane toggle lives on `F3`.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 
