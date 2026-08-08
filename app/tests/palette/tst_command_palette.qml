@@ -353,6 +353,56 @@ Item {
             verify(placeIds.indexOf("place.remove") !== -1);
         }
 
+        function test_widenedGlobalContextInvokesLocationAndTabActions() {
+            // The palette opens over a global context carrying the current
+            // location and the first-tab ordinal, so the two global-surface
+            // declarations whose predicates read those fields are not just
+            // listed but enabled and invocable — through the one trigger path
+            // every row uses. A palette that lists a command it can never run
+            // is the defect this pins against.
+
+            fakeNavigationSettings.calls = [];
+
+            // Without the fields, both are honestly listed-disabled with a
+            // reason: the widening, not the listing, is what makes them run.
+            const bare = shellActions.paletteEntries("", shellActions.globalContext(undefined, undefined));
+            const addBare = bare.filter(entry => entry.actionId === "place.addCurrent");
+            const tabBare = bare.filter(entry => entry.actionId === "tab.activateByOrdinal");
+            compare(addBare.length, 1);
+            compare(addBare[0].enabled, false);
+            verify(addBare[0].reason.length > 0);
+            compare(tabBare.length, 1);
+            compare(tabBare[0].enabled, false);
+            verify(tabBare[0].reason.length > 0);
+
+            // Widened context: the current location is not already a Place,
+            // and at least one tab exists, so both resolve enabled.
+            const context = shellActions.globalContext(0, "/synthetic/fixture");
+            palette.openFor(context);
+            tryCompare(palette, "opened", true);
+            waitForRendering(palette.contentItem);
+
+            filterField().text = "Add current location";
+            const addRow = rowByName("paletteEntry-place.addCurrent");
+            verify(addRow !== null);
+            compare(addRow.actionEnabled, true);
+            mouseClick(addRow);
+            compare(fakeNavigationSettings.calls.join(","), "addPlace:/synthetic/fixture");
+            tryCompare(palette, "visible", false);
+
+            palette.openFor(context);
+            tryCompare(palette, "opened", true);
+            waitForRendering(palette.contentItem);
+
+            filterField().text = "Switch to tab";
+            const tabRow = rowByName("paletteEntry-tab.activateByOrdinal");
+            verify(tabRow !== null);
+            compare(tabRow.actionEnabled, true);
+            mouseClick(tabRow);
+            compare(fakeShell.calls.join(","), "activateTabIndex:0");
+            tryCompare(palette, "visible", false);
+        }
+
         function test_runtimeDeclarationBecomesReachableWithoutPaletteChange() {
             testCase.addedAction = extraActionComponent.createObject(shellActions);
             shellActions.actions.push(testCase.addedAction);

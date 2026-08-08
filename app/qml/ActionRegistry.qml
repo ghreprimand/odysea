@@ -29,10 +29,19 @@ QtObject {
 
     // --- Context snapshot factories -----------------------------------
 
-    function globalContext(argument) {
+    /// The context every keyboard shortcut and the command palette open
+    /// with. `argument` carries a per-shortcut ordinal (Ctrl+1..Ctrl+9);
+    /// `path` carries the current location, so global-surface declarations
+    /// whose predicate reads a location — adding the current location to
+    /// Places — are genuinely reachable and enableable from the palette
+    /// rather than listed dead or silently omitted. Both default to
+    /// undefined, so a caller that supplies neither gets the same snapshot
+    /// as before.
+    function globalContext(argument, path) {
         return Object.freeze({
             "kind": "global",
-            "argument": argument
+            "argument": argument,
+            "path": path
         });
     }
 

@@ -236,7 +236,11 @@ ApplicationWindow {
     }
 
     function openCommandPalette() {
-        commandPalette.openFor(null);
+        // Open over the current location and the first-tab ordinal, so the
+        // two global-surface declarations that read those fields — add the
+        // current location to Places, switch to a numbered tab — are listed,
+        // enabled, and invocable from the palette instead of silently absent.
+        commandPalette.openFor(root.actions.globalContext(0, root.activeShellModel.path));
     }
 
     Timer {

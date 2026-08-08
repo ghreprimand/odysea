@@ -60,7 +60,12 @@ ActionRegistry {
         label: qsTr("Add current location to Places")
         shortLabel: qsTr("Add current location")
         iconName: "add"
+        // Reachable from the palette's global context, which carries the
+        // current location; no context menu opens with a global kind, so
+        // this adds no menu entry.
+        surfaces: ["global"]
         enabledFor: context => typeof context.path === "string" && context.path.length > 0 && actionSet.placeIndex(context.path) < 0
+        disabledReasonFor: context => (typeof context.path !== "string" || context.path.length === 0) ? qsTr("No current location") : qsTr("This location is already in Places")
         perform: context => actionSet.navigationSettings.addPlace({
                 "label": "",
                 "path": context.path
@@ -370,7 +375,16 @@ ActionRegistry {
     ShellAction {
         actionId: "tab.activateByOrdinal"
         label: qsTr("Switch to numbered tab")
+        // The palette's global context carries an ordinal, so this reads as
+        // the concrete tab it targets there while keeping the generic label
+        // on any surface that supplies no ordinal.
+        labelFor: context => context.argument !== undefined ? qsTr("Switch to tab %1").arg(context.argument + 1) : qsTr("Switch to numbered tab")
+        // Reachable from the palette's global context; no context menu opens
+        // with a global kind, so this adds no menu entry. The keyboard path
+        // (Ctrl+1..Ctrl+9) is unchanged and drives the same handler.
+        surfaces: ["global"]
         enabledFor: context => context.argument !== undefined && context.argument < actionSet.shellModel.tabCount
+        disabledReasonFor: () => qsTr("That tab is not open")
         shortcuts: [
             {
                 "sequence": "Ctrl+1",
