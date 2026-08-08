@@ -242,6 +242,56 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   focus popup's platform behavior, pinned by the full-shell input-parity
   tests rather than duplicated in palette code. `Ctrl+Shift+P` opens the
   palette; the dual-pane toggle lives on `F3`.
+- **One cancellation contract, not one per walk.** Directory listing and
+  storage-usage accounting are both long walks a user can abandon mid-flight,
+  and both need the same guarantees: a private worker thread, monotonic
+  request tokens where starting a request cancels everything issued before it,
+  exactly one completion callback per request including one replaced before it
+  ever started, no callback delivered once teardown begins, and a cancellation
+  flag the running walk polls. Those guarantees are implemented once and
+  shared. A second implementation would be a second set of edge cases, and the
+  edges — a superseded request that never ran, a teardown mid-walk — are
+  exactly where two implementations would quietly disagree.
+- **Cancellation is polled per entry, not per directory.** A walk that only
+  checked between directories would still finish the directory it was in,
+  which on a large one is an unbounded wait after the user has already moved
+  on. The check is cheap enough to make per entry at any depth, and it is also
+  made between directories so that a queue of unreadable ones is abandoned
+  rather than drained.
+- **Storage usage states what it counts.** A usage figure that does not say
+  what it measures is not a measurement, so the accounting is fixed and
+  visible rather than implied. Apparent and allocated sizes are reported side
+  by side and never blended: a sparse file claims far more than it occupies, a
+  compressed one less, and a small file usually occupies a block more than it
+  claims. Every entry counts, hidden ones included, because a dotfile occupies
+  real space and presentation filtering must not silently change a
+  measurement. Directories count their own metadata as well as their contents.
+  A symbolic link counts at its own size and is not followed unless the caller
+  asks, because following one makes the figure depend on where the link
+  happens to point. The same inode reached twice — through hard links, or
+  through a link the caller asked to follow — is counted once, with the first
+  reach owning the bytes and later reaches reported as deduplicated; a child's
+  total is therefore "what removing this child would free" only when nothing
+  outside the subtree also links to its files. Space the walk could not read
+  is reported as a partial result, never dropped as if the subtree were empty.
+- **Crossing a filesystem boundary is a caller's decision.** A walk stays on
+  the filesystem it started on unless told otherwise, because a walk from a
+  system root would otherwise wander into pseudo-filesystems, removable media,
+  and network mounts and answer a question nobody asked. Two consequences
+  follow from the boundary being a device number. A Btrfs subvolume carries
+  its own anonymous device number, so a subvolume nested in the scanned tree
+  reads as another filesystem and is reported as a skipped boundary rather
+  than measured. A bind mount of the same filesystem shares its device number,
+  so it is not a boundary at all; what stops it from being counted twice is
+  inode deduplication, not the boundary setting.
+- **A walk over a cycle terminates by construction.** Following directory
+  links is optional, and when it is on, a directory already entered in this
+  walk is never entered again. Termination therefore does not depend on a
+  depth limit or a timeout. Directory identities are tracked unconditionally
+  rather than only when links are followed, because a bind mount of part of
+  the same filesystem re-presents directories the walk has already entered
+  without crossing any boundary and without any link involved. The cost is
+  bounded by the number of directories, far below the number of files.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

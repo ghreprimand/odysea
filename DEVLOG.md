@@ -17,6 +17,105 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Cancellable recursive storage-usage accounting
+
+The core can answer "what is taking up the space here" for a subtree, as
+running totals per immediate child, delivered while the walk is still going
+and abandoned the moment the caller looks elsewhere. This is the Qt-free half;
+the interactive map and its accessible list equivalent follow separately.
+
+The counting policy is stated rather than implied, because a usage figure that
+does not say what it measures is not a measurement. Apparent and allocated
+sizes are reported side by side and never blended: a sparse file claims far
+more than it occupies, a compressed one less, a small file usually occupies a
+block more than it claims. Every entry counts, hidden ones included.
+Directories count their own metadata as well as their contents. A symbolic
+link counts at its own size and is not followed unless the caller asks. The
+same inode reached twice is counted once, the first reach owning the bytes and
+later reaches reported as deduplicated, so a set of hard links cannot inflate
+a subtree; the consequence is that a child's total is "what removing this
+child would free" only when nothing outside the subtree also links to its
+files.
+
+Crossing a filesystem boundary is a caller's decision and never implicit. A
+walk stays where it started unless told otherwise, because a walk from a
+system root would otherwise wander into pseudo-filesystems, removable media,
+and network mounts. Two consequences follow from the boundary being a device
+number, and both are recorded in the design rather than left to be
+rediscovered: a Btrfs subvolume carries its own anonymous device number, so a
+nested subvolume reads as another filesystem and is reported as a skipped
+boundary rather than measured; and a bind mount of the same filesystem shares
+its device number, so the boundary setting does not govern it at all.
+
+Termination over cycles is structural, not a depth limit or a timeout: a
+directory already entered in this walk is never entered again. Directory
+identities are tracked unconditionally rather than only when links are
+followed, precisely because of the bind-mount case above — such a subtree
+re-presents directories the walk has already entered, with no link involved
+and no boundary crossed, and tracking only some of the time would count it
+twice by default. The cost is bounded by the number of directories, far below
+the number of files.
+
+A subtree that cannot be read degrades to a reported partial result rather
+than aborting the walk or being dropped as though it were empty. The failure
+is attributed to the child subtree it happened in as well as to the whole
+walk, and the unreadable directory still counts its own metadata. Only a root
+that cannot be examined or listed is an error, and a root that is not a
+directory is refused rather than half-measured.
+
+Cancellation is polled per entry, so it is prompt at any depth rather than at
+the next directory boundary, and it is polled between directories too, so a
+queue of unreadable ones is abandoned rather than drained. The walk keeps one
+directory open at a time and carries the rest as pending paths, so depth costs
+no file descriptors.
+
+Verification: thirteen cases cover aggregate totals against a fixture tree whose
+per-entry sizes are measured with a plain `lstat`, independently of the
+`statx` the scanner reads; sparse files keeping the two sizes apart; a hard
+link counted once with the repeat reported; a symbolic-link cycle terminating
+in both follow modes; an unreadable subtree reported as partial while its
+readable sibling is measured in full; cancellation at depth stopping within a
+few entries rather than at the end of the directory; cancellation abandoning a
+long queue of unreadable directories; progress reports as growing snapshots;
+a child reported as settled in a tree too small to reach the progress
+interval; hidden entries counted; and unusable roots reported. Thirteen
+deliberate defects were planted across this work and its shared seams and all
+thirteen were caught, keyed on the test binary's exit status rather than on
+counting failure lines, because a mutation that crashes or hangs a suite
+prints no failure line at all.
+
+Two measurement errors are on the record because they invalidated earlier
+numbers. A first probe run restored mutated sources with their original
+timestamps, which left the build convinced the stale mutated objects were
+current, so several later measurements ran against a library that still
+carried an earlier mutation; the harness now stamps restored files and
+verifies the bytes. With that corrected, two mutations that had appeared
+caught survived — cancellation polled only between directories, and the
+report delivered when a child settles — and both are now covered by cases
+written for them.
+
+Known gaps, stated rather than glossed. The boundary decision is verified
+through a directory symbolic link that resolves onto a second filesystem,
+which is the only form of it that can be set up without privileges; a real
+mount point inside a fixture tree cannot be. The decision is one shared
+function rather than a condition repeated at each descent site, so the covered
+case and the uncovered one cannot drift apart, but the uncovered call site is
+uncovered. A file with a single link reached through a bind mount is
+deduplicated only because the directory above it is; a bind mount that
+exposes a single file has no coverage. Both remaining cases need a privileged
+mount to test at all.
+
+Gates: release tests pass 42/42 and the sanitizer suite 41/41, both from wiped
+build directories and warning-clean under `-Werror`; formatting, scoped static
+analysis against the baseline, the QML and module guards, the public-repository
+guard, the file-length guard, and the devlog archive guard pass; offscreen
+smoke launches on the release and sanitizer builds, on both scene-graph
+backends, run silently. The static-analysis baseline moves by six lines: four
+relocated with the extracted seam, and four categories the test suites share
+with the rest of the corpus. Two fatal diagnostics were fixed rather than
+recorded.
+
+
 ## 2026-08-07 -- One place reads an entry's own metadata
 
 Reading an entry's own facts — identity, type, apparent and allocated size,
