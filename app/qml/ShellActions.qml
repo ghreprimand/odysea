@@ -320,6 +320,19 @@ ActionRegistry {
         perform: () => actionSet.shell.openAppearancePanel()
     }
     ShellAction {
+        actionId: "storage.openUsage"
+        label: qsTr("Storage usage")
+        shortLabel: qsTr("Storage")
+        iconName: "grid"
+        surfaces: ["canvas"]
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+U"
+            }
+        ]
+        perform: () => actionSet.shell.openStorageUsage()
+    }
+    ShellAction {
         actionId: "tab.activate"
         label: qsTr("Switch to this tab")
         surfaces: ["tab"]

@@ -295,6 +295,16 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   counted entry, which is the deliberate price of a figure that cannot inflate
   without saying so. Space the walk could not read
   is reported as a partial result, never dropped as if the subtree were empty.
+- **Storage usage has two equal views over one incremental model.** The
+  proportional map and the visible accessible list share selection, current
+  position, subtree navigation, apparent and allocated totals, and scan state;
+  neither is reconstructed from the other. Pointer and keyboard activation
+  enter the same subtree, and closing the workspace cancels its outstanding
+  walk. The app adapter retains only the newest pending worker snapshot,
+  updates at most the one subtree that is actively changing per delivery, and
+  performs its only whole-result reorder after successful completion. A fast
+  scan therefore cannot queue an unbounded series of full snapshots on the GUI
+  thread or turn incremental progress into repeated whole-list reconciliation.
 - **Crossing a filesystem boundary is a caller's decision.** A walk stays on
   the filesystem it started on unless told otherwise, because a walk from a
   system root would otherwise wander into pseudo-filesystems, removable media,

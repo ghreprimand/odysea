@@ -126,6 +126,9 @@ Item {
         function openAppearancePanel() {
             record("openAppearancePanel");
         }
+        function openStorageUsage() {
+            record("openStorageUsage");
+        }
         function activatePane(index) {
             record("activatePane:" + index);
             activePaneIndex = index;
@@ -429,7 +432,9 @@ Item {
 
         function test_canvasSurfaceListsWorkspaceActions() {
             const ids = shellActions.actionsFor(shellActions.canvasContext("/synthetic/fixture")).map(action => action.actionId);
-            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,nav.up,tab.new");
+            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,nav.up,storage.openUsage,tab.new");
+            compare(shellActions.trigger("storage.openUsage", shellActions.canvasContext("/synthetic/fixture")), true);
+            compare(fakeShell.calls.join(","), "openStorageUsage");
         }
 
         function test_locationActionsServeNavigationSurfaces() {

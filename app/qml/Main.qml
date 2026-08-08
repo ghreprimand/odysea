@@ -235,6 +235,10 @@ ApplicationWindow {
         appearancePanel.open();
     }
 
+    function openStorageUsage() {
+        storageUsagePanel.openFor(root.activeShellModel.path);
+    }
+
     function openCommandPalette() {
         // Open over the current location and the first-tab ordinal, so the
         // two global-surface declarations that read those fields — add the
@@ -278,6 +282,18 @@ ApplicationWindow {
         id: appearancePanel
 
         parent: root.contentItem
+        theme: root.shellTheme
+    }
+
+    StorageUsageModel {
+        id: storageUsageModel
+    }
+
+    StorageUsagePanel {
+        id: storageUsagePanel
+
+        parent: root.contentItem
+        usageModel: storageUsageModel
         theme: root.shellTheme
     }
 

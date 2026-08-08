@@ -17,6 +17,28 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Interactive storage usage map and accessible list
+
+Storage accounting is now available from the canvas context menu, the command
+palette, and a direct shortcut. The workspace presents a proportional map and
+an always-visible accessible list over the same model, with shared selection,
+current state, subtree navigation, apparent and allocated sizes, progress,
+deduplicated-entry counts, unreadable-directory counts, and skipped filesystem
+boundaries. Selection, activation, parent navigation, cancellation, and close
+all have pointer and keyboard paths.
+
+The Qt adapter keeps traversal in the Qt-free core worker and coalesces pending
+progress to the newest snapshot before it crosses onto the GUI thread. Each
+delivery updates only the subtree that is currently changing; the completed
+result is sorted once. Starting another scan or hiding the workspace cancels
+the old walk, and cancellation leaves the partial result visible.
+
+The warning-clean release build passed all 47 executed checks, including
+scoped static analysis. The ASan/UBSan build passed all 46 executed checks;
+static analysis is disabled in that preset. The two RHI launchers skipped when
+an offscreen OpenGL context was unavailable. Release and sanitizer binaries
+completed silent eight-second smoke launches with the software path and the
+real-Wayland OpenGL path.
 ## 2026-08-08 -- GPU-gate settle hardening and reachable palette location commands
 
 The presentation and device-pixel frame-grab helpers now bound a retry on the

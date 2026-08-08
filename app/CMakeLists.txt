@@ -47,6 +47,8 @@ qt_add_qml_module(odysea_shell_qml
     # The appearance state lives in the module as the ShellTheme type, so the
     # application and every scene test configure the same implementation.
     SOURCES
+        src/storage_usage_model.cpp
+        src/storage_usage_model.hpp
         src/theme_controller.cpp
         src/theme_controller.hpp
         src/theme_palettes.cpp
@@ -81,6 +83,9 @@ qt_add_qml_module(odysea_shell_qml
         qml/ShellTextField.qml
         qml/ShellToolBar.qml
         qml/StatusBar.qml
+        qml/StorageUsageList.qml
+        qml/StorageUsageMap.qml
+        qml/StorageUsagePanel.qml
         qml/TabStrip.qml
         qml/VectorIcon.qml
         qml/WellMaskLayer.qml
@@ -188,6 +193,17 @@ target_link_libraries(odysea_theme_controller_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_theme_controller COMMAND odysea_theme_controller_tests)
+
+qt_add_executable(odysea_storage_usage_model_tests
+    tests/tst_storage_usage_model.cpp)
+
+target_link_libraries(odysea_storage_usage_model_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_storage_usage_model COMMAND odysea_storage_usage_model_tests)
 
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic
@@ -299,6 +315,23 @@ target_link_libraries(odysea_dual_pane_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME shell_dual_pane COMMAND odysea_dual_pane_tests)
+
+# The storage-usage map and its always-visible accessible list equivalent run
+# together against one recording model, covering pointer and keyboard parity
+# without involving filesystem timing in the scene test.
+qt_add_executable(odysea_storage_usage_view_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_storage_usage_view_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/storage")
+
+target_link_libraries(odysea_storage_usage_view_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_storage_usage COMMAND odysea_storage_usage_view_tests)
 
 add_test(NAME shell_navigation_input COMMAND odysea_shell_navigation_tests)
 
@@ -496,8 +529,10 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 set_tests_properties(
     shell_input_parity shell_components shell_navigation_input
     shell_action_system shell_command_palette shell_dual_pane
+    shell_storage_usage
     shell_thumbnail_render shell_entry_interactions shell_load_diagnostic
-    app_theme_controller shell_presentation_fallback shell_visual_validation
+    app_theme_controller app_storage_usage_model
+    shell_presentation_fallback shell_visual_validation
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
