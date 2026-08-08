@@ -31,12 +31,11 @@ graphical shell grows around it.
 - [x] Calm path orientation, direct entry and completion, configurable Places,
       bounded recent destinations, and direct ancestor/shortcut jumps.
 - [x] Command palette.
-- [ ] Visual foundation acceptance: scale behavior, focus visibility, reduced
-      motion, effects-off usability, software fallback, and large-directory
-      validation hold. Two gaps remain: chrome overflows its window in a band
-      of widths just above the compact breakpoint, and the contrast floors are
-      measured against role pairs that no view paints, leaving four rendered
-      pairs below their stated floor.
+- [x] Visual foundation acceptance: layout integrity across every density's
+      measured compact breakpoint, scale behavior, focus visibility, reduced
+      motion, contrast measured at the surfaces the views actually paint,
+      effects-off usability, software fallback, and large-directory
+      validation.
 
 ## M3 — Power features
 
