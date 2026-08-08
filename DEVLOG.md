@@ -17,6 +17,27 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Directory view accessibility and roadmap alignment
+
+Directory lists and icon grids now identify themselves to assistive
+technology and distinguish the active pane from an inactive pane. Realized
+rows and cells expose list-item roles, file-kind names, selection state, and
+the current entry. The accessible name is derived from the entry's displayed
+name and whether it is a file, folder, or symbolic link; it never substitutes
+an implementation index for the content a person needs to identify.
+
+The tracked roadmap now describes directory scanning without promising that
+large-directory reconciliation cannot stall. Its M3 section also includes the
+storage-map, hardened entry-identity, and capability-gated filesystem work,
+with completion state matching the behavior currently shipped.
+
+Verification covers list and grid roles, non-empty view and entry names,
+selection updates, current-entry state, and active-pane label changes in the
+complete shell. The warning-clean release build passed all 46 checks,
+including scoped static analysis and both real-display RHI entries. A fresh
+ASan/UBSan build passed all 45 enabled checks; static analysis is disabled in
+that preset. Release and sanitizer binaries also completed silent eight-second
+smoke launches with the software and OpenGL rendering paths.
 ## 2026-08-07 -- An honest palette list and alias-aware shortcut conflicts
 
 The command palette now lists only what it can reach. A declaration whose
@@ -421,6 +442,7 @@ the sanitizer suite passes 38/38; QML formatting and lint, the module
 manifest guard, the public-repository guard, and the file-length guard pass;
 release smoke launches on both the software and hardware scene-graph backends
 run silently.
+
 ## 2026-08-07 -- Entry identity survives recycled device and inode numbers
 
 Selection, focus, and the selection anchor follow entries by filesystem

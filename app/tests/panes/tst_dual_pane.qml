@@ -270,6 +270,32 @@ TestCase {
         compare(rightModel.path, "/synthetic/right");
     }
 
+    function test_accessibleViewNamesExposeActivePane() {
+        const leftList = findChild(child("directoryPane-0"), "directoryList");
+        const rightList = findChild(child("directoryPane-1"), "directoryList");
+        verify(leftList !== null);
+        verify(rightList !== null);
+        leftList.forceActiveFocus();
+        tryVerify(function () {
+            return leftList.activeFocus;
+        });
+        compare(leftList.Accessible.role, Accessible.List);
+        compare(rightList.Accessible.role, Accessible.List);
+        verify(leftList.Accessible.name.length > 0);
+        verify(rightList.Accessible.name.length > 0);
+        verify(leftList.Accessible.name !== rightList.Accessible.name);
+        const activeName = leftList.Accessible.name;
+        const inactiveName = rightList.Accessible.name;
+
+        keySequence("F6");
+        tryCompare(shellWindow, "activePaneIndex", 1);
+        tryVerify(function () {
+            return rightList.activeFocus;
+        });
+        compare(rightList.Accessible.name, activeName);
+        compare(leftList.Accessible.name, inactiveName);
+    }
+
     function test_toggleHasKeyboardAndPointerPaths() {
         keySequence("F3");
         tryCompare(shellWindow, "paneCount", 1);

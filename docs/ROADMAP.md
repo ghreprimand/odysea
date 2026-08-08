@@ -23,7 +23,8 @@ graphical shell grows around it.
 
 - [x] Incremental adapter updates and geometry-driven selection foundation.
 - [x] Grid view with asynchronous, cached thumbnails.
-- [x] Off-thread directory scanning so the UI never stalls.
+- [ ] Off-thread directory scanning; main-thread reconciliation remains to be
+      hardened for large directories.
 - [x] Keyboard navigation and type-ahead.
 - [x] Mouse interaction parity: double-click open, context menus,
       drag-and-drop (internal + drag-out), clickable breadcrumbs.
@@ -38,6 +39,11 @@ graphical shell grows around it.
 
 - [x] Dual-pane layout for transfers.
 - [ ] Miller/columns view.
+- [ ] Interactive storage-usage maps with cancellable scanning and accessible
+      list equivalents.
+- [x] Hardened filesystem entry identity for Btrfs subvolume roots.
+- [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
+      Btrfs snapshot discovery.
 - [ ] Built-in fuzzy find across the current tree.
 - [ ] Optional modal (vim-style) keybindings.
 

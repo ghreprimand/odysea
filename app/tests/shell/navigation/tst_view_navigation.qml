@@ -231,6 +231,49 @@ Support.ShellTestCase {
         compare(child("entryCellIcon-2").name, "file");
     }
 
+    function test_directoryViewsExposeAccessibleEntriesAndSelection() {
+        populateNamedRows(["report.txt", "Projects"]);
+        fakeModel.setProperty(1, "isDir", true);
+
+        const list = child("directoryList");
+        list.forceActiveFocus();
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+        compare(list.Accessible.role, Accessible.List);
+        verify(list.Accessible.name.length > 0);
+
+        const reportRow = rowAt(0);
+        compare(reportRow.Accessible.role, Accessible.ListItem);
+        verify(reportRow.Accessible.name.length > 0);
+        verify(reportRow.Accessible.name.indexOf("report.txt") >= 0);
+        verify(reportRow.Accessible.name.indexOf("File") >= 0);
+        compare(reportRow.Accessible.selectable, true);
+        compare(reportRow.Accessible.selected, false);
+        fakeModel.selectRow(0, Qt.NoModifier);
+        tryCompare(reportRow.Accessible, "selected", true);
+        compare(reportRow.Accessible.focused, true);
+
+        mouseClick(child("gridViewButton"));
+        const grid = child("directoryGrid");
+        tryVerify(function () {
+            return grid.activeFocus;
+        });
+        compare(grid.Accessible.role, Accessible.List);
+        verify(grid.Accessible.name.length > 0);
+
+        const projectsCell = cellAt(1);
+        compare(projectsCell.Accessible.role, Accessible.ListItem);
+        verify(projectsCell.Accessible.name.length > 0);
+        verify(projectsCell.Accessible.name.indexOf("Projects") >= 0);
+        verify(projectsCell.Accessible.name.indexOf("Folder") >= 0);
+        compare(projectsCell.Accessible.selectable, true);
+        compare(projectsCell.Accessible.selected, false);
+        fakeModel.selectRow(1, Qt.NoModifier);
+        tryCompare(projectsCell.Accessible, "selected", true);
+        compare(projectsCell.Accessible.focused, true);
+    }
+
     function test_gridKeyboardNavigationAfterShortcutSwitch() {
         let list = child("directoryList");
         list.forceActiveFocus();

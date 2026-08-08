@@ -132,6 +132,11 @@ FocusScope {
         currentIndex: pane.shellModel.currentIndex
         highlightMoveDuration: 60
 
+        Accessible.role: Accessible.List
+        Accessible.name: pane.navigationController.activeShellModel === pane.shellModel ? qsTr("Active directory list") : qsTr("Inactive directory list")
+        Accessible.focusable: true
+        Accessible.focused: activeFocus
+
         function revealCurrent() {
             if (pane.shellModel.currentIndex >= 0) {
                 directoryList.positionViewAtIndex(pane.shellModel.currentIndex, ListView.Contain);
@@ -214,11 +219,20 @@ FocusScope {
                 })
             readonly property int dragProposedAction: Drag.proposedAction
             readonly property bool dragActive: Drag.active
+            readonly property string accessibleKind: entryRow.isSymlink ? qsTr("Symbolic link") : (entryRow.isDir ? qsTr("Folder") : qsTr("File"))
             signal transferDragStarted(int action)
 
             width: directoryList.width - pane.selectionGutterWidth
             height: pane.rowHeight
             z: 1
+
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("%1: %2").arg(entryRow.accessibleKind).arg(entryRow.name)
+            Accessible.description: entryRow.recoveryEntry ? qsTr("Recovery entry") : ""
+            Accessible.focusable: true
+            Accessible.focused: directoryList.activeFocus && pane.shellModel.currentIndex === entryRow.index
+            Accessible.selectable: true
+            Accessible.selected: entryRow.selected
 
             function openContextMenu(position) {
                 const registry = pane.actionMenu.registry;

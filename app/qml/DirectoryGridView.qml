@@ -156,6 +156,11 @@ FocusScope {
         currentIndex: pane.shellModel.currentIndex
         highlightMoveDuration: 60
 
+        Accessible.role: Accessible.List
+        Accessible.name: pane.navigationController.activeShellModel === pane.shellModel ? qsTr("Active directory grid") : qsTr("Inactive directory grid")
+        Accessible.focusable: true
+        Accessible.focused: activeFocus
+
         // Registered wells mirror scrolled positions only when told the
         // viewport moved.
         onContentXChanged: {
@@ -282,11 +287,20 @@ FocusScope {
                 })
             readonly property int dragProposedAction: Drag.proposedAction
             readonly property bool dragActive: Drag.active
+            readonly property string accessibleKind: entryCell.isSymlink ? qsTr("Symbolic link") : (entryCell.isDir ? qsTr("Folder") : qsTr("File"))
             signal transferDragStarted(int action)
 
             width: pane.cellWidth
             height: pane.cellHeight
             z: 1
+
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("%1: %2").arg(entryCell.accessibleKind).arg(entryCell.name)
+            Accessible.description: entryCell.recoveryEntry ? qsTr("Recovery entry") : ""
+            Accessible.focusable: true
+            Accessible.focused: directoryGrid.activeFocus && pane.shellModel.currentIndex === entryCell.index
+            Accessible.selectable: true
+            Accessible.selected: entryCell.selected
 
             Component.onCompleted: {
                 if (pane.visible) {
