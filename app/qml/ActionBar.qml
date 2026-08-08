@@ -13,12 +13,18 @@ ChromeStrip {
     required property var shellModel
     required property ActionRegistry registry
 
-    /// Below this width the operation buttons drop their labels and the
-    /// filter field narrows, keeping every control reachable down to the
-    /// window's minimum width. The bound is the measured implicit width of
-    /// the fully labeled row at 1x, scaled with the interface; the labels
-    /// stay available through accessible names and tooltips.
-    readonly property bool compact: bar.width < 940 * bar.theme.uiScale
+    /// The live width required by the fully labeled row. Each hidden button
+    /// uses the same action declaration and shared component as its visible
+    /// counterpart, so translated labels, density-scaled type, icon size,
+    /// and padding all move the breakpoint together.
+    readonly property real labeledWidthRequirement: 16 + (actionRow.spacing * 8) + 260 + 130 + hiddenToggle.implicitWidth + selectAllMeasure.implicitWidth + copyMeasure.implicitWidth + moveMeasure.implicitWidth + renameMeasure.implicitWidth + trashMeasure.implicitWidth
+
+    /// Below the measured labeled requirement the operation buttons drop
+    /// their labels and the filter field narrows. The labels stay available
+    /// through accessible names and tooltips.
+    readonly property bool compact: bar.width < Math.ceil(bar.labeledWidthRequirement)
+
+    objectName: "actionBar"
 
     /// Keyboard entry point for the filter field (Ctrl+F on the shell).
     function focusFilterField() {
@@ -30,7 +36,53 @@ ChromeStrip {
     outlined: false
     implicitHeight: Math.max(44, bar.theme.chromeFontPixelSize + 20)
 
+    Item {
+        visible: false
+
+        ActionButton {
+            id: selectAllMeasure
+
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "selection.all"
+        }
+
+        ActionButton {
+            id: copyMeasure
+
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "selection.copy"
+        }
+
+        ActionButton {
+            id: moveMeasure
+
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "selection.move"
+        }
+
+        ActionButton {
+            id: renameMeasure
+
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "selection.rename"
+        }
+
+        ActionButton {
+            id: trashMeasure
+
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "selection.trash"
+        }
+    }
+
     RowLayout {
+        id: actionRow
+
         anchors.fill: parent
         anchors.leftMargin: 8
         anchors.rightMargin: 8
@@ -60,6 +112,8 @@ ChromeStrip {
         }
 
         CheckBox {
+            id: hiddenToggle
+
             objectName: "hiddenToggle"
             text: qsTr("Hidden")
             checked: bar.shellModel.showHidden

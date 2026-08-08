@@ -360,12 +360,13 @@ target_link_libraries(odysea_presentation_fallback_tests
 
 add_test(NAME shell_presentation_fallback COMMAND odysea_presentation_fallback_tests)
 
-# Visual-foundation acceptance: layout integrity at the narrowest and a wide
-# window, focus indicators with effects off, reduced-motion stability,
-# effects-off usability, virtualization under a representative large
-# directory, and device-pixel-ratio behavior. The suite runs twice — once at
-# 1x and once with QT_SCALE_FACTOR=2 — because every layout and mask
-# assertion is written in logical coordinates and must hold at both scales.
+# Visual-foundation acceptance: layout integrity across every density's live
+# compact breakpoint and interface-scale extremes, focus indicators with
+# effects off, reduced-motion stability, effects-off usability, virtualization
+# under a representative large directory, and device-pixel-ratio behavior.
+# The suite runs twice — once at 1x and once with QT_SCALE_FACTOR=2 — because
+# every layout and mask assertion is written in logical coordinates and must
+# hold at both scales.
 qt_add_executable(odysea_validation_tests
     tests/tst_shell_quick.cpp)
 

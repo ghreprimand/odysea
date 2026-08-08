@@ -1,12 +1,12 @@
 // Visual-foundation acceptance over the real shell scene.
 //
-// Exercises the accepted visual system where it can regress: the narrowest
-// and a wide window layout keep every chrome control reachable and no text
-// clipped, focus indicators stay unambiguous with every effect disabled,
-// reduced motion suppresses the motion-driven effects without disturbing
-// layout, the shell stays fully usable with the effect layer off, and a
-// directory large enough to exercise virtualization neither defeats it nor
-// scales the effect layer's cost with entry count.
+// Exercises the accepted visual system where it can regress: a density-aware
+// sweep across the measured compact breakpoint keeps every chrome control
+// reachable and no text clipped, focus indicators stay unambiguous with every
+// effect disabled, reduced motion suppresses the motion-driven effects without
+// disturbing layout, the shell stays fully usable with the effect layer off,
+// and a directory large enough to exercise virtualization neither defeats it
+// nor scales the effect layer's cost with entry count.
 //
 // The suite runs at 1x and, through a second test entry that sets
 // QT_SCALE_FACTOR=2, at 2x; every assertion here is written in logical
@@ -33,7 +33,11 @@ Support.ShellTestCase {
         testCase.shellWindow.height = height;
         tryCompare(testCase.shellWindow, "width", width);
         tryCompare(testCase.shellWindow, "height", height);
+        compare(testCase.shellWindow.width, width, "the platform must honor the requested width before geometry is audited");
+        compare(testCase.shellWindow.height, height, "the platform must honor the requested height before geometry is audited");
         waitForRendering(testCase.shellWindow.contentItem);
+        tryCompare(testCase.shellWindow.contentItem, "width", width);
+        compare(testCase.shellWindow.contentItem.width, width, "the content width must match the requested window width before geometry is audited");
     }
 
     /// Runs after every test function: whatever a test changed — window
@@ -105,14 +109,62 @@ Support.ShellTestCase {
         }
     }
 
-    function test_narrowestClaimedLayoutKeepsChromeIntact() {
-        resizeShell(testCase.shellWindow.minimumWidth, testCase.shellWindow.minimumHeight);
-        auditChrome("narrowest");
+    function test_densityAwareCompactBreakpointKeepsChromeIntact() {
+        const densities = [ShellTheme.Compact, ShellTheme.Cozy, ShellTheme.Comfortable];
+        const offsets = [-80, -60, -40, -20, -1, 0, 1, 20, 40, 60, 80];
+        const actionBar = child("actionBar");
+        let previousBreakpoint = 0;
+
+        for (let densityIndex = 0; densityIndex < densities.length; ++densityIndex) {
+            theme().density = densities[densityIndex];
+            tryCompare(theme(), "density", densities[densityIndex]);
+            waitForRendering(testCase.shellWindow.contentItem);
+
+            const breakpoint = Math.ceil(actionBar.labeledWidthRequirement);
+            verify(breakpoint > testCase.shellWindow.minimumWidth, "the sweep must cross a reachable compact breakpoint");
+            verify(breakpoint > previousBreakpoint, "each wider density must move the measured breakpoint");
+            previousBreakpoint = breakpoint;
+
+            resizeShell(testCase.shellWindow.minimumWidth, testCase.shellWindow.minimumHeight);
+            verify(actionBar.compact, "the minimum width must use compact chrome at density " + densityIndex);
+            auditChrome("density " + densityIndex + ", minimum width");
+
+            for (let offsetIndex = 0; offsetIndex < offsets.length; ++offsetIndex) {
+                const requestedWidth = breakpoint + offsets[offsetIndex];
+                resizeShell(requestedWidth, 720);
+                compare(actionBar.compact, requestedWidth < breakpoint, "compact mode must follow the measured requirement at density " + densityIndex + ", width " + requestedWidth);
+                auditChrome("density " + densityIndex + ", width " + requestedWidth);
+            }
+
+            resizeShell(1600, 900);
+            verify(!actionBar.compact, "the wide layout must keep labels at density " + densityIndex);
+            auditChrome("density " + densityIndex + ", wide");
+        }
     }
 
-    function test_wideLayoutKeepsChromeIntact() {
-        resizeShell(1600, 900);
-        auditChrome("wide");
+    function test_uiScaleMovesMeasuredCompactBreakpoint() {
+        const scales = [0.75, 2.0];
+        const actionBar = child("actionBar");
+        let previousBreakpoint = 0;
+
+        theme().density = ShellTheme.Cozy;
+        for (let scaleIndex = 0; scaleIndex < scales.length; ++scaleIndex) {
+            theme().uiScale = scales[scaleIndex];
+            tryCompare(theme(), "uiScale", scales[scaleIndex]);
+            waitForRendering(testCase.shellWindow.contentItem);
+
+            const breakpoint = Math.ceil(actionBar.labeledWidthRequirement);
+            verify(breakpoint > previousBreakpoint, "a larger interface scale must move the measured breakpoint");
+            previousBreakpoint = breakpoint;
+
+            const requestedWidths = [breakpoint - 1, breakpoint, breakpoint + 1];
+            for (let widthIndex = 0; widthIndex < requestedWidths.length; ++widthIndex) {
+                const requestedWidth = requestedWidths[widthIndex];
+                resizeShell(requestedWidth, 720);
+                compare(actionBar.compact, requestedWidth < breakpoint, "compact mode must follow the measured requirement at scale " + scales[scaleIndex] + ", width " + requestedWidth);
+                auditChrome("scale " + scales[scaleIndex] + ", width " + requestedWidth);
+            }
+        }
     }
 
     function test_focusIndicatorsSurviveEffectsOff() {

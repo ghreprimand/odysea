@@ -17,6 +17,28 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Density-aware action-bar compaction
+
+The action row now drops button labels according to the live width required by
+the fully labeled controls instead of a fixed window-width threshold. The
+measurement uses the same action declarations and shared button component as
+the visible row, so translated labels, density-scaled type, interface scale,
+icons, and padding move the compact breakpoint together. Accessible names and
+tooltips remain available when labels are hidden.
+
+Visual validation now crosses both sides of the measured breakpoint at every
+supported density and at the minimum and maximum interface scales. Every
+sample checks that chrome stays within the content bounds and text remains
+unclipped. The resize harness also rejects platforms that do not apply the
+requested window and content widths before geometry is inspected, preventing
+window-manager clamping from producing a false pass. Both the 1x and 2x
+validation entries exercise the sweep.
+
+The warning-clean release build passed all 46 checks, including scoped static
+analysis. The ASan/UBSan build passed all 45 enabled checks; static analysis is
+disabled in that preset. Both real-display RHI entries ran with zero internal
+skips in each build. Release and sanitizer binaries also completed silent
+eight-second smoke launches with the software and OpenGL rendering paths.
 ## 2026-08-08 -- Render-site contrast matrix, mask over-protection bound, and grab sentinels
 
 The measured contrast matrix is now derived from render sites instead of the
