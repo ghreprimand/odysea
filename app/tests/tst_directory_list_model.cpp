@@ -306,11 +306,7 @@ void DirectoryListModelTest::filteringCostsTheSameScatteredAsContiguous() {
     // for that reason.
     constexpr quint64 indexRebuildCeiling = 8;
     constexpr double scatteredCostRatioCeiling = 4.0;
-#ifdef ODYSEA_INSTRUMENTED_BUILD
-    constexpr qint64 budgetMilliseconds = 12000;
-#else
-    constexpr qint64 budgetMilliseconds = 600;
-#endif
+    const qint64 budgetMilliseconds = timingBudget(600, 12000);
     constexpr int entryCount = 16000;
 
     QTemporaryDir fixture;
@@ -379,9 +375,11 @@ void DirectoryListModelTest::filteringCostsTheSameScatteredAsContiguous() {
           entryCount, static_cast<long long>(scatteredMilliseconds), entryCount - scatteredRows,
           scatteredRuns, static_cast<unsigned long long>(scatteredRebuilds));
     qInfo(
-        "scattered/contiguous cost ratio %.2f, ceiling %.2f; rebuild ceiling %llu; budget %lld ms",
+        "scattered/contiguous cost ratio %.2f, ceiling %.2f; rebuild ceiling %llu; budget %lld ms "
+        "for %s build",
         ratio, scatteredCostRatioCeiling, static_cast<unsigned long long>(indexRebuildCeiling),
-        static_cast<long long>(budgetMilliseconds));
+        static_cast<long long>(budgetMilliseconds),
+        runningUnderAddressSanitizer() ? "an instrumented" : "a release");
 
     // Bounded below as well as above. An upper bound alone is satisfied by a
     // counter that has stopped counting, which would retire the instrument
@@ -425,11 +423,7 @@ void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
     // real regression here.
     constexpr quint64 keyBuildsPerEntryCeiling = 60;
     constexpr double keyBuildGrowthCeiling = 2.8;
-#ifdef ODYSEA_INSTRUMENTED_BUILD
-    constexpr qint64 budgetMilliseconds = 20000;
-#else
-    constexpr qint64 budgetMilliseconds = 3000;
-#endif
+    const qint64 budgetMilliseconds = timingBudget(3000, 20000);
     constexpr int smallerEntryCount = 4000;
     constexpr int largerEntryCount = 2 * smallerEntryCount;
 
@@ -455,9 +449,18 @@ void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
           static_cast<long long>(larger.refreshMilliseconds),
           static_cast<unsigned long long>(larger.keyBuilds),
           static_cast<unsigned long long>(keyBuildCeiling));
-    qInfo("key construction growth %.2f across a doubled directory, ceiling %.2f, budget %lld ms",
-          growth, keyBuildGrowthCeiling, static_cast<long long>(budgetMilliseconds));
+    qInfo("key construction growth %.2f across a doubled directory, ceiling %.2f, budget %lld ms "
+          "for %s build",
+          growth, keyBuildGrowthCeiling, static_cast<long long>(budgetMilliseconds),
+          runningUnderAddressSanitizer() ? "an instrumented" : "a release");
 
+    // Bounded below as well as above, for the same reason the index-rebuild
+    // count is: a counter that stopped counting reads zero and passes any
+    // ceiling. Every presented row is keyed at least once per update, so the
+    // entry count is a floor the healthy figure clears by an order of
+    // magnitude.
+    QVERIFY(larger.keyBuilds > static_cast<quint64>(largerEntryCount));
+    QVERIFY(smaller.keyBuilds > static_cast<quint64>(smallerEntryCount));
     QVERIFY(larger.keyBuilds < keyBuildCeiling);
     QVERIFY(growth < keyBuildGrowthCeiling);
     QVERIFY(smaller.firstScanMilliseconds < budgetMilliseconds);

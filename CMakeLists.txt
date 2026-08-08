@@ -90,6 +90,12 @@ add_test(
     NAME devlog_archive_guard_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_devlog_archive_selftest.sh)
 add_test(
+    NAME key_construction_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_key_construction.sh)
+add_test(
+    NAME key_construction_guard_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_key_construction_selftest.sh)
+add_test(
     NAME static_analysis
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
 
@@ -101,6 +107,7 @@ set_tests_properties(
     qml_test_scopes qml_test_scopes_self_test
     file_length_guard
     devlog_archive_guard devlog_archive_guard_self_test
+    key_construction_guard key_construction_guard_self_test
     static_analysis
     PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)

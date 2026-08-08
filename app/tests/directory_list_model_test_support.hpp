@@ -19,6 +19,7 @@
 #include <QTest>
 #include <QTimer>
 
+#include <dlfcn.h>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -27,6 +28,33 @@
 #include <system_error>
 
 namespace odysea::apptest {
+
+// Whether this binary is running under AddressSanitizer.
+//
+// Detected through the sanitizer runtime's own entry point rather than a
+// preprocessor macro. The macro form worked, but it was a free-standing block
+// of `#ifdef` lines between two case definitions, and splitting this file
+// along function boundaries dropped it without a word: the build stopped
+// defining the symbol, the instrumented branch went dead, and every case that
+// selected a budget silently took the release one. Nothing failed, because a
+// budget that is too tight for an instrumented build is still satisfied on a
+// fast machine most of the time.
+//
+// Ordinary code cannot be lost that way. The runtime's entry point is looked
+// up by name at run time rather than declared, because declaring it would mean
+// spelling a reserved identifier in tracked source; a string passed to the
+// dynamic loader carries no such claim.
+inline bool runningUnderAddressSanitizer() noexcept {
+    static const bool instrumented = ::dlsym(RTLD_DEFAULT, "__asan_init") != nullptr;
+    return instrumented;
+}
+
+// The wall-clock budget for a timed case, in milliseconds. An instrumented
+// build carries roughly twenty times the release cost, so it gets its own
+// figure rather than one bound loose enough to pass there and useless here.
+inline qint64 timingBudget(qint64 releaseMilliseconds, qint64 instrumentedMilliseconds) noexcept {
+    return runningUnderAddressSanitizer() ? instrumentedMilliseconds : releaseMilliseconds;
+}
 
 namespace fs = std::filesystem;
 

@@ -17,6 +17,72 @@ the archive.
 
 ---
 
+## 2026-08-08 -- One place builds a row key
+
+The directory model counts how many row keys an update constructs, and a
+large-directory gate reads that count to hold the shape of an update's cost.
+The count was only as trustworthy as the assumption that every key came from
+one function. It did not: a second spelling of the same formula produces a key
+that compares equal and costs the same while going uncounted, so a regression
+that restored a discarded linear rescan could read as healthy. That was
+demonstrated against the shipped counter, not supposed — the same restoration
+counted 16.2 M constructions when routed through the counted function and
+0.23 M when written out by hand, below the healthy figure, while doing the
+same work.
+
+Key construction is now consolidated. The counted function takes a path, and
+the entry overload delegates to it, so the thumbnail-delivery site that
+spelled the formula out by hand is counted like every other. Path
+normalization that is not a row key — comparing two locations supplied by the
+interface, to decide whether a transfer is allowed — moves into a separate
+named function, so the distinction is stated in the code rather than inferred:
+one answers "which row is this", the other answers "are these the same place",
+and only the first scales with the listing.
+
+A new repository guard enforces the rule. Within the directory-model sources,
+path normalization may appear only inside those two functions; anywhere else,
+including inside a nested lambda or an inline member in a header, is rejected
+by name. The guard also fails when it inspects no sources at all, and when it
+finds no permitted normalization, because either state means an ordinary
+rename has left it silently enforcing nothing. Its self-test covers nine
+scenarios and asserts the specific reason each is rejected rather than only
+that it failed, since a guard can reject a planted defect for the wrong reason
+while the check under test is unreachable.
+
+Two of the counter's ceilings gained floors in the same change, for a related
+reason: an upper bound alone is satisfied by a counter that has stopped
+counting, and planting exactly that defect showed both instruments passing
+while retired.
+
+Also confirmed by planting rather than by reading: the scanned listing's name
+index is what preserves deduplication within a single delivery, and removing
+its registration is now rejected by two cases. That was previously defence in
+depth with nothing pinning it.
+
+A third instrument turned out to be silently retired, and by the same
+mechanism. Timed cases select a wall-clock budget by build, because an
+instrumented build carries roughly twenty times the release cost. The
+detection was a free-standing block of preprocessor lines sitting between two
+case definitions, and splitting that file along function boundaries dropped it
+without a word: the symbol stopped being defined, the instrumented branch went
+dead, and every timed case took the release budget under the sanitizer. Nothing
+failed, because a budget too tight for an instrumented build is still met on a
+fast machine most of the time — which is precisely why it went unnoticed. The
+earlier claim that every case moved verbatim was true of the cases and not of
+the file.
+
+Detection is now ordinary code: the sanitizer runtime's entry point, looked up
+by name through the dynamic loader, so the running binary answers the question
+instead of whoever last moved a block of text. Both timed cases now state which budget they applied and which build
+they believe they are in, so a wrong answer appears in the gate output rather
+than only in the absence of a failure.
+
+The warning-clean release build passed all 49 checks, including scoped static
+analysis and both real-display RHI entries. A fresh ASan/UBSan build passed
+all 48 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
 ## 2026-08-08 -- A scattered removal costs what a contiguous one costs
 
 Filtering a large listing no longer grows with the square of its size. The key

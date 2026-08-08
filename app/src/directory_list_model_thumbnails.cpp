@@ -175,7 +175,7 @@ void DirectoryListModel::receiveThumbnailResult(odysea::core::ThumbnailResult re
         return;
     }
 
-    const QString stableKey = QString::fromStdString(result.source.lexically_normal().string());
+    const QString stableKey = entryKey(result.source);
     const auto requested = requestedThumbnailKeys_.constFind(stableKey);
     if (requested == requestedThumbnailKeys_.cend() || *requested != result.key) {
         return;

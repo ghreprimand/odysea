@@ -604,9 +604,27 @@ QStringList DirectoryListModel::selectedPaths() const {
     return paths;
 }
 
-QString DirectoryListModel::entryKey(const odysea::core::Entry& entry) const {
+QString DirectoryListModel::entryKey(const std::filesystem::path& path) const {
+    // The sole constructor of a row key, and the sole reason this file
+    // normalizes a path. Every other spelling of the same formula would
+    // produce a key that compares equal while going uncounted, so the count
+    // below would understate the work and a gate reading it could be walked
+    // past by writing the formula out by hand. `key_construction_guard`
+    // enforces that; this comment records why the rule exists.
     ++entryKeyBuilds_;
-    return QString::fromStdString(entry.path.lexically_normal().string());
+    return QString::fromStdString(path.lexically_normal().string());
+}
+
+QString DirectoryListModel::entryKey(const odysea::core::Entry& entry) const {
+    return entryKey(entry.path);
+}
+
+std::filesystem::path DirectoryListModel::normalizedFilesystemPath(const QString& path) const {
+    // Normalizing a location the interface supplied, for comparison against
+    // another location. Distinct from a row key: this answers "are these the
+    // same place", takes text rather than a listed entry, and is not counted,
+    // because it does not scale with the listing.
+    return std::filesystem::path(normalizedPath(path).toStdString()).lexically_normal();
 }
 
 QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) const {

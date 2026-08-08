@@ -202,7 +202,9 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] const PaneState& currentPane() const;
     [[nodiscard]] QString normalizedPath(const QString& path) const;
     [[nodiscard]] QStringList selectedPaths() const;
+    [[nodiscard]] QString entryKey(const std::filesystem::path& path) const;
     [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
+    [[nodiscard]] std::filesystem::path normalizedFilesystemPath(const QString& path) const;
     [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
     [[nodiscard]] QString keyForRow(int row) const;
     [[nodiscard]] int rowForEntryKey(const QString& key) const;

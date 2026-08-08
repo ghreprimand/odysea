@@ -132,16 +132,14 @@ bool DirectoryListModel::canDropSelection(const QString& destinationDirectory, b
     }
 
     std::error_code error;
-    const fs::path destinationIdentity =
-        fs::path(normalizedPath(destinationDirectory).toStdString()).lexically_normal();
+    const fs::path destinationIdentity = normalizedFilesystemPath(destinationDirectory);
     const fs::path destination = fs::weakly_canonical(destinationIdentity, error);
     if (error || !fs::is_directory(destination, error) || error) {
         return false;
     }
 
     for (const QString& sourceText : sources) {
-        const fs::path sourceIdentity =
-            fs::path(normalizedPath(sourceText).toStdString()).lexically_normal();
+        const fs::path sourceIdentity = normalizedFilesystemPath(sourceText);
         if (sourceIdentity == destinationIdentity || sourceIdentity == destination ||
             (move && hasDestinationParent(sourceIdentity, destinationIdentity, destination))) {
             return false;
@@ -172,15 +170,13 @@ bool DirectoryListModel::dropSelection(const QString& destinationDirectory, bool
     if (move) {
         performMove(destinationDirectory, conflictMode);
     } else {
-        const fs::path destinationIdentity =
-            fs::path(normalizedPath(destinationDirectory).toStdString()).lexically_normal();
+        const fs::path destinationIdentity = normalizedFilesystemPath(destinationDirectory);
         std::error_code error;
         const fs::path destination = fs::weakly_canonical(destinationIdentity, error);
         bool copiesIntoSourceParent = false;
         if (!error) {
             for (const QString& sourceText : selectedPaths()) {
-                const fs::path sourceIdentity =
-                    fs::path(normalizedPath(sourceText).toStdString()).lexically_normal();
+                const fs::path sourceIdentity = normalizedFilesystemPath(sourceText);
                 if (hasDestinationParent(sourceIdentity, destinationIdentity, destination)) {
                     copiesIntoSourceParent = true;
                     break;
