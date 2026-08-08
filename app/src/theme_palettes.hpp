@@ -54,7 +54,19 @@ struct ShellPalette {
     /// Keyboard focus and caret ink.
     QColor focus;
 
+    /// Toolbar and control symbol ink before the emission cap. Curated per
+    /// family rather than derived from the faint ink: the cap limits the
+    /// brightest channel, so a family whose faint ink peaks in a
+    /// low-luminance channel would land its symbols below the measured
+    /// pressed-bed floor. Dark families choose a hue whose capped result
+    /// clears that floor; light families render symbols in primary text.
+    QColor icon;
+
     QColor danger;
+    /// Danger ink under the high-contrast override: the same hue moved to
+    /// clear 4.5:1 on every bed the role renders on, including the
+    /// selection and hover beds the base danger ink cannot clear there.
+    QColor dangerHigh;
     QColor warning;
     QColor success;
 };

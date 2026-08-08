@@ -17,6 +17,7 @@
 #include <QtNumeric>
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 
 using odysea::app::ThemeController;
@@ -39,32 +40,98 @@ double contrast_ratio(const QColor& first, const QColor& second) {
     return (bright + 0.05) / (dark + 0.05);
 }
 
-/// One measured readability claim: a foreground role on the bed it actually
-/// renders on, with the floor it must clear in the default state and under
-/// the high-contrast override.
+/// Source-over composite of `ink` at `alpha` on an opaque `under` bed:
+/// the same arithmetic the scene graph applies when a translucent layer
+/// sits on an opaque surface.
+QColor composite_over(const QColor& under, const QColor& ink, double alpha) {
+    const auto a = static_cast<float>(std::clamp(alpha, 0.0, 1.0));
+    return QColor::fromRgbF((ink.redF() * a) + (under.redF() * (1.0F - a)),
+                            (ink.greenF() * a) + (under.greenF() * (1.0F - a)),
+                            (ink.blueF() * a) + (under.blueF() * (1.0F - a)));
+}
+
+/// One concrete color a bed can present under a glyph. Composited beds
+/// carry a variant per gradient extreme, so a floor holds across the whole
+/// surface instead of only at its flattest point.
+struct BedVariant {
+    QString name;
+    QColor color;
+};
+
+/// The pane ground as the compositor produces it. DirectoryPane paints
+/// DeepFieldGround with the background sheet over the window ground — which
+/// is the same background, so the glass amount flattens out — and layers
+/// backgroundDeep ramps at the alphas DeepFieldGround.qml declares: 0.22 at
+/// the top edge, 0.50 at the bottom edge, 0.30 in the side strips, each
+/// scaled by the effective deep-field level and the glass amount. An
+/// unselected row's own bed is transparent, so every glyph on such a row
+/// reads against one of these variants.
+QList<BedVariant> ground_beds(const ThemeController& theme) {
+    const double amount = theme.effectiveDeepField() * theme.glassOpacity();
+    const QColor sheet = theme.background();
+    const QColor deep = theme.backgroundDeep();
+    return {BedVariant{.name = QStringLiteral("ground"), .color = sheet},
+            BedVariant{.name = QStringLiteral("ground bottom edge"),
+                       .color = composite_over(sheet, deep, 0.50 * amount)},
+            BedVariant{.name = QStringLiteral("ground side strip"),
+                       .color = composite_over(sheet, deep, 0.30 * amount)},
+            BedVariant{.name = QStringLiteral("ground top edge"),
+                       .color = composite_over(sheet, deep, 0.22 * amount)}};
+}
+
+/// The chrome panel in both painted forms: opaque (dialogs, the command
+/// palette, the appearance panel, ShellButton's own bed) and as a
+/// ChromeStrip, which paints the panel at the surface opacity over the
+/// window ground.
+QList<BedVariant> panel_beds(const ThemeController& theme) {
+    return {BedVariant{.name = QStringLiteral("panel"), .color = theme.panel()},
+            BedVariant{.name = QStringLiteral("panel strip"),
+                       .color = composite_over(theme.background(), theme.panel(),
+                                               theme.surfaceOpacity())}};
+}
+
+QList<BedVariant> selection_beds(const ThemeController& theme) {
+    return {BedVariant{.name = QStringLiteral("selection bed"), .color = theme.selectionBed()}};
+}
+
+QList<BedVariant> hover_beds(const ThemeController& theme) {
+    return {BedVariant{.name = QStringLiteral("hover bed"), .color = theme.hover()}};
+}
+
+QList<BedVariant> pressed_beds(const ThemeController& theme) {
+    return {BedVariant{.name = QStringLiteral("pressed bed"), .color = theme.pressed()}};
+}
+
+/// One measured readability claim: a foreground role on a bed a tracked
+/// QML surface actually paints it on, with the floor it must clear in the
+/// default state and under the high-contrast override. The bed resolves to
+/// every variant the compositor can present there.
 struct RolePair {
     const char* description;
     QColor (ThemeController::*foreground)() const;
-    QColor (ThemeController::*bed)() const;
+    QList<BedVariant> (*beds)(const ThemeController&);
     double defaultFloor;
     double highContrastFloor;
 };
 
-/// Measures every pair against the floor for the theme's current override
-/// state and returns a line per miss.
+/// Measures every pair, on every bed variant, against the floor for the
+/// theme's current override state and returns a line per miss.
 QStringList contrast_failures(ThemeController& theme, const QString& palette,
                               const QList<RolePair>& pairs, bool highContrast) {
     QStringList failures;
     theme.setHighContrast(highContrast);
     for (const RolePair& pair : pairs) {
         const double floor = highContrast ? pair.highContrastFloor : pair.defaultFloor;
-        const double measured = contrast_ratio((theme.*pair.foreground)(), (theme.*pair.bed)());
-        if (measured < floor) {
-            failures.append(QStringLiteral("%1 / %2%3: %4 < %5")
-                                .arg(palette, QLatin1String(pair.description),
-                                     highContrast ? QStringLiteral(" [high contrast]") : QString(),
-                                     QString::number(measured, 'f', 2),
-                                     QString::number(floor, 'f', 1)));
+        const QColor ink = (theme.*pair.foreground)();
+        for (const BedVariant& bed : pair.beds(theme)) {
+            const double measured = contrast_ratio(ink, bed.color);
+            if (measured < floor) {
+                failures.append(
+                    QStringLiteral("%1 / %2 on %3%4: %5 < %6")
+                        .arg(palette, QLatin1String(pair.description), bed.name,
+                             highContrast ? QStringLiteral(" [high contrast]") : QString(),
+                             QString::number(measured, 'f', 2), QString::number(floor, 'f', 1)));
+            }
         }
     }
     return failures;
@@ -483,158 +550,225 @@ void tst_ThemeController::high_contrast_roles_meet_measured_ratios() {
     // aesthetic mode cannot silently regress below readable either.
     ThemeController theme;
 
-    // Text-sized pairs: entry names and metadata on the well, selection and
-    // match beds, chrome labels on the panel and control beds, status inks
-    // where they carry sentence text.
-    // Non-text pairs: icon inks, focus and accent indicators, and the
-    // high-contrast hairline promotion.
+    // Every pair below is anchored on a tracked render site, and the bed is
+    // what the compositor actually presents under that role there. Sites:
+    //   ground    — DirectoryPane's DeepFieldGround under transparent
+    //               list/grid rows, the window ground, and field surfaces.
+    //   panel     — chrome strips, dialogs, the command palette, the
+    //               appearance panel, and ShellButton's resting bed.
+    //   selection — selected rows and cells, highlighted palette rows.
+    //   hover     — hovered rows, cells, and chrome controls.
+    //   pressed   — ShellButton, breadcrumb, and splitter active states.
+    // Roles with no tracked render site — well, matchBed, selectionInk,
+    // metaInk, success — are deliberately absent: a floor asserted on a bed
+    // nothing paints can neither fail nor protect anything. When a surface
+    // starts painting one of them, its real combinations join this list.
     const QList<RolePair> pairs = {
-        RolePair{.description = "text on well",
+        // Primary text: entry names in both views on every row state,
+        // chrome labels, dialog and palette text, field text.
+        RolePair{.description = "text",
                  .foreground = &ThemeController::text,
-                 .bed = &ThemeController::well,
+                 .beds = ground_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "text on background",
+        RolePair{.description = "text",
                  .foreground = &ThemeController::text,
-                 .bed = &ThemeController::background,
+                 .beds = selection_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "text on panel",
+        RolePair{.description = "text",
                  .foreground = &ThemeController::text,
-                 .bed = &ThemeController::panel,
+                 .beds = hover_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "text on selection bed",
+        RolePair{.description = "text",
                  .foreground = &ThemeController::text,
-                 .bed = &ThemeController::selectionBed,
+                 .beds = pressed_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "text on match bed",
+        RolePair{.description = "text",
                  .foreground = &ThemeController::text,
-                 .bed = &ThemeController::matchBed,
+                 .beds = panel_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "text on hover bed",
-                 .foreground = &ThemeController::text,
-                 .bed = &ThemeController::hover,
-                 .defaultFloor = 4.5,
-                 .highContrastFloor = 4.5},
-        RolePair{.description = "text on pressed bed",
-                 .foreground = &ThemeController::text,
-                 .bed = &ThemeController::pressed,
-                 .defaultFloor = 4.5,
-                 .highContrastFloor = 4.5},
-        RolePair{.description = "muted text on well",
+        // Secondary text: the size column renders on unselected, selected,
+        // and hovered rows — DirectoryListView's metadata ink defaults to
+        // this role — and status and caption text sit on the panel.
+        RolePair{.description = "muted text",
                  .foreground = &ThemeController::textMuted,
-                 .bed = &ThemeController::well,
+                 .beds = ground_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "muted text on panel",
+        RolePair{.description = "muted text",
                  .foreground = &ThemeController::textMuted,
-                 .bed = &ThemeController::panel,
+                 .beds = selection_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "directory ink on well",
+        RolePair{.description = "muted text",
+                 .foreground = &ThemeController::textMuted,
+                 .beds = hover_beds,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "muted text",
+                 .foreground = &ThemeController::textMuted,
+                 .beds = panel_beds,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        // Directory names in both views, on every row state.
+        RolePair{.description = "directory ink",
                  .foreground = &ThemeController::dirInk,
-                 .bed = &ThemeController::well,
+                 .beds = ground_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "directory ink on selection bed",
+        RolePair{.description = "directory ink",
                  .foreground = &ThemeController::dirInk,
-                 .bed = &ThemeController::selectionBed,
+                 .beds = selection_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "link ink on well",
-                 .foreground = &ThemeController::linkInk,
-                 .bed = &ThemeController::well,
+        RolePair{.description = "directory ink",
+                 .foreground = &ThemeController::dirInk,
+                 .beds = hover_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "meta ink on well",
-                 .foreground = &ThemeController::metaInk,
-                 .bed = &ThemeController::well,
-                 .defaultFloor = 4.5,
-                 .highContrastFloor = 4.5},
-        RolePair{.description = "selection ink on selection bed",
-                 .foreground = &ThemeController::selectionInk,
-                 .bed = &ThemeController::selectionBed,
-                 .defaultFloor = 4.5,
-                 .highContrastFloor = 4.5},
-        RolePair{.description = "long-form ink on panel",
+        RolePair{.description = "long-form ink",
                  .foreground = &ThemeController::longFormInk,
-                 .bed = &ThemeController::panel,
+                 .beds = panel_beds,
                  .defaultFloor = 4.5,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "danger ink on well",
+        // The recovery caption renders on every row state; status errors
+        // and destructive menu and palette items sit on the panel and the
+        // selection bed.
+        RolePair{.description = "danger ink",
                  .foreground = &ThemeController::danger,
-                 .bed = &ThemeController::well,
+                 .beds = ground_beds,
                  .defaultFloor = 3.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "danger ink on panel",
+        RolePair{.description = "danger ink",
                  .foreground = &ThemeController::danger,
-                 .bed = &ThemeController::panel,
+                 .beds = selection_beds,
                  .defaultFloor = 3.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "warning ink on panel",
+        RolePair{.description = "danger ink",
+                 .foreground = &ThemeController::danger,
+                 .beds = hover_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "danger ink",
+                 .foreground = &ThemeController::danger,
+                 .beds = panel_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        // The path navigator's warning line on its panel strip; warnings on
+        // the window ground.
+        RolePair{.description = "warning ink",
                  .foreground = &ThemeController::warning,
-                 .bed = &ThemeController::panel,
+                 .beds = panel_beds,
                  .defaultFloor = 3.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "warning ink on background",
+        RolePair{.description = "warning ink",
                  .foreground = &ThemeController::warning,
-                 .bed = &ThemeController::background,
+                 .beds = ground_beds,
                  .defaultFloor = 3.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "success ink on panel",
-                 .foreground = &ThemeController::success,
-                 .bed = &ThemeController::panel,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 4.5},
-        RolePair{.description = "faint ink on well",
+        // Entry icons: file marks use the faint ink and symlink marks the
+        // link ink, on every row state.
+        RolePair{.description = "file icon ink",
                  .foreground = &ThemeController::textFaint,
-                 .bed = &ThemeController::well,
+                 .beds = ground_beds,
                  .defaultFloor = 3.0,
                  .highContrastFloor = 3.0},
-        // Icon ink is deliberately subdued in the default state: its channels
-        // are capped below the Strong profile's bright-pass threshold so
-        // toolbar symbols stay orientation aids instead of emitters. The
-        // default floor is therefore an anti-regression bound on the accepted
-        // appearance, and the 4.5 high-contrast floor is the accessibility
-        // path — the override promotes icon ink to primary text.
-        RolePair{.description = "icon ink on panel",
+        RolePair{.description = "file icon ink",
+                 .foreground = &ThemeController::textFaint,
+                 .beds = selection_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "file icon ink",
+                 .foreground = &ThemeController::textFaint,
+                 .beds = hover_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "link ink",
+                 .foreground = &ThemeController::linkInk,
+                 .beds = ground_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "link ink",
+                 .foreground = &ThemeController::linkInk,
+                 .beds = selection_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "link ink",
+                 .foreground = &ThemeController::linkInk,
+                 .beds = hover_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        // Disabled chrome ink: ShellButton's disabled label and icon.
+        // Inactive controls are exempt from WCAG contrast minima; this
+        // floor is an anti-regression bound so disabled chrome stays
+        // perceivable rather than a conformance claim.
+        RolePair{.description = "disabled chrome ink",
+                 .foreground = &ThemeController::textFaint,
+                 .beds = panel_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        // Accent indicators: the current-row ring on every row state, the
+        // checked tab label on the window ground, and focus borders on
+        // buttons and fields.
+        RolePair{.description = "accent",
+                 .foreground = &ThemeController::accent,
+                 .beds = ground_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "accent",
+                 .foreground = &ThemeController::accent,
+                 .beds = selection_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "accent",
+                 .foreground = &ThemeController::accent,
+                 .beds = hover_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "accent",
+                 .foreground = &ThemeController::accent,
+                 .beds = panel_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        // Keyboard focus ink: the split grip on the window ground and
+        // focus borders against the panel.
+        RolePair{.description = "focus",
+                 .foreground = &ThemeController::focus,
+                 .beds = ground_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "focus",
+                 .foreground = &ThemeController::focus,
+                 .beds = panel_beds,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        // Icon ink is deliberately subdued in the default state: its
+        // channels are capped below the Strong profile's bright-pass
+        // threshold so toolbar symbols stay orientation aids instead of
+        // emitters. The default floor is therefore an anti-regression bound
+        // on the accepted appearance, and the 4.5 high-contrast floor is
+        // the accessibility path — the override promotes icon ink to
+        // primary text. The role renders on the resting, hovered, and
+        // pressed control beds.
+        RolePair{.description = "icon ink",
                  .foreground = &ThemeController::iconInk,
-                 .bed = &ThemeController::panel,
+                 .beds = panel_beds,
                  .defaultFloor = 2.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "icon ink on well",
+        RolePair{.description = "icon ink",
                  .foreground = &ThemeController::iconInk,
-                 .bed = &ThemeController::well,
+                 .beds = hover_beds,
                  .defaultFloor = 2.0,
                  .highContrastFloor = 4.5},
-        RolePair{.description = "accent on panel",
-                 .foreground = &ThemeController::accent,
-                 .bed = &ThemeController::panel,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 3.0},
-        RolePair{.description = "accent on well",
-                 .foreground = &ThemeController::accent,
-                 .bed = &ThemeController::well,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 3.0},
-        RolePair{.description = "focus on well",
-                 .foreground = &ThemeController::focus,
-                 .bed = &ThemeController::well,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 3.0},
-        RolePair{.description = "focus on panel",
-                 .foreground = &ThemeController::focus,
-                 .bed = &ThemeController::panel,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 3.0},
-        RolePair{.description = "focus on background",
-                 .foreground = &ThemeController::focus,
-                 .bed = &ThemeController::background,
-                 .defaultFloor = 3.0,
-                 .highContrastFloor = 3.0},
+        RolePair{.description = "icon ink",
+                 .foreground = &ThemeController::iconInk,
+                 .beds = pressed_beds,
+                 .defaultFloor = 2.0,
+                 .highContrastFloor = 4.5},
     };
 
     QStringList failures;

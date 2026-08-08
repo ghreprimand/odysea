@@ -236,12 +236,15 @@ Support.ShellTestCase {
         });
 
         // Selection stays legible without the effect layer: the beds and
-        // inks are palette values, not pipeline output.
+        // inks are palette values, not pipeline output. Unselected rows are
+        // transparent over the pane ground, so the ground pair measures the
+        // background sheet — with effects off the deep-field ramps are gone
+        // and the sheet is the whole bed.
         clickRow(1, Qt.LeftButton, Qt.NoModifier);
         compare(selectedRows(), [1]);
-        verify(!Qt.colorEqual(theme().selectionBed, theme().well), "the selection bed must differ from the well without effects");
+        verify(!Qt.colorEqual(theme().selectionBed, theme().background), "the selection bed must differ from the pane ground without effects");
         verify(contrastRatio(theme().text, theme().selectionBed) >= 4.5);
-        verify(contrastRatio(theme().text, theme().well) >= 4.5);
+        verify(contrastRatio(theme().text, theme().background) >= 4.5);
 
         // The keyboard surfaces stay reachable: palette open and dismiss.
         const list = child("directoryList");

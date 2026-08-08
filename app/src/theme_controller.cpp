@@ -677,15 +677,18 @@ QColor ThemeController::iconInk() const {
 
     // Toolbar symbols are orientation aids, not emitters. Keep their normal
     // state below the Strong profile's bright-pass threshold; high contrast
-    // deliberately promotes them to primary text instead.
+    // deliberately promotes them to primary text instead. The base ink is
+    // the family's curated icon role: the cap limits the brightest channel,
+    // so the hue must carry enough luminance in its capped form to clear
+    // the measured floor on the pressed control bed.
     constexpr float maximumChannel = 0.40F;
-    const float brightest = std::max({p.faint.redF(), p.faint.greenF(), p.faint.blueF()});
+    const float brightest = std::max({p.icon.redF(), p.icon.greenF(), p.icon.blueF()});
     if (brightest <= maximumChannel) {
-        return p.faint;
+        return p.icon;
     }
     const float factor = maximumChannel / brightest;
-    return QColor::fromRgbF(p.faint.redF() * factor, p.faint.greenF() * factor,
-                            p.faint.blueF() * factor, p.faint.alphaF());
+    return QColor::fromRgbF(p.icon.redF() * factor, p.icon.greenF() * factor,
+                            p.icon.blueF() * factor, p.icon.alphaF());
 }
 
 QColor ThemeController::textMuted() const {
@@ -748,7 +751,12 @@ QColor ThemeController::rubberBand() const {
 }
 
 QColor ThemeController::danger() const {
-    return activePalette().danger;
+    // High contrast promotes danger to the family's high-contrast variant:
+    // the base ink clears its non-text floor everywhere it renders, but on
+    // the selection and hover beds it cannot reach the 4.5:1 the override
+    // promises for status text.
+    const ShellPalette& p = activePalette();
+    return settings_.high_contrast ? p.dangerHigh : p.danger;
 }
 
 QColor ThemeController::warning() const {
