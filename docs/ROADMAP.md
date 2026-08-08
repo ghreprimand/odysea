@@ -44,7 +44,7 @@ graphical shell grows around it.
 ## M3 — Power features
 
 - [x] Dual-pane layout for transfers.
-- [ ] Miller/columns view.
+- [x] Miller/columns view.
 - [x] Interactive storage-usage maps with cancellable scanning and accessible
       list equivalents.
 - [x] Hardened filesystem entry identity for Btrfs subvolume roots.
