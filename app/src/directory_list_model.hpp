@@ -269,6 +269,7 @@ class DirectoryListModel : public QAbstractListModel {
     std::unique_ptr<odysea::core::ThumbnailStore> ownedThumbnailStore_;
     std::unique_ptr<odysea::core::ThumbnailService> thumbnailService_;
     std::atomic<bool> deliverCallbacks_{true};
+    std::uint64_t thumbnailOwnerId_ = 0;
     std::uint64_t activeScanToken_ = 0;
     std::uint64_t watchToken_ = 0;
     std::uint64_t thumbnailGeneration_ = 0;

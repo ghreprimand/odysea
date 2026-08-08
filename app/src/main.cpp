@@ -48,8 +48,10 @@ int main(int argc, char* argv[]) {
     QQmlApplicationEngine engine;
     ThumbnailImageProvider& thumbnailProvider = installThumbnailProvider(engine);
 
-    DirectoryListModel model(thumbnailProvider);
-    model.setPath(start);
+    DirectoryListModel primaryModel(thumbnailProvider);
+    DirectoryListModel secondaryModel(thumbnailProvider);
+    primaryModel.setPath(start);
+    secondaryModel.setPath(start);
 
     // Appearance and navigation preferences persist together in the per-user
     // application config location. The scene owns the state and only needs the
@@ -58,8 +60,10 @@ int main(int argc, char* argv[]) {
         QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
         QStringLiteral("/appearance.conf");
 
-    engine.setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)},
-                                 {QStringLiteral("themeStoragePath"), themeStorage}});
+    engine.setInitialProperties(
+        {{QStringLiteral("shellModel"), QVariant::fromValue(&primaryModel)},
+         {QStringLiteral("secondaryShellModel"), QVariant::fromValue(&secondaryModel)},
+         {QStringLiteral("themeStoragePath"), themeStorage}});
     const odysea::app::ShellLoadOutcome shell =
         odysea::app::loadShellScene(engine, odysea::app::shellModuleUri(), startupSceneType());
     if (!shell.loaded) {

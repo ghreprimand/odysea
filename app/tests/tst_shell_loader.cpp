@@ -265,7 +265,9 @@ void ShellLoaderTest::theShellSceneReflectsStoredAppearanceOnLoad() {
     settings.write("palette=odyssey-amber\n"
                    "profile=strong\n"
                    "density=comfortable\n"
-                   "scale=1.5\n");
+                   "scale=1.5\n"
+                   "dual_pane_enabled=true\n"
+                   "split_ratio=0.6500\n");
     settings.close();
 
     QtThumbnailProducer producer;
@@ -292,6 +294,8 @@ void ShellLoaderTest::theShellSceneReflectsStoredAppearanceOnLoad() {
     QCOMPARE(theme->profile(), odysea::app::ThemeController::Strong);
     QCOMPARE(theme->uiScale(), 1.5);
     QCOMPARE(theme->density(), odysea::app::ThemeController::Comfortable);
+    QVERIFY(theme->dualPaneEnabled());
+    QCOMPARE(theme->splitRatio(), 0.65);
 
     // ...and the scene's bindings render it. The window ground is the bound
     // surface most visibly wrong when the load fails to notify, and the row
@@ -304,6 +308,7 @@ void ShellLoaderTest::theShellSceneReflectsStoredAppearanceOnLoad() {
     QCOMPARE(window->property("color").value<QColor>(), theme->background());
     QCOMPARE(window->property("rowHeight").toInt(), theme->rowHeight());
     QCOMPARE(window->property("rowHeight").toInt(), 60);
+    QCOMPARE(window->property("paneCount").toInt(), 2);
 
     engine.reset();
 }

@@ -9,6 +9,10 @@ ChromeStrip {
     id: bar
 
     required property var shellModel
+    /// Workspace layouts can override these when pane state lives above
+    /// the directory adapters. The defaults preserve standalone use.
+    property int activePane: shellModel.activePane
+    property int paneCount: shellModel.paneCount
 
     implicitHeight: Math.max(30, bar.theme.captionFontPixelSize + 14)
 
@@ -43,7 +47,7 @@ ChromeStrip {
         }
 
         Text {
-            text: qsTr("Pane %1 of %2").arg(bar.shellModel.activePane + 1).arg(bar.shellModel.paneCount)
+            text: qsTr("Pane %1 of %2").arg(bar.activePane + 1).arg(bar.paneCount)
             color: bar.theme.textMuted
             font.family: bar.theme.captionFontFamily
             font.pixelSize: bar.theme.captionFontPixelSize

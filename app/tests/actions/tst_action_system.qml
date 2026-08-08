@@ -94,6 +94,9 @@ Item {
     component RecordingShell: QtObject {
         property var calls: []
         property bool gridMode: false
+        property int paneCount: 1
+        property int activePaneIndex: 0
+        property bool transferAllowed: false
 
         function record(name) {
             const seen = calls;
@@ -122,6 +125,28 @@ Item {
         }
         function openAppearancePanel() {
             record("openAppearancePanel");
+        }
+        function activatePane(index) {
+            record("activatePane:" + index);
+            activePaneIndex = index;
+        }
+        function setDualPaneEnabled(enabled) {
+            record("setDualPaneEnabled:" + enabled);
+            paneCount = enabled ? 2 : 1;
+        }
+        function switchPane() {
+            record("switchPane");
+            activePaneIndex = activePaneIndex === 0 ? 1 : 0;
+        }
+        function adjustSplitRatio(delta) {
+            record("adjustSplitRatio:" + delta);
+        }
+        function canTransferToOppositePane(move) {
+            return transferAllowed;
+        }
+        function transferToOppositePane(move) {
+            record("transferToOppositePane:" + move);
+            return transferAllowed;
         }
     }
 
@@ -248,6 +273,9 @@ Item {
             fakeModel.paneCount = 1;
             fakeShell.calls = [];
             fakeShell.gridMode = false;
+            fakeShell.paneCount = 1;
+            fakeShell.activePaneIndex = 0;
+            fakeShell.transferAllowed = false;
             fakeNavigationSettings.calls = [];
             fakeNavigationSettings.places = [
                 {
@@ -380,6 +408,27 @@ Item {
             compare(shellActions.trigger("focus.address", shellActions.globalContext(undefined)), true);
             compare(shellActions.trigger("focus.locations", shellActions.globalContext(undefined)), true);
             compare(fakeShell.calls.join(","), "focusAddressField,openLocations");
+            compare(shellActions.shortcutConflicts().length, 0);
+        }
+
+        function test_paneActionsRouteThroughTheWorkspaceController() {
+            fakeShell.paneCount = 2;
+            fakeShell.transferAllowed = true;
+            fakeModel.selectedCount = 1;
+
+            compare(shellActions.trigger("pane.activate", shellActions.paneContext(1)), true);
+            compare(shellActions.trigger("pane.switch", shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("pane.resizeLeft", shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("pane.resizeRight", shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("pane.copyToOther", shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("pane.moveToOther", shellActions.globalContext(undefined)), true);
+            compare(fakeShell.calls.join(","), "activatePane:1,switchPane,adjustSplitRatio:-0.05,adjustSplitRatio:0.05,transferToOppositePane:false,transferToOppositePane:true");
+
+            const entries = shellActions.shortcutEntries();
+            compare(entries.filter(entry => entry.actionId === "pane.resizeLeft")[0].sequence, "Ctrl+Alt+Left");
+            compare(entries.filter(entry => entry.actionId === "pane.resizeRight")[0].sequence, "Ctrl+Alt+Right");
+            compare(entries.filter(entry => entry.actionId === "pane.copyToOther")[0].sequence, "Ctrl+Shift+C");
+            compare(entries.filter(entry => entry.actionId === "pane.moveToOther")[0].sequence, "Ctrl+Shift+M");
             compare(shellActions.shortcutConflicts().length, 0);
         }
 

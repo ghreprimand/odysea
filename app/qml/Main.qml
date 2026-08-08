@@ -20,6 +20,9 @@ ApplicationWindow {
     id: root
 
     required property var shellModel
+    /// The application supplies a second independent adapter. The fallback
+    /// keeps existing single-pane scenes source-compatible.
+    property var secondaryShellModel: shellModel
 
     /// Where appearance preferences persist. The application injects the real
     /// location; the default keeps scenes and tests in memory only.
@@ -31,7 +34,7 @@ ApplicationWindow {
     /// The single action declaration site. Every menu, button, and key
     /// sequence in the shell renders from these declarations.
     readonly property ShellActions actions: ShellActions {
-        shellModel: root.shellModel
+        shellModel: root.activeShellModel
         shell: root
         navigationSettings: root.shellTheme
     }
@@ -48,13 +51,26 @@ ApplicationWindow {
     readonly property int typeAheadTimeoutMs: 900
     property bool gridMode: false
     property string typeAheadBuffer: ""
+    property int activePaneIndex: 0
+    readonly property bool dualPaneEnabled: shellTheme.dualPaneEnabled
+    readonly property int paneCount: dualPaneEnabled ? 2 : 1
+    readonly property var activeShellModel: activePaneIndex === 0 ? shellModel : secondaryShellModel
+    readonly property var oppositeShellModel: activePaneIndex === 0 ? secondaryShellModel : shellModel
+
+    onDualPaneEnabledChanged: {
+        if (!dualPaneEnabled && activePaneIndex !== 0) {
+            activePaneIndex = 0;
+            clearTypeAhead();
+            focusCurrentView();
+        }
+    }
 
     width: 1100
     height: 720
     minimumWidth: 720
     minimumHeight: 480
     visible: true
-    title: root.shellModel.path.length > 0 ? root.shellModel.path + " — OdySea" : "OdySea"
+    title: root.activeShellModel.path.length > 0 ? root.activeShellModel.path + " — OdySea" : "OdySea"
     color: backgroundColor
     font.family: shellTheme.chromeFontFamily
     font.pixelSize: shellTheme.chromeFontPixelSize
@@ -73,16 +89,61 @@ ApplicationWindow {
     }
 
     function activateRelativeTab(offset) {
-        const count = root.shellModel.tabCount;
+        const count = root.activeShellModel.tabCount;
         if (count < 1) {
             return;
         }
-        const nextTab = (root.shellModel.activeTab + offset + count) % count;
-        root.shellModel.activateTab(nextTab);
+        const nextTab = (root.activeShellModel.activeTab + offset + count) % count;
+        root.activeShellModel.activateTab(nextTab);
     }
 
     function activeDirectoryPane() {
-        return root.shellModel.activePane === 0 ? firstPaneLoader.item : secondPaneLoader.item;
+        return paneLayout.paneItem(root.activePaneIndex);
+    }
+
+    function activatePane(paneIndex) {
+        if (paneIndex < 0 || paneIndex >= root.paneCount) {
+            return;
+        }
+        if (root.activePaneIndex === paneIndex) {
+            return;
+        }
+        root.activePaneIndex = paneIndex;
+        root.clearTypeAhead();
+        root.focusCurrentView();
+    }
+
+    function setDualPaneEnabled(enabled) {
+        root.shellTheme.dualPaneEnabled = enabled;
+        if (!enabled && root.activePaneIndex !== 0) {
+            root.activePaneIndex = 0;
+        }
+        root.clearTypeAhead();
+        root.focusCurrentView();
+    }
+
+    function switchPane() {
+        if (root.paneCount === 2) {
+            root.activatePane(root.activePaneIndex === 0 ? 1 : 0);
+        }
+    }
+
+    function adjustSplitRatio(delta) {
+        if (root.paneCount !== 2) {
+            return;
+        }
+        paneLayout.adjustSplitRatio(delta);
+    }
+
+    function canTransferToOppositePane(move) {
+        return root.paneCount === 2 && root.activeShellModel !== root.oppositeShellModel && root.activeShellModel.selectedCount > 0 && !root.activeShellModel.operationBusy && !root.oppositeShellModel.operationBusy && root.oppositeShellModel.path.length > 0 && root.activeShellModel.path !== root.oppositeShellModel.path;
+    }
+
+    function transferToOppositePane(move) {
+        if (!root.canTransferToOppositePane(move)) {
+            return false;
+        }
+        return root.activeShellModel.dropSelection(root.oppositeShellModel.path, move, 0);
     }
 
     function clearTypeAhead() {
@@ -115,7 +176,7 @@ ApplicationWindow {
             }
             typeAheadBuffer = typeAheadBuffer.slice(0, -1);
             if (typeAheadBuffer.length > 0) {
-                root.shellModel.selectByPrefix(typeAheadBuffer, false);
+                root.activeShellModel.selectByPrefix(typeAheadBuffer, false);
                 typeAheadTimer.restart();
                 view.revealCurrent();
             } else {
@@ -136,7 +197,7 @@ ApplicationWindow {
         const repeatedSingleCharacter = previous.length === 1 && previous.toLocaleLowerCase() === text.toLocaleLowerCase();
         const cycle = previous.length === 0 || repeatedSingleCharacter;
         typeAheadBuffer = repeatedSingleCharacter ? text : previous + text;
-        root.shellModel.selectByPrefix(typeAheadBuffer, cycle);
+        root.activeShellModel.selectByPrefix(typeAheadBuffer, cycle);
         typeAheadTimer.restart();
         view.revealCurrent();
         return true;
@@ -149,8 +210,8 @@ ApplicationWindow {
     }
 
     function activateTabIndex(index) {
-        if (index < root.shellModel.tabCount) {
-            root.shellModel.activateTab(index);
+        if (index < root.activeShellModel.tabCount) {
+            root.activeShellModel.activateTab(index);
             root.clearTypeAhead();
             root.focusCurrentView();
         }
@@ -248,7 +309,7 @@ ApplicationWindow {
                 id: navigationToolBar
 
                 Layout.fillWidth: true
-                shellModel: root.shellModel
+                shellModel: root.activeShellModel
                 registry: root.actions
                 theme: root.shellTheme
             }
@@ -257,7 +318,7 @@ ApplicationWindow {
                 id: pathNavigator
 
                 Layout.fillWidth: true
-                shellModel: root.shellModel
+                shellModel: root.activeShellModel
                 navigationController: root
                 registry: root.actions
                 settings: root.shellTheme
@@ -266,7 +327,7 @@ ApplicationWindow {
 
             TabStrip {
                 Layout.fillWidth: true
-                shellModel: root.shellModel
+                shellModel: root.activeShellModel
                 registry: root.actions
                 theme: root.shellTheme
             }
@@ -275,61 +336,37 @@ ApplicationWindow {
                 id: actionBar
 
                 Layout.fillWidth: true
-                shellModel: root.shellModel
+                shellModel: root.activeShellModel
                 registry: root.actions
                 theme: root.shellTheme
             }
 
-            RowLayout {
+            DualPaneLayout {
+                id: paneLayout
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.margins: 8
-                spacing: 8
-
-                Loader {
-                    id: firstPaneLoader
-
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    active: root.shellModel.activePane === 0
-                    visible: active
-                    sourceComponent: paneComponent
-                }
-
-                PanePlaceholder {
-                    visible: root.shellModel.paneCount === 2 && root.shellModel.activePane !== 0
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    shellModel: root.shellModel
-                    registry: root.actions
-                    theme: root.shellTheme
-                    paneIndex: 0
-                }
-
-                PanePlaceholder {
-                    visible: root.shellModel.paneCount === 2 && root.shellModel.activePane !== 1
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    shellModel: root.shellModel
-                    registry: root.actions
-                    theme: root.shellTheme
-                    paneIndex: 1
-                }
-
-                Loader {
-                    id: secondPaneLoader
-
-                    visible: root.shellModel.paneCount === 2
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    active: root.shellModel.paneCount === 2 && root.shellModel.activePane === 1
-                    sourceComponent: paneComponent
-                }
+                primaryModel: root.shellModel
+                secondaryModel: root.secondaryShellModel
+                navigationController: root
+                registry: root.actions
+                theme: root.shellTheme
+                dualPaneEnabled: root.dualPaneEnabled
+                activePane: root.activePaneIndex
+                splitRatio: root.shellTheme.splitRatio
+                gridMode: root.gridMode
+                persistenceDurationMs: presentationLayer.motionDurationMs
+                wellLayer: wellMaskLayer
+                onPaneActivationRequested: paneIndex => root.activatePane(paneIndex)
+                onSplitRatioCommitted: ratio => root.shellTheme.splitRatio = ratio
             }
 
             StatusBar {
                 Layout.fillWidth: true
-                shellModel: root.shellModel
+                shellModel: root.activeShellModel
+                activePane: root.activePaneIndex
+                paneCount: root.paneCount
                 theme: root.shellTheme
             }
         }
@@ -343,17 +380,11 @@ ApplicationWindow {
         }
     }
 
-    Component {
-        id: paneComponent
+    Connections {
+        target: root.secondaryShellModel
 
-        DirectoryPane {
-            shellModel: root.shellModel
-            navigationController: root
-            registry: root.actions
-            theme: root.shellTheme
-            gridMode: root.gridMode
-            persistenceDurationMs: presentationLayer.motionDurationMs
-            wellLayer: wellMaskLayer
+        function onPathChanged() {
+            root.shellTheme.recordRecentDestination(root.secondaryShellModel.path);
         }
     }
 
@@ -375,7 +406,7 @@ ApplicationWindow {
     }
 
     FilesystemDialogs {
-        shellModel: root.shellModel
+        shellModel: root.activeShellModel
         theme: root.shellTheme
         backgroundColor: root.backgroundColor
         panelColor: root.panelColor

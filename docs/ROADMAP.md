@@ -36,7 +36,7 @@ graphical shell grows around it.
 
 ## M3 — Power features
 
-- [ ] Dual-pane layout for transfers.
+- [x] Dual-pane layout for transfers.
 - [ ] Miller/columns view.
 - [ ] Built-in fuzzy find across the current tree.
 - [ ] Optional modal (vim-style) keybindings.

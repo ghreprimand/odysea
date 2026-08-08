@@ -124,6 +124,7 @@ class ThumbnailModelTest : public QObject {
     void providerEvictsLeastRecentlyUsedImagesByByteCost();
     void changedVisibleFileIsRequestedAgain();
     void symlinkUsesResolvedTargetMetadata();
+    void simultaneousModelsKeepProviderImagesIndependent();
     void queuedDeliveryIsSafeAcrossDestruction();
 };
 
@@ -379,6 +380,44 @@ void ThumbnailModelTest::symlinkUsesResolvedTargetMetadata() {
         model.data(model.index(refreshedLinkedRow), DirectoryListModel::ThumbnailSourceRole)
                 .toString() != originalSource,
         5000);
+}
+
+// QTest retry macros expand into loops that inflate this integration test's score.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void ThumbnailModelTest::simultaneousModelsKeepProviderImagesIndependent() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    writeFile(fs::path(fixture.path().toStdString()) / "picture.png");
+
+    ThumbnailImageProvider provider;
+    RecordingProducer producer;
+    EmptyStore store;
+    DirectoryListModel first(provider, producer, store, testOptions());
+    DirectoryListModel second(provider, producer, store, testOptions());
+    first.setPath(fixture.path());
+    second.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!first.busy() && !second.busy(), 5000);
+    QCOMPARE(first.rowCount(), 1);
+    QCOMPARE(second.rowCount(), 1);
+
+    first.requestThumbnail(0);
+    second.requestThumbnail(0);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !first.data(first.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty(),
+        5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !second.data(second.index(0), DirectoryListModel::ThumbnailSourceRole).toString().isEmpty(),
+        5000);
+    const QString firstSource =
+        first.data(first.index(0), DirectoryListModel::ThumbnailSourceRole).toString();
+    const QString secondSource =
+        second.data(second.index(0), DirectoryListModel::ThumbnailSourceRole).toString();
+    QVERIFY(firstSource != secondSource);
+
+    const QString entryPath = first.data(first.index(0), DirectoryListModel::PathRole).toString();
+    first.releaseThumbnail(entryPath);
+    QVERIFY(provider.requestImage(providerId(firstSource), nullptr, {}).isNull());
+    QVERIFY(!provider.requestImage(providerId(secondSource), nullptr, {}).isNull());
 }
 
 void ThumbnailModelTest::queuedDeliveryIsSafeAcrossDestruction() {

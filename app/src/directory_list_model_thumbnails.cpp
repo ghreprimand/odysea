@@ -203,7 +203,8 @@ void DirectoryListModel::receiveThumbnailResult(odysea::core::ThumbnailResult re
     const QByteArray identity = stableKey.toUtf8() + '\n' +
                                 QByteArray::number(result.key.modified_seconds) + '\n' +
                                 QByteArray::number(static_cast<qulonglong>(result.key.size)) +
-                                '\n' + QByteArray::number(result.generation);
+                                '\n' + QByteArray::number(result.generation) + '\n' +
+                                QByteArray::number(static_cast<qulonglong>(thumbnailOwnerId_));
     const QString id =
         QString::fromLatin1(QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
     const QString previousId = thumbnailIds_.value(stableKey);

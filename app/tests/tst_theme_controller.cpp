@@ -95,6 +95,7 @@ class tst_ThemeController : public QObject {
     void places_can_be_reordered_and_removed();
     void recent_destinations_are_bounded_and_deduplicated();
     void recent_destinations_can_be_cleared();
+    void workspace_layout_settings_notify_and_clamp();
     void corrupt_navigation_settings_fall_back_safely();
     void state_persists_across_instances();
     void navigation_settings_persist_across_instances();
@@ -343,7 +344,7 @@ void tst_ThemeController::reset_repairs_a_damaged_settings_file() {
     const QByteArray text = repaired.readAll();
     QVERIFY(!text.contains("nan"));
     QVERIFY(!text.contains("nonsense"));
-    QVERIFY(text.contains("version=2"));
+    QVERIFY(text.contains("version=3"));
 
     ThemeController restored;
     restored.setStoragePath(path);
@@ -723,6 +724,23 @@ void tst_ThemeController::recent_destinations_can_be_cleared() {
     QVERIFY(!theme.clearRecentDestinations());
 }
 
+void tst_ThemeController::workspace_layout_settings_notify_and_clamp() {
+    ThemeController theme;
+    QSignalSpy changed(&theme, &ThemeController::navigationSettingsChanged);
+
+    QVERIFY(!theme.dualPaneEnabled());
+    QCOMPARE(theme.splitRatio(), 0.5);
+    theme.setDualPaneEnabled(true);
+    theme.setSplitRatio(0.9);
+    QVERIFY(theme.dualPaneEnabled());
+    QCOMPARE(theme.splitRatio(), 0.75);
+    QCOMPARE(changed.count(), 2);
+
+    theme.setDualPaneEnabled(true);
+    theme.setSplitRatio(0.75);
+    QCOMPARE(changed.count(), 2);
+}
+
 void tst_ThemeController::corrupt_navigation_settings_fall_back_safely() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -774,6 +792,8 @@ void tst_ThemeController::navigation_settings_persist_across_instances() {
         QVERIFY(theme.addPlace({{QStringLiteral("label"), QStringLiteral("Projects")},
                                 {QStringLiteral("path"), QStringLiteral("/synthetic/projects")}}));
         QVERIFY(theme.recordRecentDestination(QStringLiteral("/synthetic/recent")));
+        theme.setDualPaneEnabled(true);
+        theme.setSplitRatio(0.65);
     }
 
     ThemeController restored;
@@ -782,6 +802,8 @@ void tst_ThemeController::navigation_settings_persist_across_instances() {
     QCOMPARE(restored.places().at(1).toMap().value(QStringLiteral("path")).toString(),
              QStringLiteral("/synthetic/projects"));
     QCOMPARE(restored.recentDestinations(), QStringList{QStringLiteral("/synthetic/recent")});
+    QVERIFY(restored.dualPaneEnabled());
+    QCOMPARE(restored.splitRatio(), 0.65);
 }
 
 void tst_ThemeController::reset_restores_and_persists_the_defaults() {

@@ -425,6 +425,9 @@ TestCase {
         fakeModelObject.tabCount = 1;
         fakeModelObject.activeTab = 0;
         fakeModelObject.operationErrorString = "";
+        shellWindow.shellTheme.dualPaneEnabled = false;
+        shellWindow.shellTheme.splitRatio = 0.5;
+        shellWindow.activePaneIndex = 0;
         shellWindow.gridMode = false;
         shellWindow.clearTypeAhead();
         const pathNavigator = findChild(shellWindow.contentItem, "pathNavigator");

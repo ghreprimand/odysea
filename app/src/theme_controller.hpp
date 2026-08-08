@@ -99,6 +99,10 @@ class ThemeController : public QObject {
     Q_PROPERTY(QVariantList places READ places NOTIFY navigationSettingsChanged)
     Q_PROPERTY(
         QStringList recentDestinations READ recentDestinations NOTIFY navigationSettingsChanged)
+    Q_PROPERTY(bool dualPaneEnabled READ dualPaneEnabled WRITE setDualPaneEnabled NOTIFY
+                   navigationSettingsChanged)
+    Q_PROPERTY(
+        qreal splitRatio READ splitRatio WRITE setSplitRatio NOTIFY navigationSettingsChanged)
 
     // Color roles, resolved from the active family and the high-contrast
     // override.
@@ -220,6 +224,10 @@ class ThemeController : public QObject {
     Q_INVOKABLE bool movePlace(int from, int to);
     Q_INVOKABLE bool recordRecentDestination(const QString& path);
     Q_INVOKABLE bool clearRecentDestinations();
+    [[nodiscard]] bool dualPaneEnabled() const noexcept;
+    void setDualPaneEnabled(bool enabled);
+    [[nodiscard]] qreal splitRatio() const noexcept;
+    void setSplitRatio(qreal ratio);
 
     [[nodiscard]] QColor background() const;
     [[nodiscard]] QColor backgroundDeep() const;

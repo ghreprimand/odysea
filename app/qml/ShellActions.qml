@@ -411,13 +411,13 @@ ActionRegistry {
         actionId: "pane.activate"
         label: qsTr("Focus this pane")
         surfaces: ["pane"]
-        enabledFor: context => context.paneIndex !== undefined && context.paneIndex >= 0 && context.paneIndex < actionSet.shellModel.paneCount
-        perform: context => actionSet.shellModel.activatePane(context.paneIndex)
+        enabledFor: context => context.paneIndex !== undefined && context.paneIndex >= 0 && context.paneIndex < actionSet.shell.paneCount
+        perform: context => actionSet.shell.activatePane(context.paneIndex)
     }
     ShellAction {
         actionId: "pane.toggleDual"
-        label: actionSet.shellModel.paneCount === 2 ? qsTr("Merge to a single pane") : qsTr("Split into dual panes")
-        shortLabel: actionSet.shellModel.paneCount === 2 ? qsTr("1 pane") : qsTr("2 panes")
+        label: actionSet.shell.paneCount === 2 ? qsTr("Merge to a single pane") : qsTr("Split into dual panes")
+        shortLabel: actionSet.shell.paneCount === 2 ? qsTr("1 pane") : qsTr("2 panes")
         iconName: "panes"
         surfaces: ["pane"]
         shortcuts: [
@@ -425,18 +425,70 @@ ActionRegistry {
                 "sequence": "F3"
             }
         ]
-        perform: () => actionSet.shellModel.setDualPaneEnabled(actionSet.shellModel.paneCount === 1)
+        perform: () => actionSet.shell.setDualPaneEnabled(actionSet.shell.paneCount === 1)
     }
     ShellAction {
         actionId: "pane.switch"
         label: qsTr("Switch pane")
-        enabled: actionSet.shellModel.paneCount === 2
+        enabled: actionSet.shell.paneCount === 2
         shortcuts: [
             {
                 "sequence": "F6"
             }
         ]
-        perform: () => actionSet.shellModel.activatePane(actionSet.shellModel.activePane === 0 ? 1 : 0)
+        perform: () => actionSet.shell.switchPane()
+    }
+    ShellAction {
+        actionId: "pane.resizeLeft"
+        label: qsTr("Move pane divider left")
+        enabled: actionSet.shell.paneCount === 2
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Alt+Left"
+            }
+        ]
+        perform: () => actionSet.shell.adjustSplitRatio(-0.05)
+    }
+    ShellAction {
+        actionId: "pane.resizeRight"
+        label: qsTr("Move pane divider right")
+        enabled: actionSet.shell.paneCount === 2
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Alt+Right"
+            }
+        ]
+        perform: () => actionSet.shell.adjustSplitRatio(0.05)
+    }
+    ShellAction {
+        actionId: "pane.copyToOther"
+        label: qsTr("Copy selection to other pane")
+        shortLabel: qsTr("Copy across")
+        iconName: "copy"
+        surfaces: ["pane"]
+        enabled: actionSet.shell.canTransferToOppositePane(false)
+        disabledReasonFor: () => actionSet.shellModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be copied to the other pane")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+C"
+            }
+        ]
+        perform: () => actionSet.shell.transferToOppositePane(false)
+    }
+    ShellAction {
+        actionId: "pane.moveToOther"
+        label: qsTr("Move selection to other pane")
+        shortLabel: qsTr("Move across")
+        iconName: "move"
+        surfaces: ["pane"]
+        enabled: actionSet.shell.canTransferToOppositePane(true)
+        disabledReasonFor: () => actionSet.shellModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be moved to the other pane")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+M"
+            }
+        ]
+        perform: () => actionSet.shell.transferToOppositePane(true)
     }
     ShellAction {
         actionId: "selection.trash"

@@ -96,6 +96,9 @@ Item {
     component RecordingShell: QtObject {
         property var calls: []
         property bool gridMode: false
+        property int paneCount: 1
+        property int activePaneIndex: 0
+        property bool transferAllowed: false
 
         function record(name) {
             const seen = calls;
@@ -124,6 +127,28 @@ Item {
         }
         function openCommandPalette() {
             record("openCommandPalette");
+        }
+        function activatePane(index) {
+            record("activatePane:" + index);
+            activePaneIndex = index;
+        }
+        function setDualPaneEnabled(enabled) {
+            record("setDualPaneEnabled:" + enabled);
+            paneCount = enabled ? 2 : 1;
+        }
+        function switchPane() {
+            record("switchPane");
+            activePaneIndex = activePaneIndex === 0 ? 1 : 0;
+        }
+        function adjustSplitRatio(delta) {
+            record("adjustSplitRatio:" + delta);
+        }
+        function canTransferToOppositePane(move) {
+            return transferAllowed;
+        }
+        function transferToOppositePane(move) {
+            record("transferToOppositePane:" + move);
+            return transferAllowed;
         }
     }
 
@@ -233,6 +258,9 @@ Item {
             fakeModel.tabCount = 1;
             fakeModel.paneCount = 1;
             fakeShell.calls = [];
+            fakeShell.paneCount = 1;
+            fakeShell.activePaneIndex = 0;
+            fakeShell.transferAllowed = false;
             if (palette.opened) {
                 palette.close();
                 tryCompare(palette, "visible", false);

@@ -88,7 +88,7 @@ struct EffectLevels {
 /// A default-constructed value is the shipped configuration.
 struct AppearanceSettings {
     /// Version of the persisted schema this build reads and writes.
-    static constexpr int current_version = 2;
+    static constexpr int current_version = 3;
     static constexpr std::size_t maximum_places = 32;
     static constexpr std::size_t maximum_recent_destinations = 12;
 
@@ -126,6 +126,11 @@ struct AppearanceSettings {
     /// user- and machine-specific paths are learned at runtime.
     std::vector<NavigationPlace> places{NavigationPlace{.label = "Filesystem", .path = "/"}};
     std::vector<std::string> recent_destinations;
+
+    /// Workspace layout preferences. A single pane is the shipped default;
+    /// the divider ratio is the first pane's share of the usable split width.
+    bool dual_pane_enabled = false;
+    double split_ratio = 0.5;
 
     [[nodiscard]] bool operator==(const AppearanceSettings& other) const noexcept = default;
 };

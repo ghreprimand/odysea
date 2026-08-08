@@ -33,6 +33,8 @@ void test_defaults_are_the_shipped_configuration() {
               std::vector<NavigationPlace>{NavigationPlace{.label = "Filesystem", .path = "/"}},
           "the filesystem root is the only shipped Place");
     check(s.recent_destinations.empty(), "recent destinations start empty");
+    check(!s.dual_pane_enabled && s.split_ratio == 0.5,
+          "the workspace starts as one evenly divisible pane");
 }
 
 void test_profile_presets_are_distinct_and_ordered() {
@@ -78,10 +80,12 @@ void test_settings_clamp_scale_and_material() {
     s.scale = 10.0;
     s.glass_opacity = 0.0;
     s.surface_opacity = -1.0;
+    s.split_ratio = 0.95;
     const AppearanceSettings c = clamp_appearance(s);
     check(c.scale == 2.0, "scale clamps to 2.0");
     check(c.glass_opacity == 0.2, "the ground never becomes fully transparent");
     check(c.surface_opacity == 0.0, "surface opacity clamps up to zero");
+    check(c.split_ratio == 0.75, "the stored pane divider keeps both panes usable");
 }
 
 void test_effective_levels_resolve_the_profile() {
@@ -137,6 +141,8 @@ void test_serialization_round_trips() {
     s.places = {NavigationPlace{.label = "Projects | active", .path = "/synthetic/projects"},
                 NavigationPlace{.label = "Archive % 2026", .path = "/synthetic/archive 2026"}};
     s.recent_destinations = {"/synthetic/projects/alpha", "/synthetic/archive 2026"};
+    s.dual_pane_enabled = true;
+    s.split_ratio = 0.625;
 
     const AppearanceSettings back = parse_appearance(serialize_appearance(s));
     check(back == s, "a serialized settings value parses back identically");
@@ -169,7 +175,7 @@ void test_navigation_settings_are_bounded_and_tolerant() {
           "a damaged recent payload falls back to an empty list");
 
     const AppearanceSettings intentionally_empty =
-        parse_appearance("version=2\nplaces_count=0\nrecent_count=0\n");
+        parse_appearance("version=3\nplaces_count=0\nrecent_count=0\n");
     check(intentionally_empty.places.empty(), "an explicitly empty Places list stays empty");
 }
 

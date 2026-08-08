@@ -100,8 +100,15 @@ terminal file manager. Achieving both at once is a deliberate design target.
   declare private context menus.
 - **Parity rule for contributors.** No primary action may be keyboard-only or
   mouse-only. When a feature adds an interaction, it is wired for both paths.
-- **Views.** Planned view models include a single-pane list/grid, a dual-pane
-  layout for transfers, and miller/columns navigation for deep trees.
+- **Views.** The single-pane list/grid expands into two simultaneous directory
+  adapters for transfers. Each pane retains its own location, selection,
+  sorting, filtering, tabs, and history; one active pane owns all shared
+  actions at a time. `F6` or a pointer press changes the active pane, the
+  bounded divider supports pointer dragging and declared keyboard resizing,
+  and copy or move transfers the active selection directly to the opposite
+  pane through the shared action registry. Single/dual state and divider ratio
+  use the existing versioned settings store. Miller/columns navigation remains
+  planned for deep trees.
 - **Geometric selection.** Each view computes the explicit set of model rows
   intersected by its rubber-band rectangle. The shared selection model applies
   that set by stable entry key, so list and grid geometry do not leak into

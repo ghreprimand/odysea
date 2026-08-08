@@ -208,6 +208,9 @@ Item {
         property var calls: []
         property bool gridMode: false
         property var pathNavigator: null
+        property int paneCount: 1
+        property int activePaneIndex: 0
+        property bool transferAllowed: false
 
         function record(name) {
             const seen = calls;
@@ -252,6 +255,28 @@ Item {
             const seen = calls;
             seen.push("focusCurrentView");
             calls = seen;
+        }
+        function activatePane(index) {
+            record("activatePane:" + index);
+            activePaneIndex = index;
+        }
+        function setDualPaneEnabled(enabled) {
+            record("setDualPaneEnabled:" + enabled);
+            paneCount = enabled ? 2 : 1;
+        }
+        function switchPane() {
+            record("switchPane");
+            activePaneIndex = activePaneIndex === 0 ? 1 : 0;
+        }
+        function adjustSplitRatio(delta) {
+            record("adjustSplitRatio:" + delta);
+        }
+        function canTransferToOppositePane(move) {
+            return transferAllowed;
+        }
+        function transferToOppositePane(move) {
+            record("transferToOppositePane:" + move);
+            return transferAllowed;
         }
     }
 
@@ -764,16 +789,19 @@ Item {
             const model = createTemporaryObject(modelFactory, harness, {
                 "paneCount": 2
             });
+            const controller = createTemporaryObject(controllerFactory, harness, {
+                "paneCount": 2
+            });
             const placeholder = createTemporaryObject(placeholderFactory, harness, {
                 "shellModel": model,
-                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness)),
+                "registry": makeRegistry(model, controller),
                 "paneIndex": 1
             });
             verify(placeholder !== null);
             flush();
 
             mouseClick(placeholder);
-            compare(model.calls[model.calls.length - 1], "activatePane:1");
+            compare(controller.calls[controller.calls.length - 1], "activatePane:1");
         }
     }
 }

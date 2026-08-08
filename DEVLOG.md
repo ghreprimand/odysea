@@ -17,6 +17,45 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Dual-pane transfers
+
+The workspace now expands from one directory view into two live panes. Each
+pane has its own directory adapter, so location, selection, sorting, filtering,
+tabs, and navigation history remain independent while both sides stay visible.
+Exactly one pane is active: its frame carries the focus color, `F6` and pane
+header presses switch it, and the toolbar, path navigator, tabs, action row,
+status strip, dialogs, menus, command palette, and declared shortcuts all bind
+to that pane's model.
+
+The divider can be dragged or moved with `Ctrl+Alt+Left` and
+`Ctrl+Alt+Right`. Dynamic bounds preserve a usable width for both panes, and
+the single/dual state plus divider ratio persist in the existing versioned
+settings file. The settings schema advanced to version 3 and remains tolerant
+of older and newer files. Resetting appearance and navigation preferences also
+returns the workspace to one pane with an even divider.
+
+Transfers reuse the existing filesystem-operation adapter. `Ctrl+Shift+C` and
+`Ctrl+Shift+M`, along with copy and move buttons on the active pane, send its
+selection to the opposite pane. The same declared registry actions serve both
+directions and revalidate the destination at invocation. Simultaneous models
+also namespace their in-memory thumbnail identifiers, so releasing a thumbnail
+from one pane cannot remove the other pane's copy from the shared image
+provider.
+
+Verification covers two independent model stand-ins in the complete shell:
+keyboard and pointer pane activation, single/dual toggling, bounded divider
+resizing, both copy and move in both directions through both input paths, and
+active-model routing while the inactive pane retains its state. Core and Qt
+adapter tests cover settings round trips, clamping and notification, and
+thumbnail-provider independence. The warning-clean release build passed all
+41 checks, including scoped static analysis. A fresh ASan/UBSan build passed
+all 40 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
+---
+
+
 ## 2026-08-07 -- Visual foundation acceptance
 
 The visual system now has an automated acceptance matrix, and running it
@@ -730,4 +769,3 @@ lint/format/module guards, warning-clean release build with 28 passing test
 entries (GPU path included), ASan/UBSan build and tests, file-length and
 public-repository guards, and silent headless smoke launches on both the
 software and OpenGL RHI backends.
-

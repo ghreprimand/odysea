@@ -64,6 +64,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/DirectoryGridView.qml
         qml/DirectoryListView.qml
         qml/DirectoryPane.qml
+        qml/DualPaneLayout.qml
         qml/EffectBlurPass.qml
         qml/EffectBrightPass.qml
         qml/EffectComposite.qml
@@ -72,6 +73,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/LongFormText.qml
         qml/PanePlaceholder.qml
         qml/PathNavigator.qml
+        qml/PaneFrame.qml
         qml/PresentationLayer.qml
         qml/ShellAction.qml
         qml/ShellActions.qml
@@ -268,6 +270,23 @@ target_link_libraries(odysea_palette_tests
 
 add_test(NAME shell_command_palette COMMAND odysea_palette_tests)
 
+# Two simultaneous directory models driven through the real shell. This leaf
+# runner owns the dual-pane parity and splitter cases without adopting any
+# other QML suite recursively.
+qt_add_executable(odysea_dual_pane_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_dual_pane_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/panes")
+
+target_link_libraries(odysea_dual_pane_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_dual_pane COMMAND odysea_dual_pane_tests)
+
 add_test(NAME shell_navigation_input COMMAND odysea_shell_navigation_tests)
 
 # The presentation-pipeline tests run on the default RHI scene graph so the
@@ -451,7 +470,7 @@ add_test(NAME shell_entry_interactions COMMAND odysea_shell_entry_interaction_te
 # suppression matches only allocation stacks with a libfontconfig frame.
 set_tests_properties(
     shell_input_parity shell_components shell_navigation_input
-    shell_action_system shell_command_palette
+    shell_action_system shell_command_palette shell_dual_pane
     shell_thumbnail_render shell_entry_interactions shell_load_diagnostic
     app_theme_controller shell_presentation_fallback shell_visual_validation
     PROPERTIES ENVIRONMENT

@@ -3,14 +3,25 @@
 #include <QMetaObject>
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 #include "entry_launcher.hpp"
 #include "thumbnail_image_provider.hpp"
 
+namespace {
+
+std::uint64_t nextThumbnailOwnerId() noexcept {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+} // namespace
+
 DirectoryListModel::DirectoryListModel(QObject* parent)
     : QAbstractListModel(parent),
-      watchService_([this](DirectoryWatchUpdate update) { postWatchUpdate(std::move(update)); }) {
+      watchService_([this](DirectoryWatchUpdate update) { postWatchUpdate(std::move(update)); }),
+      thumbnailOwnerId_(nextThumbnailOwnerId()) {
     ownedEntryLauncher_ = std::make_unique<DesktopEntryLauncher>();
     entryLauncher_ = ownedEntryLauncher_.get();
     connect(&operationWatcher_, &QFutureWatcher<FilesystemOperationResult>::finished, this, [this] {

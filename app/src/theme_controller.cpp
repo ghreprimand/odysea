@@ -585,6 +585,35 @@ bool ThemeController::clearRecentDestinations() {
     return true;
 }
 
+bool ThemeController::dualPaneEnabled() const noexcept {
+    return settings_.dual_pane_enabled;
+}
+
+void ThemeController::setDualPaneEnabled(bool enabled) {
+    if (settings_.dual_pane_enabled == enabled) {
+        return;
+    }
+    settings_.dual_pane_enabled = enabled;
+    persist();
+    emit navigationSettingsChanged();
+}
+
+qreal ThemeController::splitRatio() const noexcept {
+    return settings_.split_ratio;
+}
+
+void ThemeController::setSplitRatio(qreal ratio) {
+    core::AppearanceSettings next = settings_;
+    next.split_ratio = ratio;
+    next = core::clamp_appearance(next);
+    if (next.split_ratio == settings_.split_ratio) {
+        return;
+    }
+    settings_.split_ratio = next.split_ratio;
+    persist();
+    emit navigationSettingsChanged();
+}
+
 QColor ThemeController::lifted(const QColor& ink) const {
     // Text lift is the palette-side half of the presentation pipeline: it
     // multiplies chromatic inks toward white, which both brightens them and

@@ -64,15 +64,15 @@ Support.ShellTestCase {
     }
 
     function test_dualPaneToggleMovedToFunctionKey() {
-        fakeModel.resetTelemetry();
+        compare(shellWindow.paneCount, 1);
         keySequence("F3");
-        tryCompare(fakeModel, "setDualPaneEnabledCalls", 1);
-        compare(fakeModel.dualPaneRequested, true);
+        tryCompare(shellWindow, "paneCount", 2);
+        verify(child("secondPane").visible);
 
         // The pointer path is unchanged: the toolbar toggle still routes
         // through the same declaration.
         mouseClick(child("paneToggleButton"));
-        tryCompare(fakeModel, "setDualPaneEnabledCalls", 2);
+        tryCompare(shellWindow, "paneCount", 1);
     }
 
     function test_appearancePanelKeyboardAndMouseParity() {

@@ -31,6 +31,8 @@ constexpr double kTextLiftMax = 1.5;
 constexpr double kScaleMin = 0.75;
 constexpr double kScaleMax = 2.0;
 constexpr double kGlassOpacityMin = 0.2;
+constexpr double kSplitRatioMin = 0.25;
+constexpr double kSplitRatioMax = 0.75;
 constexpr std::size_t kMaximumStoredLabelLength = 128;
 constexpr std::size_t kMaximumStoredPathLength = 4096;
 
@@ -247,6 +249,7 @@ AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept
     result.scale = clamped(settings.scale, kScaleMin, kScaleMax);
     result.glass_opacity = clamped(settings.glass_opacity, kGlassOpacityMin, 1.0);
     result.surface_opacity = clamped(settings.surface_opacity, 0.0, 1.0);
+    result.split_ratio = clamped(settings.split_ratio, kSplitRatioMin, kSplitRatioMax);
     result.custom = clamp_effect_levels(settings.custom);
 
     result.places.clear();
@@ -404,6 +407,8 @@ std::string serialize_appearance(const AppearanceSettings& settings) {
     for (const std::string& path : s.recent_destinations) {
         append_key(out, "recent", encode_setting_value(path));
     }
+    append_key(out, "dual_pane_enabled", s.dual_pane_enabled);
+    append_key(out, "split_ratio", s.split_ratio);
     return out;
 }
 
@@ -477,6 +482,10 @@ AppearanceSettings parse_appearance(std::string_view text) {
             if (const std::optional<std::string> path = decode_setting_value(value)) {
                 parsed_recents.push_back(*path);
             }
+        } else if (key == "dual_pane_enabled") {
+            s.dual_pane_enabled = parse_bool(value, s.dual_pane_enabled);
+        } else if (key == "split_ratio") {
+            s.split_ratio = parse_double(value, s.split_ratio);
         }
         // The version key and unknown keys fall through: tolerated, unused.
     }
