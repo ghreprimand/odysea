@@ -39,6 +39,37 @@ double contrast_ratio(const QColor& first, const QColor& second) {
     return (bright + 0.05) / (dark + 0.05);
 }
 
+/// One measured readability claim: a foreground role on the bed it actually
+/// renders on, with the floor it must clear in the default state and under
+/// the high-contrast override.
+struct RolePair {
+    const char* description;
+    QColor (ThemeController::*foreground)() const;
+    QColor (ThemeController::*bed)() const;
+    double defaultFloor;
+    double highContrastFloor;
+};
+
+/// Measures every pair against the floor for the theme's current override
+/// state and returns a line per miss.
+QStringList contrast_failures(ThemeController& theme, const QString& palette,
+                              const QList<RolePair>& pairs, bool highContrast) {
+    QStringList failures;
+    theme.setHighContrast(highContrast);
+    for (const RolePair& pair : pairs) {
+        const double floor = highContrast ? pair.highContrastFloor : pair.defaultFloor;
+        const double measured = contrast_ratio((theme.*pair.foreground)(), (theme.*pair.bed)());
+        if (measured < floor) {
+            failures.append(QStringLiteral("%1 / %2%3: %4 < %5")
+                                .arg(palette, QLatin1String(pair.description),
+                                     highContrast ? QStringLiteral(" [high contrast]") : QString(),
+                                     QString::number(measured, 'f', 2),
+                                     QString::number(floor, 'f', 1)));
+        }
+    }
+    return failures;
+}
+
 } // namespace
 
 class tst_ThemeController : public QObject {
@@ -69,6 +100,7 @@ class tst_ThemeController : public QObject {
     void navigation_settings_persist_across_instances();
     void reset_restores_and_persists_the_defaults();
     void text_lift_brightens_chromatic_inks_from_effective_state();
+    void high_contrast_roles_meet_measured_ratios();
 };
 
 void tst_ThemeController::defaults_are_the_shipped_configuration() {
@@ -438,6 +470,190 @@ void tst_ThemeController::long_form_role_is_readable() {
     theme.setUiScale(2.0);
     QCOMPARE(theme.longFormFontPixelSize(), 30);
     QCOMPARE(theme.longFormMeasure(), 1120);
+}
+
+void tst_ThemeController::high_contrast_roles_meet_measured_ratios() {
+    // Measured readability floors for the semantic roles, on the beds each
+    // role actually renders on. High contrast is the accessibility promise:
+    // WCAG 2.x ratios — 4.5:1 for text-sized roles, 3.0:1 for non-text
+    // indicators — must hold in every shipped family. The default state is
+    // held to the same non-text floor plus a 4.5:1 floor on the primary
+    // reading pairs, with the effective Balanced text lift applied, so the
+    // aesthetic mode cannot silently regress below readable either.
+    ThemeController theme;
+
+    // Text-sized pairs: entry names and metadata on the well, selection and
+    // match beds, chrome labels on the panel and control beds, status inks
+    // where they carry sentence text.
+    // Non-text pairs: icon inks, focus and accent indicators, and the
+    // high-contrast hairline promotion.
+    const QList<RolePair> pairs = {
+        RolePair{.description = "text on well",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on background",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::background,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on panel",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on selection bed",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::selectionBed,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on match bed",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::matchBed,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on hover bed",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::hover,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "text on pressed bed",
+                 .foreground = &ThemeController::text,
+                 .bed = &ThemeController::pressed,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "muted text on well",
+                 .foreground = &ThemeController::textMuted,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "muted text on panel",
+                 .foreground = &ThemeController::textMuted,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "directory ink on well",
+                 .foreground = &ThemeController::dirInk,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "directory ink on selection bed",
+                 .foreground = &ThemeController::dirInk,
+                 .bed = &ThemeController::selectionBed,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "link ink on well",
+                 .foreground = &ThemeController::linkInk,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "meta ink on well",
+                 .foreground = &ThemeController::metaInk,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "selection ink on selection bed",
+                 .foreground = &ThemeController::selectionInk,
+                 .bed = &ThemeController::selectionBed,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "long-form ink on panel",
+                 .foreground = &ThemeController::longFormInk,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 4.5,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "danger ink on well",
+                 .foreground = &ThemeController::danger,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "danger ink on panel",
+                 .foreground = &ThemeController::danger,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "warning ink on panel",
+                 .foreground = &ThemeController::warning,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "warning ink on background",
+                 .foreground = &ThemeController::warning,
+                 .bed = &ThemeController::background,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "success ink on panel",
+                 .foreground = &ThemeController::success,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "faint ink on well",
+                 .foreground = &ThemeController::textFaint,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        // Icon ink is deliberately subdued in the default state: its channels
+        // are capped below the Strong profile's bright-pass threshold so
+        // toolbar symbols stay orientation aids instead of emitters. The
+        // default floor is therefore an anti-regression bound on the accepted
+        // appearance, and the 4.5 high-contrast floor is the accessibility
+        // path — the override promotes icon ink to primary text.
+        RolePair{.description = "icon ink on panel",
+                 .foreground = &ThemeController::iconInk,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 2.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "icon ink on well",
+                 .foreground = &ThemeController::iconInk,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 2.0,
+                 .highContrastFloor = 4.5},
+        RolePair{.description = "accent on panel",
+                 .foreground = &ThemeController::accent,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "accent on well",
+                 .foreground = &ThemeController::accent,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "focus on well",
+                 .foreground = &ThemeController::focus,
+                 .bed = &ThemeController::well,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "focus on panel",
+                 .foreground = &ThemeController::focus,
+                 .bed = &ThemeController::panel,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+        RolePair{.description = "focus on background",
+                 .foreground = &ThemeController::focus,
+                 .bed = &ThemeController::background,
+                 .defaultFloor = 3.0,
+                 .highContrastFloor = 3.0},
+    };
+
+    QStringList failures;
+    for (const QString& palette : theme.availablePalettes()) {
+        theme.setPaletteId(palette);
+        failures.append(contrast_failures(theme, palette, pairs, false));
+        failures.append(contrast_failures(theme, palette, pairs, true));
+
+        // The high-contrast hairline promotion is itself a measured claim.
+        theme.setHighContrast(true);
+        const double hairline = contrast_ratio(theme.border(), theme.panel());
+        if (hairline < 3.0) {
+            failures.append(QStringLiteral("%1 / hairline on panel [high contrast]: %2 < 3.0")
+                                .arg(palette, QString::number(hairline, 'f', 2)));
+        }
+        theme.setHighContrast(false);
+    }
+
+    QVERIFY2(failures.isEmpty(), qPrintable(QStringLiteral("contrast floors not met:\n") +
+                                            failures.join(QStringLiteral("\n"))));
 }
 
 void tst_ThemeController::no_op_writes_do_not_notify() {

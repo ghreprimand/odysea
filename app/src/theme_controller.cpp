@@ -591,6 +591,14 @@ QColor ThemeController::lifted(const QColor& ink) const {
     // pushes them over the bloom threshold. Neutral body text is exempt so
     // the lift changes emphasis, not legibility. The effective level already
     // folds in the accessibility overrides — high contrast pins it to one.
+    //
+    // Light families are exempt entirely: their inks are dark marks on
+    // bright grounds, so multiplying toward white lowers their contrast
+    // instead of raising their emphasis — the emissive metaphor only exists
+    // on dark grounds.
+    if (activePalette().light) {
+        return ink;
+    }
     const float lift = static_cast<float>(effective().text_lift);
     if (lift <= 1.0F) {
         return ink;

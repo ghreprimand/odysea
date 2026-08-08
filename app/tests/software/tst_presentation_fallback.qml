@@ -125,6 +125,22 @@ Item {
             });
         }
 
+        function test_protectedWellsSurviveTheFallback() {
+            // Registration must stay harmless while the pipeline is down,
+            // and the registered region renders exactly what the plain path
+            // draws — the fallback drops the effects, never the protected
+            // thumbnail and preview regions.
+            wells.registerWell(beacon);
+            compare(wells.wellCount, 1);
+            wells.bump();
+            wait(40);
+            waitForRendering(harness);
+            const frame = grabImage(harness);
+            compare(frame.pixel(beacon.x + 40, beacon.y + 40), Qt.rgba(1, 1, 1, 1));
+            wells.unregisterWell(beacon);
+            compare(wells.wellCount, 0);
+        }
+
         function test_materialAndMotionSurviveTheFallback() {
             // The still material layers and the motion token are geometry-
             // and palette-side, so the fallback keeps them.

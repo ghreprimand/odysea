@@ -13,6 +13,13 @@ ToolBar {
     required property ActionRegistry registry
     required property var theme
 
+    /// Below this width the workspace toggles drop their labels and render
+    /// icons only, so every control stays reachable down to the window's
+    /// minimum width. The bound is the measured implicit width of the fully
+    /// labeled row at 1x, scaled with the interface; the labels stay
+    /// available through each button's accessible name and tooltip.
+    readonly property bool compact: bar.width < 900 * bar.theme.uiScale
+
     background: ChromeStrip {
         theme: bar.theme
     }
@@ -60,30 +67,35 @@ ToolBar {
             theme: bar.theme
             registry: bar.registry
             actionId: "pane.toggleDual"
+            showLabel: !bar.compact
         }
         ActionButton {
             objectName: "listViewButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "view.list"
+            showLabel: !bar.compact
         }
         ActionButton {
             objectName: "gridViewButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "view.grid"
+            showLabel: !bar.compact
         }
         ActionButton {
             objectName: "paletteButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "palette.open"
+            showLabel: !bar.compact
         }
         ActionButton {
             objectName: "appearanceButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "appearance.open"
+            showLabel: !bar.compact
         }
     }
 }

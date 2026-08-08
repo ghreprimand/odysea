@@ -20,7 +20,10 @@ layout(binding = 2) uniform sampler2D mask;
 
 void main() {
     vec4 c = texture(src, qt_TexCoord0);
-    float protectedPx = texture(mask, qt_TexCoord0).a;
+    // Binarized like the composite's protection: a half-covered mask texel
+    // must suppress emission outright, or a fractional device scale leaks
+    // a rim of the well's own brightness into the bloom chain.
+    float protectedPx = step(0.5, texture(mask, qt_TexCoord0).a);
 
     float a = max(c.a, 1e-4);
     vec3 col = c.rgb / a;

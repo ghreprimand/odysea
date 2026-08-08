@@ -46,7 +46,11 @@ float bayer8(vec2 p) {
 
 void main() {
     vec4 c = texture(src, qt_TexCoord0);
-    float protectedPx = texture(mask, qt_TexCoord0).a;
+    // Binarized protection: linear sampling of the mask edge can land on a
+    // half-texel phase at fractional device scales, and a proportional mix
+    // would leak a rim of added light onto the outermost protected row.
+    // Any pixel at least half covered by the mask is protected outright.
+    float protectedPx = step(0.5, texture(mask, qt_TexCoord0).a);
 
     vec2 px = qt_TexCoord0 * sizePx;
 

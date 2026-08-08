@@ -328,6 +328,61 @@ target_link_libraries(odysea_presentation_fallback_tests
 
 add_test(NAME shell_presentation_fallback COMMAND odysea_presentation_fallback_tests)
 
+# Visual-foundation acceptance: layout integrity at the narrowest and a wide
+# window, focus indicators with effects off, reduced-motion stability,
+# effects-off usability, virtualization under a representative large
+# directory, and device-pixel-ratio behavior. The suite runs twice — once at
+# 1x and once with QT_SCALE_FACTOR=2 — because every layout and mask
+# assertion is written in logical coordinates and must hold at both scales.
+qt_add_executable(odysea_validation_tests
+    tests/tst_shell_quick.cpp)
+
+target_compile_definitions(odysea_validation_tests
+    PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/validation")
+
+target_link_libraries(odysea_validation_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickTest
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME shell_visual_validation COMMAND odysea_validation_tests)
+
+add_test(NAME shell_visual_validation_2x COMMAND odysea_validation_tests)
+
+# The GPU half of the device-pixel gate: the protected-well border sweep
+# needs a real scene-graph backend. The launcher probes for an OpenGL
+# context exactly like the presentation gate and skips cleanly without one.
+# The offscreen platform cannot allocate a genuine high-density framebuffer
+# — under a forced scale factor it reports 2x while rasterizing at 1x and
+# grabs frames without the scene at device resolution — so this entry runs
+# the pixel assertions at 1x, where they are real; the suite's vacuity
+# sentinel rejects any environment that would grab an empty frame. Running
+# the same suite on a windowing system with a real 2x surface exercises
+# the identical assertions at full density.
+qt_add_executable(odysea_validation_rhi_launcher
+    tests/tst_presentation_rhi_launcher.cpp)
+
+target_compile_definitions(odysea_validation_rhi_launcher
+    PRIVATE ODYSEA_PRESENTATION_BINARY="$<TARGET_FILE:odysea_validation_tests>")
+
+target_link_libraries(odysea_validation_rhi_launcher
+    PRIVATE
+        Qt6::Gui
+        odysea_warnings odysea_sanitizers)
+
+add_dependencies(odysea_validation_rhi_launcher odysea_validation_tests)
+
+add_test(NAME shell_visual_validation_rhi
+    COMMAND odysea_validation_rhi_launcher
+        DevicePixelScaling::test_maskGeometryStaysLogical
+        DevicePixelScaling::test_frameRendersAtDeviceResolution
+        DevicePixelScaling::test_wellBorderStaysByteTrueAtDeviceResolution)
+
+set_tests_properties(shell_visual_validation_rhi PROPERTIES
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
 # Renders the real scene from the module against the real decoder, so the
 # thumbnail path is covered from a file on disk to a loaded Image.
 qt_add_executable(odysea_shell_render_tests
@@ -398,9 +453,17 @@ set_tests_properties(
     shell_input_parity shell_components shell_navigation_input
     shell_action_system shell_command_palette
     shell_thumbnail_render shell_entry_interactions shell_load_diagnostic
-    app_theme_controller shell_presentation_fallback
+    app_theme_controller shell_presentation_fallback shell_visual_validation
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
+# The 2x pass of the validation suite: identical software environment plus
+# the doubled scale factor, so the logical-coordinate layout and mask
+# assertions are checked at a high-density configuration too.
+set_tests_properties(
+    shell_visual_validation_2x
+    PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 # The presentation suite does not pin a scene-graph backend. The offscreen
 # platform selects the software scene graph by default, where the

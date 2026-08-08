@@ -13,6 +13,13 @@ ChromeStrip {
     required property var shellModel
     required property ActionRegistry registry
 
+    /// Below this width the operation buttons drop their labels and the
+    /// filter field narrows, keeping every control reachable down to the
+    /// window's minimum width. The bound is the measured implicit width of
+    /// the fully labeled row at 1x, scaled with the interface; the labels
+    /// stay available through accessible names and tooltips.
+    readonly property bool compact: bar.width < 940 * bar.theme.uiScale
+
     /// Keyboard entry point for the filter field (Ctrl+F on the shell).
     function focusFilterField() {
         filterField.forceActiveFocus();
@@ -33,7 +40,7 @@ ChromeStrip {
             id: filterField
 
             objectName: "filterField"
-            Layout.preferredWidth: 260
+            Layout.preferredWidth: bar.compact ? 170 : 260
             theme: bar.theme
             fieldColor: bar.theme.panel
             placeholderText: qsTr("Filter this folder (Ctrl+F)")
@@ -62,6 +69,7 @@ ChromeStrip {
         ActionButton {
             objectName: "selectAllButton"
             theme: bar.theme
+            showLabel: !bar.compact
             registry: bar.registry
             actionId: "selection.all"
         }
@@ -73,24 +81,28 @@ ChromeStrip {
         ActionButton {
             objectName: "copyButton"
             theme: bar.theme
+            showLabel: !bar.compact
             registry: bar.registry
             actionId: "selection.copy"
         }
         ActionButton {
             objectName: "moveButton"
             theme: bar.theme
+            showLabel: !bar.compact
             registry: bar.registry
             actionId: "selection.move"
         }
         ActionButton {
             objectName: "renameButton"
             theme: bar.theme
+            showLabel: !bar.compact
             registry: bar.registry
             actionId: "selection.rename"
         }
         ActionButton {
             objectName: "trashButton"
             theme: bar.theme
+            showLabel: !bar.compact
             registry: bar.registry
             actionId: "selection.trash"
         }

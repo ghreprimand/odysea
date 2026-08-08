@@ -53,6 +53,7 @@ FocusScope {
     // the deep field and is the only surface the glass amount fades, so
     // translucency reads as depth without thinning any text above it.
     DeepFieldGround {
+        objectName: "paneFrame"
         anchors.fill: parent
         deepField: pane.theme.effectiveDeepField
         sheetColor: pane.theme.background
