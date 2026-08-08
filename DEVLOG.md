@@ -17,6 +17,33 @@ the archive.
 
 ---
 
+## 2026-08-07 -- One place reads an entry's own metadata
+
+Reading an entry's own facts — identity, type, apparent and allocated size,
+link count, modification time, none of them a symbolic link target's — was a
+private detail of directory listing. Usage accounting needs the same facts,
+and reading them a second time would mean a second chance to reassemble the
+device number wrongly. That failure mode is invisible by construction: a
+wrong reassembly stays consistent with itself for every entry, so nothing
+observable fails.
+
+There is now one implementation, in an internal core seam that is not
+installed and not part of the public API, and one test that pins the
+reassembled device number against what `lstat` reports for the same entry.
+Listing consumes it for identity and modification time; the block count and
+link count it also reports are what usage accounting needs. Two accessors
+exist: one that describes the entry itself, and one that resolves a symbolic
+link, used only where a consumer has explicitly decided to treat a link as
+its target.
+
+Verification: the core listing and identity suites pass unchanged, including
+the existing case that requires identity to carry a creation time exactly
+when the filesystem reports one. Known gap, unchanged by this work: the
+`lstat` fallback taken when `statx` is unavailable still has no automated
+coverage, because it cannot be provoked without a seccomp filter or an older
+kernel.
+
+
 ## 2026-08-07 -- One cancellation contract for long walks
 
 Directory listing owned a single-worker, newest-request-wins queue: one

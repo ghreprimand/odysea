@@ -9,6 +9,7 @@ add_library(odysea_core
     src/directory_model.cpp
     src/directory_scanner.cpp
     src/directory_watcher.cpp
+    src/entry_metadata.cpp
     src/file_operations.cpp
     src/thumbnail.cpp
     src/thumbnail_service.cpp
