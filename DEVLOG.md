@@ -17,6 +17,16 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Narrow the visual acceptance record to what the gates cover
+
+The visual foundation acceptance entry in the roadmap listed scale behavior
+among the validated axes. No shipped gate asserts a frame rendered at a
+doubled device pixel ratio: the GPU validation entry renders at a single
+device pixel per logical pixel, and the doubled-scale entry runs on the
+software path with its pixel comparisons skipped. The entry now records that
+gap in place of the unsupported claim. The remaining listed axes are
+unaffected and stay as measured.
+
 ## 2026-08-08 -- Miller columns navigation
 
 The shell now offers a Miller columns view alongside its list and grid views.

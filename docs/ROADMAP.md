@@ -33,10 +33,13 @@ graphical shell grows around it.
       bounded recent destinations, and direct ancestor/shortcut jumps.
 - [x] Command palette.
 - [x] Visual foundation acceptance: layout integrity across every density's
-      measured compact breakpoint, scale behavior, focus visibility, reduced
-      motion, contrast measured at the surfaces the views actually paint,
-      effects-off usability, software fallback, and large-directory
-      validation.
+      measured compact breakpoint, focus visibility, reduced motion, contrast
+      measured at the surfaces the views actually paint, effects-off
+      usability, software fallback, and large-directory validation.
+      Rendering at a doubled device pixel ratio is not covered: the GPU
+      validation entry runs at a single device pixel per logical pixel, and
+      the doubled-scale entry runs on the software path with its pixel
+      comparisons skipped.
 
 ## M3 — Power features
 
