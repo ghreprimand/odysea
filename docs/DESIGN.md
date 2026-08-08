@@ -242,9 +242,14 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   declaration whose enablement is a per-target predicate can never be
   satisfied by a context that does not carry its target, so the palette's
   global context omits target-scoped rows instead of listing them
-  permanently dead, and every row it does list is either enabled or states
-  the reason its declaration provides — an invariant the tests pin as such
-  rather than as row counts. Rows show the declared key sequence read from
+  permanently dead. The palette opens that global context over the current
+  location and a tab ordinal, so commands whose predicate reads those fields
+  — adding the current location to Places, switching to a numbered tab — are
+  reachable and invocable there rather than absent; only rows whose target
+  the global context cannot carry, such as a specific entry, Place, or pane,
+  are omitted. Every row it does list is either enabled or states the reason
+  its declaration provides — an invariant the tests pin as such rather than
+  as row counts. Rows show the declared key sequence read from
   the declaration; disabled rows stay listed with their stated reason, are
   skipped by keyboard navigation, and are disabled at the item level so
   assistive technology reads them as unavailable rather than actionable;

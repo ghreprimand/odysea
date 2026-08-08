@@ -17,6 +17,44 @@ the archive.
 
 ---
 
+## 2026-08-08 -- GPU-gate settle hardening and reachable palette location commands
+
+The presentation and device-pixel frame-grab helpers now bound a retry on the
+settle rather than asserting a single grab. Each helper's vacuity sentinel —
+the byte-fixed protected patch it already checked — became the settle's
+termination condition: the grab is repeated up to a fixed bound until the frame
+carries the rendered scene. This absorbs a momentarily starved or slow frame
+under GPU contention, where a synchronous window grab can return before its
+frame is composited, while changing nothing about what a complete frame must
+contain. The retry gates only on completeness; every content comparison —
+profile distinctness, protected-well byte-equality, the border and ring sweeps,
+the shader-failure latch equality — is still judged once on a frame that
+already carries the scene, so a wrong frame is never retried into a pass, and a
+genuinely absent scene still fails loudly once the bound is spent. The two
+GPU-path CTest gates additionally share a `RESOURCE_LOCK`, so they no longer
+hold a GPU context simultaneously under a parallel run without serializing the
+rest of the suite.
+
+Verified by mutation on the real GPU path: a forced first-attempt miss recovers
+on the next iteration and passes; a permanently unsatisfiable sentinel fails
+after the bound with a message naming the attempt count, bounded and without
+hanging; and a reintroduced viewport-mask escape still fails its content
+comparison on the first iteration, un-retried. The happy-path runtimes are
+unchanged — the presentation gate at 71.2 s and the device-pixel gate at 25.5 s
+— because the first attempt satisfies the sentinel and the extra iterations
+cost nothing.
+
+The command palette now opens over the current location and a tab ordinal, so
+two declarations that read those fields are reachable and invocable there
+instead of silently omitted: adding the current location to Places, and
+switching to a numbered tab. The global context factory gained a `path` field
+alongside its existing ordinal argument; both default to undefined, so every
+prior caller is unaffected. The two declarations gained a global surface and a
+disabled reason, so under a context that carries neither field they list
+disabled with a stated reason rather than disappearing, preserving the palette
+honesty invariant. No context menu opens with a global-kind context, so no menu
+gains an entry. A palette test invokes both commands end to end through the
+single trigger path and asserts each reaches its recorded handler.
 ## 2026-08-08 -- One place builds a row key
 
 The directory model counts how many row keys an update constructs, and a
