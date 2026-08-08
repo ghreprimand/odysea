@@ -214,6 +214,40 @@ SOURCE
 track_repository "$root"
 expect "inline member in a header" "$root" 1 "in inlineKey"
 
+# Scenario 10: a source whose name matches nothing, but which includes the
+# model header, is inspected. Naming the file after the model was never the
+# property that mattered; reaching into the model is. Without this a new
+# app/src/directory_key_helpers.cpp could hold a hand-spelled key untouched.
+root="$(build_repository included_elsewhere)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_key_helpers.cpp"
+#include "directory_list_model.hpp"
+
+QString DirectoryListModel::helperKey(const std::filesystem::path& path) const {
+    return QString::fromStdString(path.lexically_normal().string());
+}
+SOURCE
+track_repository "$root"
+expect "unrelated name including the model header" "$root" 1 "in helperKey"
+
+# Scenario 11: the residual hole, asserted rather than described. A source
+# that neither matches the name nor includes the model header is not
+# inspected, so a key spelled there is invisible to this guard. It is recorded
+# as a passing scenario because that is the honest state: coverage follows the
+# include, and a file that reaches the model without including its header does
+# not exist today but is not prevented from existing.
+root="$(build_repository outside_coverage)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/unrelated_helpers.cpp"
+#include <QString>
+
+QString unrelatedKey(const std::filesystem::path& path) {
+    return QString::fromStdString(path.lexically_normal().string());
+}
+SOURCE
+track_repository "$root"
+expect "source outside the covered set" "$root" 0 "2 permitted normalizations"
+
 if ((failures != 0)); then
     printf 'key_construction_guard_self_test: %d scenario(s) failed\n' "$failures" >&2
     exit 1

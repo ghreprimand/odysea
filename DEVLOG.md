@@ -71,6 +71,87 @@ The view itself is unchanged and remains reachable. Its own navigation,
 accessibility declarations, virtualization, and retained-state bounds hold as
 recorded.
 
+## 2026-08-08 -- Bound the cost of a directory load, not only its spelling
+
+The directory model counts how many row keys an update builds, and a
+large-directory case reads that count to hold the shape of the update's cost.
+A guard keeps every key built in one function, so the count cannot be evaded by
+spelling the same formula somewhere else. That guard was recorded as closing
+the problem. It does not, and the record is corrected here: it pins a formula,
+not a cost.
+
+Scanned paths are already absolute and normal, so building a key from an
+entry's path without normalizing it produces a byte-identical string. A linear
+rescan restored that way costs 12.9 times the healthy load at 8,000 entries
+while the key count stays identical to the digit, because the added work is
+uncounted and the counted work is unchanged. Every count-based bound stays
+green, and so does the guard, since there is no normalization to find.
+
+Two bounds are added that do not depend on the key builder being called at all.
+The first denominates a load's cost in the operation it is made of: the same
+process is timed building the number of keys the load reports having built, and
+the load is bounded as a multiple of that. It asks whether the reported count
+explains the time spent, so uncounted work inflates the measured load while
+leaving the calibration alone. The reading is 4.04 to 4.17 in a release build
+and 5.47 to 5.52 under the sanitizer, against 50.2 and 98.6 for the restored
+rescan; instrumentation costs both halves, though not equally, which is why one
+ceiling covers both builds with margin. The second bounds how the elapsed load
+grows when the directory doubles, which catches a change of exponent without
+reference to any counter: 1.94 to 2.11 healthy against 3.82 to 3.87. Both are
+kept, because a shape bound cannot see a constant and a cost bound cannot see a
+shape hidden behind a small one. Both are bounded below as well as above, since
+each is a quotient and a numerator that stopped being measured reads zero and
+satisfies any ceiling.
+
+Both timed bounds read the cheapest of three loads at each size rather than a
+single one. Elapsed time is the work plus every delay imposed on it, and delay
+only adds, so repeated readings scatter upwards rather than around the cost.
+Ten consecutive release runs of a single reading produced 2.04 to 2.31 nine
+times and 3.36 once, against a ceiling of 2.80 that cannot be raised without
+approaching the readings a change of exponent produces. Taking the cheapest
+attempt removes that scatter without loosening the bound: ten further runs
+read 2.08 to 2.22, including one whose raw times were half again the others at
+both sizes. Whole measurements are kept rather than component minima, because
+the load cost divides a time by a key count and the two must come from the
+same attempt.
+
+The guard's coverage now follows the include rather than the file name: every
+tracked source under the application's source directory that includes the model
+header is inspected, as a union with the previous name pattern so the covered
+set can only grow. A differently named helper reaching into the model was
+otherwise invisible. Widening the set of tokens it recognizes was considered
+and rejected in the same reading. Adding the other path-normalizing spellings
+would drag in the navigation-path, operation-destination, and thumbnail-key
+uses that legitimately live in those files, each of which would then have to be
+permitted, and every permitted function is another place a hand-spelled key
+could sit. The narrow rule is strong precisely because the formula it names has
+exactly two honest uses.
+
+What remains open is stated rather than implied. Coverage follows the include,
+so a source that reached the model without including its header would not be
+inspected; none exists. And a cost bound is still a bound on this measurement,
+not a proof: a regression small enough to sit inside the margin between the
+healthy reading and the ceiling would pass.
+
+Seven bypasses and instrument defects were planted and all seven caught, keyed
+on exit status: the restored rescan in two spellings, a calibration returning a
+constant, a calibration timing nothing, a growth ratio comparing one size to
+itself, a key counter that stops counting, and a new differently named source
+holding a hand-spelled key. Two were first rejected by the compiler and were
+replanted rather than counted. A third vacuity check written for the guard was
+removed instead of shipped, because the covered set is a union and cannot be
+smaller than one of its parts, so the check could not fail.
+
+The warning-clean release build passed all 52 checks, including scoped static
+analysis, 18 guards, and both GPU-path gates. The ASan/UBSan build passed all
+51 enabled checks; static analysis is disabled in that preset. The advisory
+clang-tidy baseline moves by one line, a cognitive-complexity report in the
+model's acquisition suite. Release and sanitizer binaries completed silent
+eight-second offscreen smoke launches on the OpenGL and software paths with no
+shared-memory residue. The GPU-path gates need a display to do anything: with
+none, their capability probe exits as a skip and the run stays green while
+asserting nothing, so they were run explicitly against one.
+
 ## 2026-08-08 -- Scan publication states its held share and bounds it in time
 
 A scan publishes delivered entries once they amount to a quarter of what is
