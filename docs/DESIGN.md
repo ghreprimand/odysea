@@ -230,14 +230,26 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   disabled and are skipped by menu key navigation rather than hidden; and
   destructive actions state their exact target count and render last, after a
   separator. Key sequences are declared with their actions, and a sequence
-  declared by two actions is a test failure, not a runtime shadowing surprise.
+  declared by two actions is a test failure, not a runtime shadowing
+  surprise; conflict detection compares sequences as Qt parses them rather
+  than as raw strings, so two alias spellings of one physical key —
+  `Delete` and `Del`, `Escape` and `Esc` — collide in the gate exactly as
+  they collide at runtime.
 - **Command palette.** The palette is a registry surface, not a second command
-  list: it enumerates every labeled declaration at open and on each filter
+  list: it enumerates the labeled declarations at open and on each filter
   change, so an action added to the declarations is reachable in the palette
-  with no palette-side change. Rows show the declared key sequence read from
-  the declaration; disabled actions stay listed with the reason their
-  declaration states and are skipped by keyboard navigation; activation
-  routes through the registry's trigger-time revalidation. The filter field
+  with no palette-side change. The enumeration is honest about reach: a
+  declaration whose enablement is a per-target predicate can never be
+  satisfied by a context that does not carry its target, so the palette's
+  global context omits target-scoped rows instead of listing them
+  permanently dead, and every row it does list is either enabled or states
+  the reason its declaration provides — an invariant the tests pin as such
+  rather than as row counts. Rows show the declared key sequence read from
+  the declaration; disabled rows stay listed with their stated reason, are
+  skipped by keyboard navigation, and are disabled at the item level so
+  assistive technology reads them as unavailable rather than actionable;
+  activation routes through the registry's trigger-time revalidation. The
+  filter field
   owns focus while open, and focus restoration on dismissal is the modal
   focus popup's platform behavior, pinned by the full-shell input-parity
   tests rather than duplicated in palette code. `Ctrl+Shift+P` opens the

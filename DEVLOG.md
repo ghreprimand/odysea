@@ -17,6 +17,54 @@ the archive.
 
 ---
 
+## 2026-08-07 -- An honest palette list and alias-aware shortcut conflicts
+
+The command palette now lists only what it can reach. A declaration whose
+enablement is a per-target predicate — open this entry, remove this Place,
+focus this pane — can never be satisfied by the global context the palette
+supplies, so its row sat permanently disabled, and most such rows stated no
+reason. The registry now omits target-scoped declarations from contexts that
+cannot carry their target, and every remaining declaration that can disable
+states why: no earlier or later history for Back and Forward, the filesystem
+root for Up, an empty recent list, and a single-pane layout for the pane
+commands. The suites pin the invariant itself — every listed row is enabled
+or states a reason — rather than row counts, so future declarations inherit
+the obligation instead of silently growing dead rows. The omission is
+per-context, not a blocklist: the same registry lists a target-scoped
+declaration when the supplied context carries its target, and a test proves
+it from entry and Places contexts. Palette rows also now disable at the item
+level, so assistive technology reads a disabled row as unavailable instead of
+actionable; the gate is the same live enablement that drives the row's
+rendering, and the registry still revalidates at trigger time.
+
+Shortcut-conflict detection now compares key sequences as Qt parses them
+rather than as raw strings. `Delete` and `Del` are one physical key wearing
+two spellings, and the raw-string comparison reported no conflict for that
+pair — latent rather than active, since the shipped set is conflict-free
+under normalization, but a gate that misses the collision it exists to catch.
+Each declared sequence is normalized through Qt's own parsing before keying;
+an unparseable sequence keys on its raw string instead of colliding with
+other unparseable ones as an empty key; a planted `Delete`/`Del` pair now
+fails the suite.
+
+Two focus-restoration assertions were tightened to the behavior they guard,
+with no behavior change: pointer dismissal of the palette returns focus to
+the summoning toolbar button, asserted as that button rather than as focus
+landing anywhere in the window, and the pointer-dismiss case now verifies the
+palette actually took focus before asserting it was returned, matching its
+keyboard twin.
+
+Verification: release build and tests 46/46, including the GPU-path
+presentation and validation entries on a live display; AddressSanitizer and
+UndefinedBehaviorSanitizer battery 45/45; QML formatting, lint, module, and
+scope gates; repository guards; silent smoke launches on the software and GPU
+paths. Deliberately planted defects each fail the suites: removing the
+reachability filter, removing a stated reason (the failure names the
+offending action), reverting the normalized comparison, and dropping the
+palette's focus grab on open. Planted palette-side focus theft after
+dismissal is absorbed by the scene's own restoration and is caught at the
+component level; the tightened scene-level assertion guards the integrated
+focus path.
 ## 2026-08-07 -- Directory loads stop growing with the square of the listing
 
 Opening a large folder was unusable: 4,000 entries took 14.4 s to appear and
