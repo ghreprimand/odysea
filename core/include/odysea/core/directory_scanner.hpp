@@ -9,17 +9,12 @@
 
 #include "odysea/core/directory_model.hpp"
 
-#include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <mutex>
-#include <optional>
+#include <memory>
 #include <system_error>
-#include <thread>
-#include <utility>
 #include <vector>
 
 namespace odysea::core {
@@ -85,23 +80,10 @@ class DirectoryScanner {
     void wait_idle();
 
   private:
-    void run();
-    void execute(Request request, std::uint64_t token);
-    [[nodiscard]] bool cancelled(std::uint64_t token) const;
-
-    mutable std::mutex mutex_;
-    std::condition_variable work_available_;
-    std::condition_variable idle_;
-    std::optional<Request> pending_;
-    std::uint64_t pending_token_ = 0;
-    std::uint64_t next_token_ = 1;
-    /// Requests replaced before they started, awaiting a cancelled summary.
-    std::vector<std::pair<Request, std::uint64_t>> superseded_;
-    bool busy_ = false;
-    bool shutdown_ = false;
-    std::atomic<std::uint64_t> cancelled_through_{0};
-    std::atomic<bool> deliver_callbacks_{true};
-    std::thread worker_;
+    /// The worker and the shared cancellation contract live behind this
+    /// pointer so the public header stays free of threading internals.
+    struct State;
+    std::unique_ptr<State> state_;
 };
 
 } // namespace odysea::core

@@ -17,6 +17,41 @@ the archive.
 
 ---
 
+## 2026-08-07 -- One cancellation contract for long walks
+
+Directory listing owned a single-worker, newest-request-wins queue: one
+private thread, monotonic request tokens where starting a request cancels
+everything issued before it, exactly one completion callback per request
+including one replaced before it ever started, no callback delivered once
+teardown begins, and a cancellation flag the running walk polls. Recursive
+storage accounting needs precisely those guarantees, and a second
+implementation of them would be a second set of edge cases. The edges are
+where two implementations would disagree quietly: a superseded request that
+never ran, a teardown while a walk is mid-flight.
+
+The contract now lives in one internal core seam that carries a request type
+as a parameter. The directory scanner keeps its public API byte for byte and
+holds the worker behind a pointer, so the public header no longer exposes
+threading internals at all. The seam is not installed and is not part of the
+public API.
+
+Verification: a suite drives the seam directly rather than only through a
+walk that happens to use it. It pins that work runs off the calling thread,
+that four rapidly queued requests produce five callbacks between execution
+and abandonment with no request answered twice and no token reused, that a
+running request can observe its own cancellation from inside the walk, that
+an explicit cancel reaches the request in flight, and that teardown stops
+delivery before it joins. The teardown case observes the flag flip from
+another thread while a request is still executing, which is the only moment
+the ordering is visible; a request queued in that window is refused with a
+zero token and receives no callback. Deliberate defects were planted and
+caught: dropping the callback for superseded requests, leaving delivery
+enabled through teardown, and letting a new request fail to supersede the
+running one each failed the suite. The existing directory-scanner suite
+passes unchanged, which is what shows the extraction preserved behavior
+rather than redefined it.
+
+
 ## 2026-08-07 -- Dual-pane transfers
 
 The workspace now expands from one directory view into two live panes. Each

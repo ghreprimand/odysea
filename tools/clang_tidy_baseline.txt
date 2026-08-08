@@ -58,7 +58,6 @@
 1	core/src/appearance.cpp	cppcoreguidelines-pro-type-vararg
 1	core/src/appearance.cpp	readability-function-cognitive-complexity
 4	core/src/digest.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
-4	core/src/directory_scanner.cpp	modernize-use-scoped-lock
 1	core/src/directory_scanner.cpp	readability-function-cognitive-complexity
 6	core/src/directory_watcher.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 2	core/src/directory_watcher.cpp	cppcoreguidelines-pro-bounds-pointer-arithmetic
@@ -66,6 +65,7 @@
 1	core/src/directory_watcher.cpp	readability-function-cognitive-complexity
 2	core/src/file_operations.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 1	core/src/file_operations_internal.hpp	performance-enum-size
+4	core/src/scan_worker.hpp	modernize-use-scoped-lock
 2	core/src/thumbnail.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 1	core/src/thumbnail.cpp	modernize-use-auto
 11	core/src/thumbnail_service.cpp	modernize-use-scoped-lock
@@ -85,6 +85,7 @@
 2	tests/test_file_operations.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 3	tests/test_file_operations.cpp	modernize-use-ranges
 1	tests/test_file_operations.cpp	performance-unnecessary-copy-initialization
+9	tests/test_scan_worker.cpp	modernize-use-scoped-lock
 1	tests/test_support.hpp	cppcoreguidelines-avoid-non-const-global-variables
 3	tests/test_support.hpp	cppcoreguidelines-pro-type-vararg
 1	tests/test_support.hpp	modernize-return-braced-init-list
