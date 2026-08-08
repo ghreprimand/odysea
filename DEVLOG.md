@@ -17,6 +17,70 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Visual foundation acceptance
+
+The visual system now has an automated acceptance matrix, and running it
+found and fixed three real defects.
+
+Two new test entries drive the full shell scene at 1x and at a forced 2x
+scale factor: at the narrowest supported window (720×480) and at a wide
+layout, every chrome control must stay visible, non-degenerate, and inside
+the window, chrome rows must not overlap, and no visible label may overflow
+without eliding. With every effect off, buttons and fields must show the
+accent focus ring, a focused directory view must turn its pane frame stroke
+to the accent, and tab traversal must cycle without dropping focus. Reduced
+motion must zero the effective persistence and the shared motion token while
+chrome geometry stays byte-stable. A 2,000-entry directory must realize a
+viewport of delegates in both views while the effect layer's structure and
+the well registry stay viewport-sized. A companion device-pixel suite pins
+well-mask geometry as logical-coordinate math and, on the GPU path, sweeps a
+protected well's entire border byte for byte against the plain path, with an
+emitter ring outside the well so a mask misaligned in any direction feeds a
+border row and fails — and a vacuity sentinel that rejects any environment
+whose grabbed frame does not carry the rendered scene. A new theme test
+measures contrast ratios for every foreground role on the beds it renders
+on, in all six families, in both override states: 4.5:1 for text roles and
+3.0:1 for non-text indicators under high contrast, the same floors on the
+reading pairs by default, and documented anti-regression bounds where the
+accepted appearance is deliberately subdued.
+
+The matrix caught three defects. First, text lift multiplied chromatic inks
+toward white on light families too, where inks are dark marks on bright
+grounds — the focus and accent indicators of the light families measured
+below 3.0:1 and a link ink below 4.5:1 under the shipped Balanced profile.
+Light families are now exempt from the lift, which restored every measured
+pair. Second, the toolbar's labeled workspace toggles and the action row's
+labeled operation buttons overflowed the window at the claimed 720-pixel
+minimum width; both strips now drop labels below a measured width bound
+that scales with the interface, keeping icons, accessible names, and
+tooltips. Third, on a real 2x surface the protected-well guarantee leaked:
+linear sampling of the mask edge lands on a half-texel phase at fractional
+device scales, and the proportional protection mix let roughly a quarter of
+the added light onto the well's outermost device row. Protection is now
+binarized at the sampling site in both the bright pass and the composite —
+any pixel at least half covered by the mask is protected outright — which
+the border sweep verifies at 1x in the automated gate and which was
+confirmed seam-free on a live 2x surface.
+
+One environment truth is recorded rather than papered over: the offscreen
+platform never allocates a genuine high-density framebuffer. Under a forced
+scale factor it reports a device pixel ratio of two while rasterizing at 1x,
+and a grabbed frame is a device-sized canvas without the scene at device
+resolution — which is exactly the false-pass shape the vacuity sentinel now
+rejects. The automated pixel gate therefore runs on the GPU path at 1x, the
+layout and geometry assertions run at both scales, and full-density pixel
+verification is a run of the same suite on a windowing system with a real
+2x surface, performed for this record and passing.
+
+Verification: release and ASan/UBSan batteries green including the three new
+test entries and the GPU-path launcher; formatting, static-analysis, QML,
+module, file-length, and public-repository guards green; smoke launches on
+the software and RHI backends silent. Five planted defects — the light-family
+lift exemption removed, the action row's compact mode disabled, the focus
+ring bound to the resting hairline, the composite's mask sampling shifted by
+a texel, and list virtualization defeated by an unbounded cache — each
+failed exactly the suite written to catch it and were reverted.
+
 ## 2026-08-07 -- Command palette
 
 The shell has a command palette: every labeled action the registry declares,

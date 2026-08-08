@@ -261,6 +261,24 @@ there is no apply step.
   the surfaces it renders over, directory ink stays measurably chromatic, and
   the selection bed remains distinct from the ground. An unknown family
   identifier resolves to the default rather than rendering nothing.
+- **Measured contrast floors.** The contrast claims are asserted, not
+  eyeballed: a test measures every foreground role against the beds it
+  renders on, in every shipped family, in both override states. Under high
+  contrast, text-sized roles must clear the 4.5:1 ratio and non-text
+  indicators 3.0:1 — that override is the accessibility path. The default
+  state holds the same floors on the reading and indicator pairs, with two
+  accepted exceptions: icon ink is deliberately subdued below the Strong
+  bright-pass threshold and carries an anti-regression bound instead, and
+  the status inks hold the non-text floor while high contrast raises them
+  to text strength. Text lift is exempt on light families: their inks are
+  dark marks on bright grounds, so multiplying toward white would lower
+  contrast instead of raising emphasis.
+- **Adaptive chrome density.** Below a measured width bound the toolbar's
+  workspace toggles and the action row's operation buttons drop their labels
+  and render icons only, and the filter field narrows, so every control
+  stays visible, reachable, and unclipped down to the window's minimum size
+  (720×480 logical). The labels remain available through accessible names
+  and tooltips, and the bound scales with the interface.
 - **Screen-effect profiles.** `Off`, `Minimal`, `Balanced` (shipped default),
   and `Strong` are fixed presets over the effect levels: core and wide bloom,
   scanlines, vignette, persistence, ground depth, and text lift. `Custom`
@@ -331,7 +349,15 @@ is unchanged.
   emitters. Views register each loaded thumbnail with a mask layer the
   pipeline samples; masked pixels are excluded from the bright pass and pass
   through the composite untouched, byte-identical to the plain path, while
-  the chrome around them keeps its depth.
+  the chrome around them keeps its depth. Protection is binarized at the
+  sampling site: any pixel at least half covered by the mask is protected
+  outright, because linear sampling of the mask edge lands on a half-texel
+  phase at fractional device scales and a proportional mix would leak a rim
+  of added light onto the outermost protected row. The protection boundary
+  therefore snaps to the nearest device texel, and the well border is
+  verified byte-true against the plain path along its entire perimeter on
+  the GPU path — including on a real 2x surface, where the rim leak was
+  observed and fixed.
 - **Plain-path identity.** When every stage is at identity — the `Off`
   profile, or every gain zero — the pipeline disengages and the content
   renders on the plain path, byte-identical to having no pipeline at all.
@@ -355,6 +381,45 @@ is unchanged.
 - **Popups stay solid.** Menus, dialogs, and the appearance panel render in
   the window overlay above the pipeline by design: modal surfaces are
   occluders and remain solid and color-true.
+
+## Visual validation
+
+The visual foundation is held to an automated acceptance matrix over the real
+shell scene, so its claims regress loudly instead of visually:
+
+- **Layout integrity.** At the narrowest supported window (720×480 logical)
+  and at a wide layout, every chrome control stays visible, non-degenerate,
+  and entirely inside the window; the chrome strips stack without overlap;
+  and no visible label overflows its bounds without eliding.
+- **Focus visibility.** With every effect off, buttons and fields show the
+  accent focus ring against the resting hairline, a focused directory view
+  turns its pane frame stroke to the accent, and tab traversal cycles
+  through the chrome without ever dropping focus.
+- **Reduced motion.** The override zeroes effective persistence and the
+  shared motion token while chrome geometry stays byte-stable, and the
+  stored preference the controls display is untouched.
+- **Effects off.** Selection and text legibility are palette properties
+  measured without the pipeline, and the keyboard surfaces stay reachable —
+  nothing depends on the effect layer for affordance.
+- **Virtualization and flat effect cost.** A directory large enough to
+  exercise virtualization realizes a viewport of delegates, not the
+  directory, in both views; the effect layer's structure and the
+  protected-well registry scale with the viewport at most, never with the
+  entry count.
+- **Device pixels.** Well-mask geometry is logical-coordinate math at every
+  scale, and on the GPU path a protected well's entire border is compared
+  byte for byte against the plain path, armed by an emitter ring so a mask
+  misaligned in any direction fails. A vacuity sentinel rejects any
+  environment whose grabbed frame does not carry the rendered scene. The
+  offscreen platform never allocates a genuine high-density framebuffer —
+  under a forced scale factor it reports 2x while rasterizing at 1x — so
+  the automated pixel gate runs at 1x, the layout and geometry assertions
+  run at both scales, and the same suite executed on a windowing system
+  with a real 2x surface exercises every assertion at full density.
+
+The high-contrast contrast matrix in the appearance tests and the software
+scene-graph fallback suite complete the matrix; the fallback keeps content,
+controls, and protected regions intact with the pipeline disengaged.
 
 ## Rendering
 

@@ -30,6 +30,9 @@ graphical shell grows around it.
 - [x] Calm path orientation, direct entry and completion, configurable Places,
       bounded recent destinations, and direct ancestor/shortcut jumps.
 - [x] Command palette.
+- [x] Visual foundation acceptance: layout floors, scale behavior, focus
+      visibility, reduced motion, measured contrast, effects-off usability,
+      software fallback, and large-directory validation.
 
 ## M3 — Power features
 
