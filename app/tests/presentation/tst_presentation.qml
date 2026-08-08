@@ -20,6 +20,7 @@ import QtQuick
 import QtQuick.Window
 import QtTest
 import OdySea
+import "../support/grab.js" as Grab
 
 Item {
     id: harness
@@ -34,6 +35,19 @@ Item {
     // content comparison. On the happy path the first attempt satisfies the
     // sentinel and the extra iterations cost nothing.
     readonly property int grabSettleAttempts: 6
+
+    // True when the run demands the real GPU frame path. The real-compositor
+    // gate sets ODYSEA_REQUIRE_GPU_FRAMES, which the setup main publishes as a
+    // context property; under it the frame tests below fail instead of
+    // skipping if the scene graph is software, so a gate that ran on a
+    // fallback cannot report success while every GPU assertion was skipped.
+    // Unset everywhere else, so the ordinary offscreen and software entries
+    // skip on the software backend exactly as before. The context property is
+    // injected by the C++ setup main, so the linter cannot see it; the guard
+    // keeps the scene loadable under any runner that does not set it.
+    // qmllint disable unqualified
+    readonly property bool requireGpuFrames: (typeof presentationRequireGpuFrames !== "undefined") ? presentationRequireGpuFrames : false
+    // qmllint enable unqualified
 
     ShellTheme {
         id: theme
@@ -198,6 +212,34 @@ Item {
             wells.bump();
         }
 
+        // Frame comparisons need a real GPU path. On the software scene graph
+        // they normally skip, since the pipeline is disengaged there by
+        // design. Under the real-compositor gate a software backend is not a
+        // reason to skip — it is the gate failing to exercise what it exists
+        // for — so this fails loudly instead. It never relaxes an assertion:
+        // when the GPU path is present it returns and the test runs in full.
+        function ensureGpuPathOrSkip(softwareBackend, reason) {
+            if (!softwareBackend) {
+                return;
+            }
+            if (harness.requireGpuFrames) {
+                verify(false, "the real-compositor gate requires the OpenGL RHI frame path, but the scene graph fell back to software: " + reason);
+            }
+            skip("software scene graph: " + reason);
+        }
+
+        // Positive proof that the run reached the GPU path when it was asked
+        // to. Without the requirement it skips, like every other GPU-gated
+        // test on a software backend; with it, the software backend is a
+        // failure, so this cannot pass over an unexercised pipeline.
+        function test_gpuPathIsExercisedWhenRequired() {
+            if (!harness.requireGpuFrames) {
+                skip("real-compositor gate not requested: ODYSEA_REQUIRE_GPU_FRAMES is unset");
+            }
+            verify(!layer.softwareBackend, "the real-compositor gate requires the OpenGL RHI scene graph, but GraphicsInfo reports the software backend");
+            verify(layer.pipelineAvailable, "the pipeline must be available on the real GPU path so the frame comparisons run");
+        }
+
         function settleAndGrab() {
             // Vacuity sentinel as the settle's termination condition: the
             // registered well's saturated patch is protected, so its bytes
@@ -213,16 +255,18 @@ Item {
             // which are never retried, so a wrong frame can never be retried
             // into a pass. grabImage returns the window region under the
             // item's mapped rectangle, not the item's subtree, so only a
-            // genuinely unrendered scene trips the sentinel.
-            const dpr = Screen.devicePixelRatio;
-            const px = Math.round((thumbWell.x + 40) * dpr);
-            const py = Math.round((thumbWell.y + 35) * dpr);
+            // genuinely unrendered scene trips the sentinel. The probe is
+            // placed through the frame's own device ratio, not
+            // Screen.devicePixelRatio, so it addresses the pixels that were
+            // actually rendered under Wayland fractional scaling; the sentinel
+            // is total, so a probe outside the frame is an observable miss the
+            // loop retries, never an exception that unwinds past the bound.
             let frame = null;
             for (let attempt = 0; attempt < harness.grabSettleAttempts; ++attempt) {
                 wait(60);
                 waitForRendering(harness);
                 frame = grabImage(harness);
-                if (Qt.colorEqual(frame.pixel(px, py), "#ff2010")) {
+                if (Grab.carriesColor(frame, thumbWell.x + 40, thumbWell.y + 35, harness.width, harness.height, "#ff2010")) {
                     return frame;
                 }
             }
@@ -416,9 +460,7 @@ Item {
         }
 
         function test_wellScrolledOutOfItsViewportLeavesChromeUntouched() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the pipeline is disengaged by design");
-            }
+            ensureGpuPathOrSkip(layer.softwareBackend, "the pipeline is disengaged by design");
             // Regression case: a registered well whose delegate stays
             // realized in the cache buffer scrolls until its mapped
             // rectangle lands on the bright chrome band above the viewport.
@@ -435,9 +477,7 @@ Item {
         }
 
         function test_profilesProduceDistinctFrames() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the pipeline is disengaged by design");
-            }
+            ensureGpuPathOrSkip(layer.softwareBackend, "the pipeline is disengaged by design");
             theme.profile = ShellTheme.Off;
             const off = settleAndGrab();
             theme.profile = ShellTheme.Minimal;
@@ -465,11 +505,13 @@ Item {
             verify(brightest < brightPass.threshold);
 
             const strong = settleAndGrab();
-            const first = strong.pixel(toolbarIcon.x, toolbarIcon.y);
+            // Sample through the frame's own ratio so the icon's logical
+            // rectangle maps to the pixels actually rendered, at any scale.
+            const first = Grab.pixelAt(strong, toolbarIcon.x, toolbarIcon.y, harness.width, harness.height);
             let varied = false;
             for (let y = toolbarIcon.y; y < toolbarIcon.y + toolbarIcon.height && !varied; ++y) {
                 for (let x = toolbarIcon.x; x < toolbarIcon.x + toolbarIcon.width; ++x) {
-                    if (!Qt.colorEqual(strong.pixel(x, y), first)) {
+                    if (!Qt.colorEqual(Grab.pixelAt(strong, x, y, harness.width, harness.height), first)) {
                         varied = true;
                         break;
                     }
@@ -479,9 +521,7 @@ Item {
         }
 
         function test_protectedWellStaysByteTrueUnderStrong() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the pipeline is disengaged by design");
-            }
+            ensureGpuPathOrSkip(layer.softwareBackend, "the pipeline is disengaged by design");
             theme.profile = ShellTheme.Off;
             const off = settleAndGrab();
             theme.profile = ShellTheme.Strong;
@@ -577,6 +617,21 @@ Item {
         name: "ShaderFailureLatch"
         when: windowShown
 
+        // Same contract as the pipeline suite's helper: the shader-failure
+        // latch needs compiled stages, which a software backend never has, so
+        // it skips there — unless the real-compositor gate is requiring the
+        // GPU path, where a software fallback is the gate failing rather than
+        // a reason to skip.
+        function ensureGpuPathOrSkip(softwareBackend, reason) {
+            if (!softwareBackend) {
+                return;
+            }
+            if (harness.requireGpuFrames) {
+                verify(false, "the real-compositor gate requires the OpenGL RHI frame path, but the scene graph fell back to software: " + reason);
+            }
+            skip("software scene graph: " + reason);
+        }
+
         function grabScene(scene) {
             // Vacuity sentinel as the settle's termination condition: both
             // grabs in a latch exercise are plain-path frames, where the
@@ -587,16 +642,16 @@ Item {
             // that never resolves fails loudly once the bound is spent rather
             // than satisfying the byte-equality below. The retry gates only on
             // completeness — the latch equality the caller then checks is
-            // judged once and never retried.
-            const dpr = Screen.devicePixelRatio;
-            const px = Math.round(240 * dpr);
-            const py = Math.round(180 * dpr);
+            // judged once and never retried. The probe is placed through the
+            // frame's own device ratio and the sentinel is total, so it holds
+            // under Wayland fractional scaling and a probe outside the frame is
+            // an observable miss rather than an exception.
             let frame = null;
             for (let attempt = 0; attempt < harness.grabSettleAttempts; ++attempt) {
                 wait(60);
                 waitForRendering(scene);
                 frame = grabImage(scene);
-                if (Qt.colorEqual(frame.pixel(px, py), "#ffffff")) {
+                if (Grab.carriesColor(frame, 240, 180, scene.width, scene.height, "#ffffff")) {
                     return frame;
                 }
             }
@@ -607,9 +662,7 @@ Item {
         // Breaks one blur stage on a live scene and requires the latch to
         // stand the whole pipeline down onto the silent plain path.
         function exerciseLatch(scene, stageName) {
-            if (scene.sceneLayer.softwareBackend) {
-                skip("software scene graph: shader stages never compile");
-            }
+            ensureGpuPathOrSkip(scene.sceneLayer.softwareBackend, "shader stages never compile");
             scene.visible = true;
             scene.sceneTheme.resetToDefaults();
             scene.sceneTheme.profile = ShellTheme.Off;
