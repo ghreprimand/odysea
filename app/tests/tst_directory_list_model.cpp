@@ -1,204 +1,40 @@
-#include "directory_list_model.hpp"
+// Headless tests for how the directory model acquires a listing and keeps it
+// consistent: scanning, publication, folder-watch deliveries, entry identity,
+// and the derived indexes over the scanned listing and the presented rows.
+//
+// Behaviour a person drives — selection, cursor movement, navigation input,
+// activation, and filesystem operations — lives in
+// tst_directory_list_model_interaction.cpp. The split follows that boundary
+// rather than file size: these cases assert what the model does on its own,
+// and those assert what it does when it is asked to.
+#include "directory_list_model_test_support.hpp"
 
-#include "entry_launcher.hpp"
-#include "file_operations_internal.hpp"
-
-#include <QByteArray>
 #include <QCoreApplication>
-#include <QDir>
 #include <QElapsedTimer>
-#include <QEventLoop>
 #include <QPersistentModelIndex>
-#include <QSignalSpy>
 #include <QTemporaryDir>
-#include <QTest>
 #include <QThreadPool>
-#include <QTimer>
-#include <QUrl>
 
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <memory>
-#include <string>
 
 namespace fs = std::filesystem;
-
-namespace {
-
-void writeFile(const fs::path& path, std::string_view contents = "data") {
-    std::ofstream stream(path, std::ios::binary);
-    stream << contents;
-}
-
-std::string readFile(const fs::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
-}
-
-int rowForName(const DirectoryListModel& model, const QString& name) {
-    for (int row = 0; row < model.rowCount(); ++row) {
-        if (model.data(model.index(row), DirectoryListModel::NameRole).toString() == name) {
-            return row;
-        }
-    }
-    return -1;
-}
-
-// A named type for the settle budget. It sits next to an entry count in the
-// load measurement below, and both are integers, so transposing them would
-// compile and then measure a load of a few entries against a budget of
-// several thousand.
-struct SettleBudget {
-    qint64 milliseconds = 0;
-};
-
-bool waitForScan(DirectoryListModel& model) {
-    if (!model.busy()) {
-        return true;
-    }
-    QSignalSpy finished(&model, &DirectoryListModel::busyChanged);
-    return finished.wait(5000) && !model.busy();
-}
-
-// Waits without the polling step a QTRY macro imposes, so a measured load
-// reports the work it did rather than the next poll boundary.
-bool waitForIdleWithin(DirectoryListModel& model, qint64 timeoutMilliseconds) {
-    if (!model.busy()) {
-        return true;
-    }
-    QEventLoop loop;
-    QTimer guard;
-    guard.setSingleShot(true);
-    QObject::connect(&model, &DirectoryListModel::busyChanged, &loop, [&model, &loop] {
-        if (!model.busy()) {
-            loop.quit();
-        }
-    });
-    QObject::connect(&guard, &QTimer::timeout, &loop, &QEventLoop::quit);
-    guard.start(static_cast<int>(timeoutMilliseconds));
-    loop.exec();
-    return !model.busy();
-}
-
-bool waitForOperation(DirectoryListModel& model) {
-    if (!model.operationBusy()) {
-        return true;
-    }
-    QSignalSpy finished(&model, &DirectoryListModel::operationBusyChanged);
-    return finished.wait(5000) && !model.operationBusy();
-}
-
-QString selectedName(const DirectoryListModel& model) {
-    for (int row = 0; row < model.rowCount(); ++row) {
-        if (model.data(model.index(row), DirectoryListModel::SelectedRole).toBool()) {
-            return model.data(model.index(row), DirectoryListModel::NameRole).toString();
-        }
-    }
-    return {};
-}
-
-QStringList selectedNames(const DirectoryListModel& model) {
-    QStringList names;
-    for (int row = 0; row < model.rowCount(); ++row) {
-        if (model.data(model.index(row), DirectoryListModel::SelectedRole).toBool()) {
-            names.push_back(model.data(model.index(row), DirectoryListModel::NameRole).toString());
-        }
-    }
-    return names;
-}
-
-QString currentName(const DirectoryListModel& model) {
-    const int row = model.currentIndex();
-    if (row < 0 || row >= model.rowCount()) {
-        return {};
-    }
-    return model.data(model.index(row), DirectoryListModel::NameRole).toString();
-}
-
-fs::path workingEntry(const fs::path& directory, odysea::core::WorkingEntryRole role) {
-    std::error_code error;
-    fs::directory_iterator element(directory, error);
-    if (error) {
-        return {};
-    }
-    const fs::directory_iterator end;
-    for (; element != end; ++element) {
-        if (odysea::core::classify_working_entry(element->path().filename().string()) == role) {
-            return element->path();
-        }
-    }
-    return {};
-}
-
-odysea::core::detail::RenameStep failInstallAndUnwind() {
-    return [](odysea::core::detail::RenameKind kind, const fs::path& from, const fs::path& to,
-              std::error_code& error) {
-        if (kind == odysea::core::detail::RenameKind::Install ||
-            kind == odysea::core::detail::RenameKind::Unwind) {
-            error = std::make_error_code(std::errc::permission_denied);
-            return;
-        }
-        odysea::core::detail::rename_with_filesystem(kind, from, to, error);
-    };
-}
-
-class EnvironmentRestore {
-  public:
-    explicit EnvironmentRestore(const char* name)
-        : name_(name), existed_(qEnvironmentVariableIsSet(name)), value_(qgetenv(name)) {}
-
-    ~EnvironmentRestore() {
-        if (existed_) {
-            qputenv(name_, value_);
-        } else {
-            qunsetenv(name_);
-        }
-    }
-
-    EnvironmentRestore(const EnvironmentRestore&) = delete;
-    EnvironmentRestore& operator=(const EnvironmentRestore&) = delete;
-
-  private:
-    const char* name_;
-    bool existed_;
-    QByteArray value_;
-};
-
-class FakeEntryLauncher final : public EntryLauncher {
-  public:
-    bool open(const fs::path& path, std::error_code& error) override {
-        ++callCount;
-        openedPath = path;
-        if (fail) {
-            error = std::make_error_code(std::errc::permission_denied);
-            return false;
-        }
-        error.clear();
-        return true;
-    }
-
-    int callCount = 0;
-    fs::path openedPath;
-    bool fail = false;
-};
-
-} // namespace
+using namespace odysea::apptest;
 
 class DirectoryListModelTest : public QObject {
     Q_OBJECT
 
-    // Empty when the row keys and the key index agree with the entries they
-    // are derived from; otherwise the first disagreement, so a failure names
-    // the row rather than only the count.
+    /// One load-and-refresh cycle's measurements.
     struct LoadMeasurement {
         qint64 firstScanMilliseconds = 0;
         qint64 refreshMilliseconds = 0;
         quint64 keyBuilds = 0;
     };
 
+    // Empty when the row keys and the key index agree with the entries they
+    // are derived from; otherwise the first disagreement, so a failure names
+    // the row rather than only the count.
     static QString rowKeyIndexMismatch(const DirectoryListModel& model);
+    static QString scannedNameIndexMismatch(const DirectoryListModel& model);
     static QString measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
                                         LoadMeasurement& measurement);
 
@@ -213,30 +49,19 @@ class DirectoryListModelTest : public QObject {
     void recycledSubvolumeIdentityDoesNotMoveSelection();
     void ambiguousIdentityDoesNotMoveSelection();
     void recycledIdentityDoesNotMoveSelectionAcrossRefresh();
-    void selectionSurvivesSortFilterAndRefresh();
-    void explicitGeometricSelectionUsesRowSet();
-    void cursorMovementAndPrefixSearchPreserveSelectionContracts();
-    void sameParentCopyCreatesSiblingDuplicate();
-    void directDirectoryActivationNavigates();
-    void navigationInputResolvesTilde();
-    void directPathInputValidatesDirectory();
-    void invalidDirectPathInputDoesNotNavigate();
-    void sharedPathCompletionFinishesTheNextSegmentPrefix();
-    void uniquePathCompletionFinishesTheDirectoryName();
-    void activationBreadcrumbsAndDropContracts();
-    void symlinkTargetDirectoryChangesRefreshRole();
-    void operationsReachCoreAndReportFailures();
-    void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
     void destructionDropsQueuedWorkerCallbacks();
     void largeDirectoryLoadStaysWithinBudget();
+    void aDepartedEntryTakesItsSelectionStateWithIt();
+    void anUnknownIdentityFollowsNothing();
+    void scannedNameIndexTracksEveryListingMutation();
+    void watchDeliveryCostsOneLookupPerDeliveredName();
     void heldBackScanEntriesReachTheCompletedListing();
     void republishedEntriesUpdateOneRowRatherThanAddingAnother();
     void supersededScanDropsTheEntriesItHeldBack();
     void rowKeyIndexTracksEveryRowMutation();
     void duplicateResolvedKeysCompareAgainstTheFirstRow();
 };
-
 QString DirectoryListModelTest::rowKeyIndexMismatch(const DirectoryListModel& model) {
     if (model.entryKeys_.size() != model.entries_.size()) {
         return QStringLiteral("key count %1 does not match row count %2")
@@ -272,19 +97,6 @@ QString DirectoryListModelTest::rowKeyIndexMismatch(const DirectoryListModel& mo
     }
     return {};
 }
-
-// The sanitizer build carries roughly an order of magnitude of instrumentation
-// overhead, so it gets its own budget rather than a bound loose enough to pass
-// there and useless in the release build.
-#ifdef __SANITIZE_ADDRESS__
-#define ODYSEA_INSTRUMENTED_BUILD 1
-#endif
-#ifdef __has_feature
-#if __has_feature(address_sanitizer)
-#define ODYSEA_INSTRUMENTED_BUILD 1
-#endif
-#endif
-
 QString DirectoryListModelTest::measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
                                                      LoadMeasurement& measurement) {
     QTemporaryDir fixture;
@@ -329,7 +141,6 @@ QString DirectoryListModelTest::measureDirectoryLoad(int entryCount, SettleBudge
     measurement.keyBuilds = model.entryKeyBuilds_;
     return {};
 }
-
 void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
     // Directories large enough for reconciliation to dominate the fixed cost
     // of starting a scan. Every other case in this file uses a handful of
@@ -400,7 +211,308 @@ void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
     QVERIFY(larger.firstScanMilliseconds < budgetMilliseconds);
     QVERIFY(larger.refreshMilliseconds < budgetMilliseconds);
 }
+QString DirectoryListModelTest::scannedNameIndexMismatch(const DirectoryListModel& model) {
+    QHash<QString, std::size_t> expected;
+    expected.reserve(static_cast<qsizetype>(model.scannedEntries_.size()));
+    for (std::size_t row = 0; row < model.scannedEntries_.size(); ++row) {
+        const odysea::core::Entry& entry = model.scannedEntries_.at(row);
+        const QString name = QString::fromStdString(entry.name);
+        // The rule the index rests on. Every entry in a listing has the
+        // scanned directory as its parent, so its key is its name under that
+        // directory. Matching on the key and matching on the name therefore
+        // cannot select different entries, which is what makes one name index
+        // able to answer both.
+        const QString keyUnderScannedDirectory = QString::fromStdString(
+            (fs::path(model.scannedPath_.toStdString()) / entry.name).lexically_normal().string());
+        if (model.entryKey(entry) != keyUnderScannedDirectory) {
+            return QStringLiteral("scanned entry %1 has key %2 rather than %3")
+                .arg(name, model.entryKey(entry), keyUnderScannedDirectory);
+        }
+        if (!expected.contains(name)) {
+            expected.insert(name, row);
+        }
+    }
+    if (expected.size() != static_cast<qsizetype>(model.scannedEntries_.size())) {
+        return QStringLiteral("scanned listing holds %1 entries under %2 names")
+            .arg(model.scannedEntries_.size())
+            .arg(expected.size());
+    }
+    if (model.scannedRowsByName_ != expected) {
+        return QStringLiteral("name index does not hold the first row of each scanned name");
+    }
+    return {};
+}
+void DirectoryListModelTest::aDepartedEntryTakesItsSelectionStateWithIt() {
+    // A departed entry is dropped from the selection, the cursor, the range
+    // anchor, and the rubber-band base. Leaving it behind in any of them is
+    // invisible while the entry is gone, because those are keyed state and
+    // the row no longer exists. It becomes visible when an entry of the same
+    // name appears: it arrives already selected, or already under the cursor,
+    // having inherited state from a file that no longer exists.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "departing.txt", "d");
+    writeFile(root / "staying.txt", "s");
 
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+
+    const int departingRow = rowForName(model, QStringLiteral("departing.txt"));
+    QVERIFY(departingRow >= 0);
+    model.selectRow(departingRow, Qt::NoModifier);
+    model.beginRubberBand(true);
+    const QString departingKey = model.keyForRow(departingRow);
+    QVERIFY(!departingKey.isEmpty());
+    QVERIFY(model.selectedEntryKeys_.contains(departingKey));
+    QCOMPARE(model.currentEntryKey_, departingKey);
+    QCOMPARE(model.selectionAnchorKey_, departingKey);
+    QVERIFY(model.rubberBandBaseKeys_.contains(departingKey));
+
+    fs::remove(root / "departing.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"departing.txt"},
+                                                .updatedEntries = {},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(rowForName(model, QStringLiteral("departing.txt")), -1);
+    QVERIFY(!model.selectedEntryKeys_.contains(departingKey));
+    QVERIFY(model.currentEntryKey_ != departingKey);
+    QVERIFY(model.selectionAnchorKey_ != departingKey);
+    QVERIFY(!model.rubberBandBaseKeys_.contains(departingKey));
+    QCOMPARE(model.selectedCount(), 0);
+
+    // The observable half: a new entry of the same name is a different file
+    // and arrives with none of the departed entry's state.
+    writeFile(root / "departing.txt", "a different file entirely");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "departing.txt"))},
+        .renamedEntries = {},
+        .error = {},
+        .rescanRequired = false});
+
+    const int arrivedRow = rowForName(model, QStringLiteral("departing.txt"));
+    QVERIFY(arrivedRow >= 0);
+    QVERIFY(!model.rowSelected(arrivedRow));
+    QCOMPARE(model.selectedCount(), 0);
+    QVERIFY(model.currentIndex() != arrivedRow);
+}
+void DirectoryListModelTest::anUnknownIdentityFollowsNothing() {
+    // An entry whose metadata could not be read has no identity, and the core
+    // rule is that an unknown identity matches nothing, including another
+    // unknown one. A departed entry with no identity must therefore not be
+    // followed to a delivered entry with no identity: they are two files that
+    // failed to be measured, not one file that moved.
+    //
+    // Both identities are cleared directly. Reaching this state from the
+    // filesystem needs a metadata read to fail between the entry being seen
+    // and being measured, which is a race rather than a condition a case can
+    // arrange.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "departing.txt", "d");
+    writeFile(root / "arriving.txt", "a");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+
+    const int departingRow = rowForName(model, QStringLiteral("departing.txt"));
+    QVERIFY(departingRow >= 0);
+    model.selectRow(departingRow, Qt::NoModifier);
+    QCOMPARE(selectedName(model), QStringLiteral("departing.txt"));
+
+    const auto departing =
+        std::ranges::find(model.scannedEntries_, "departing.txt", &odysea::core::Entry::name);
+    QVERIFY(departing != model.scannedEntries_.end());
+    departing->identity = odysea::core::EntryIdentity{};
+    QVERIFY(!departing->identity.known());
+
+    odysea::core::Entry arriving =
+        odysea::core::make_entry(fs::directory_entry(root / "arriving.txt"));
+    arriving.identity = odysea::core::EntryIdentity{};
+    QVERIFY(!arriving.identity.known());
+
+    fs::remove(root / "departing.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {"departing.txt"},
+                                                .updatedEntries = {arriving},
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+
+    QCOMPARE(rowForName(model, QStringLiteral("departing.txt")), -1);
+    const int arrivingRow = rowForName(model, QStringLiteral("arriving.txt"));
+    QVERIFY(arrivingRow >= 0);
+    QVERIFY(!model.rowSelected(arrivingRow));
+    QCOMPARE(selectedName(model), QString());
+    QCOMPARE(model.selectedCount(), 0);
+}
+void DirectoryListModelTest::scannedNameIndexTracksEveryListingMutation() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path listing = root / "listing";
+    const fs::path elsewhere = root / "elsewhere";
+    fs::create_directories(listing);
+    fs::create_directories(elsewhere);
+    writeFile(listing / "alpha.txt", "a");
+    writeFile(listing / "bravo.txt", "bb");
+    writeFile(listing / "charlie.txt", "ccc");
+    writeFile(listing / ".hidden.txt", "h");
+    writeFile(elsewhere / "unrelated.txt");
+
+    DirectoryListModel model;
+
+    // Both indexes are checked from inside the signals as well as after them.
+    // A view answers a row signal by asking the model for data, and the
+    // scanned listing is what the presented rows were derived from, so a
+    // listing left inconsistent mid-update is observable exactly there.
+    QString liveMismatch;
+    int liveChecks = 0;
+    const auto observe = [&model, &liveMismatch, &liveChecks] {
+        ++liveChecks;
+        if (!liveMismatch.isEmpty()) {
+            return;
+        }
+        liveMismatch = scannedNameIndexMismatch(model);
+        if (liveMismatch.isEmpty()) {
+            liveMismatch = rowKeyIndexMismatch(model);
+        }
+    };
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, observe);
+    connect(&model, &QAbstractItemModel::rowsRemoved, &model, observe);
+
+    model.setPath(QString::fromStdString(listing.string()));
+    QVERIFY(waitForIdleWithin(model, 5000));
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    // The hidden entry is in the scanned listing even though no row presents
+    // it, which is why the presented index cannot answer for the listing.
+    QCOMPARE(model.scannedEntries_.size(), std::size_t{4});
+    QCOMPARE(model.rowCount(), 3);
+    QVERIFY(model.scannedRowsByName_.contains(QStringLiteral(".hidden.txt")));
+
+    model.watchService_.stop();
+
+    // A rescan that replaces every row.
+    fs::rename(listing / "alpha.txt", listing / "delta.txt");
+    model.refresh();
+    QVERIFY(waitForIdleWithin(model, 5000));
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    QVERIFY(model.scannedRowsByName_.contains(QStringLiteral("delta.txt")));
+    QVERIFY(!model.scannedRowsByName_.contains(QStringLiteral("alpha.txt")));
+    model.watchService_.stop();
+
+    // A burst that renames, removes, and updates in one delivery, including a
+    // removal of the entry the presentation withholds.
+    fs::rename(listing / "bravo.txt", listing / "echo.txt");
+    fs::remove(listing / ".hidden.txt");
+    writeFile(listing / "charlie.txt", "grown well past its first size");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = listing,
+        .removedNames = {"bravo.txt", ".hidden.txt"},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(listing / "echo.txt")),
+                           odysea::core::make_entry(fs::directory_entry(listing / "charlie.txt"))},
+        .renamedEntries = {DirectoryEntryRename{.oldName = "bravo.txt", .newName = "echo.txt"}},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    QVERIFY(model.scannedRowsByName_.contains(QStringLiteral("echo.txt")));
+    QVERIFY(!model.scannedRowsByName_.contains(QStringLiteral("bravo.txt")));
+    QVERIFY(!model.scannedRowsByName_.contains(QStringLiteral(".hidden.txt")));
+    QCOMPARE(model.scannedEntries_.size(), std::size_t{3});
+
+    // A different directory, so a stale listing cannot survive the move.
+    model.setPath(QString::fromStdString(elsewhere.string()));
+    QVERIFY(waitForIdleWithin(model, 5000));
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    QCOMPARE(model.scannedEntries_.size(), std::size_t{1});
+    QVERIFY(!model.scannedRowsByName_.contains(QStringLiteral("echo.txt")));
+
+    // A refresh with no path, so the index is cleared rather than left
+    // behind. Navigation cannot return to an empty path, so the path is
+    // cleared directly: this branch is reached in the shipped application by
+    // refreshing a model that has not been given one, and clearing here is
+    // what lets the case reach it with a listing already in place.
+    model.path_.clear();
+    model.refresh();
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    QVERIFY(model.scannedRowsByName_.isEmpty());
+    QCOMPARE(model.rowCount(), 0);
+
+    QVERIFY(liveChecks > 0);
+    QCOMPARE(liveMismatch, QString{});
+}
+void DirectoryListModelTest::watchDeliveryCostsOneLookupPerDeliveredName() {
+    // A watch burst used to search the whole scanned listing once per
+    // delivered name, rebuilding every candidate's key inside the comparison,
+    // so a burst cost the product of its size and the directory's. The same
+    // machine-independent instrument the load gate uses holds this: key
+    // construction is now proportional to the burst plus the presented rows,
+    // not to their product.
+    constexpr int entryCount = 800;
+    constexpr int deliveredCount = 400;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)), "a");
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, 10000));
+    QCOMPARE(model.rowCount(), entryCount);
+    model.watchService_.stop();
+
+    std::vector<odysea::core::Entry> delivered;
+    delivered.reserve(static_cast<std::size_t>(deliveredCount));
+    for (int index = 0; index < deliveredCount; ++index) {
+        const fs::path entry = root / ("entry-" + std::to_string(index));
+        writeFile(entry, "grown well past its first size");
+        delivered.push_back(odysea::core::make_entry(fs::directory_entry(entry)));
+    }
+
+    const quint64 before = model.entryKeyBuilds_;
+    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
+                                                .directory = root,
+                                                .removedNames = {},
+                                                .updatedEntries = std::move(delivered),
+                                                .renamedEntries = {},
+                                                .error = {},
+                                                .rescanRequired = false});
+    const quint64 spent = model.entryKeyBuilds_ - before;
+
+    // Four times the entries the update could legitimately have to key, which
+    // leaves room for the reconciliation the update ends with and still sits
+    // two orders of magnitude below a search per delivered name.
+    const quint64 ceiling = 4 * static_cast<quint64>(entryCount + deliveredCount);
+    qInfo("watch burst of %d names against %d entries built %llu keys, ceiling %llu",
+          deliveredCount, entryCount, static_cast<unsigned long long>(spent),
+          static_cast<unsigned long long>(ceiling));
+    QVERIFY(spent < ceiling);
+
+    QCOMPARE(model.rowCount(), entryCount);
+    QCOMPARE(scannedNameIndexMismatch(model), QString{});
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    const int updatedRow = rowForName(model, QStringLiteral("entry-0"));
+    QVERIFY(updatedRow >= 0);
+    QCOMPARE(model.data(model.index(updatedRow), DirectoryListModel::SizeRole).toULongLong(),
+             static_cast<qulonglong>(fs::file_size(root / "entry-0")));
+}
 void DirectoryListModelTest::heldBackScanEntriesReachTheCompletedListing() {
     // A scan publishes on a growing interval, so the entries delivered after
     // its last publication are still held when the scan completes. Completion
@@ -454,7 +566,6 @@ void DirectoryListModelTest::heldBackScanEntriesReachTheCompletedListing() {
     QVERIFY(liveChecks > 0);
     QCOMPARE(liveMismatch, QString{});
 }
-
 void DirectoryListModelTest::republishedEntriesUpdateOneRowRatherThanAddingAnother() {
     // A publication merges the entries it holds into the scanned listing by
     // key. A key it already carries has to update that entry in place: a
@@ -507,7 +618,6 @@ void DirectoryListModelTest::republishedEntriesUpdateOneRowRatherThanAddingAnoth
     QCOMPARE(model.data(model.index(repeatedRow), DirectoryListModel::SizeRole).toULongLong(),
              expectedSize);
 }
-
 void DirectoryListModelTest::supersededScanDropsTheEntriesItHeldBack() {
     // Entries held back belong to the scan that delivered them. A scan that
     // supersedes it presents a different directory, and merging the held-back
@@ -548,7 +658,6 @@ void DirectoryListModelTest::supersededScanDropsTheEntriesItHeldBack() {
              QStringLiteral("winner.txt"));
     QCOMPARE(rowForName(model, QStringLiteral("stale.txt")), -1);
 }
-
 void DirectoryListModelTest::rowKeyIndexTracksEveryRowMutation() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -631,7 +740,6 @@ void DirectoryListModelTest::rowKeyIndexTracksEveryRowMutation() {
     QVERIFY(liveChecks > 0);
     QCOMPARE(liveMismatch, QString{});
 }
-
 void DirectoryListModelTest::duplicateResolvedKeysCompareAgainstTheFirstRow() {
     // A pending rename remap is the one way two presented rows can resolve to
     // a single key: the renamed row resolves to its new key while the row that
@@ -689,7 +797,6 @@ void DirectoryListModelTest::duplicateResolvedKeysCompareAgainstTheFirstRow() {
     QVERIFY(liveChecks > 0);
     QCOMPARE(liveMismatch, QString{});
 }
-
 void DirectoryListModelTest::rapidNavigationCancelsStaleBatches() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -713,7 +820,6 @@ void DirectoryListModelTest::rapidNavigationCancelsStaleBatches() {
     QCOMPARE(model.data(model.index(0), DirectoryListModel::NameRole).toString(),
              QStringLiteral("winner.txt"));
 }
-
 void DirectoryListModelTest::incrementalScannerPublishesBatches() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -738,7 +844,6 @@ void DirectoryListModelTest::incrementalScannerPublishesBatches() {
     QCOMPARE(model.rowCount(), entryCount);
     QCOMPARE(resetSpy.count(), 0);
 }
-
 void DirectoryListModelTest::watchAndPresentationUpdatesUseGranularSignals() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -836,7 +941,6 @@ void DirectoryListModelTest::watchAndPresentationUpdatesUseGranularSignals() {
     QVERIFY(layoutSpy.count() >= 2);
     QCOMPARE(resetSpy.count(), 0);
 }
-
 void DirectoryListModelTest::navigationHistorySurvivesIncrementalUpdates() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -867,7 +971,6 @@ void DirectoryListModelTest::navigationHistorySurvivesIncrementalUpdates() {
     QCOMPARE(rowForName(model, QStringLiteral("one.txt")) >= 0, true);
     QCOMPARE(resetSpy.count(), 0);
 }
-
 void DirectoryListModelTest::watcherBurstPreservesRenamedSelection() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -892,7 +995,6 @@ void DirectoryListModelTest::watcherBurstPreservesRenamedSelection() {
     QCOMPARE(model.selectedCount(), 1);
     QCOMPARE(selectedName(model), QStringLiteral("renamed.txt"));
 }
-
 void DirectoryListModelTest::hardLinksRemainDistinctAcrossRefreshAndRename() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -933,7 +1035,6 @@ void DirectoryListModelTest::hardLinksRemainDistinctAcrossRefreshAndRename() {
     QCOMPARE(selectedName(model), QStringLiteral("renamed.txt"));
     QCOMPARE(currentName(model), QStringLiteral("renamed.txt"));
 }
-
 void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -968,20 +1069,6 @@ void DirectoryListModelTest::uniqueInodeFallbackPreservesRename() {
     QCOMPARE(selectedName(model), QStringLiteral("final.txt"));
     QCOMPARE(currentName(model), QStringLiteral("final.txt"));
 }
-
-// Reconciliation follows an entry across a rename by matching identity, and it
-// only does so when the match is unambiguous. That guard counts occurrences,
-// so it cannot help when a genuinely different entry presents the identity a
-// departed one had: both sides count exactly one and the match looks clean.
-//
-// Btrfs produces exactly that. A subvolume root always carries inode 256, and
-// its device number is an anonymous one the kernel returns to a pool when the
-// subvolume goes away and reissues to the next subvolume created. Removing one
-// subvolume and creating another therefore reproduces the earlier pair. The
-// pair is injected here rather than driven through a real Btrfs mount, because
-// the aliasing is a property of the identity function and provoking it for
-// real needs both a Btrfs filesystem and the privilege to manipulate
-// subvolumes. Selection must be dropped, never moved onto the newcomer.
 void DirectoryListModelTest::recycledSubvolumeIdentityDoesNotMoveSelection() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -1030,13 +1117,6 @@ void DirectoryListModelTest::recycledSubvolumeIdentityDoesNotMoveSelection() {
     QCOMPARE(model.selectedCount(), 0);
     QCOMPARE(currentName(model), QString());
 }
-
-// The other half of the guard. Identity is deliberately shared by hard links,
-// because they are the same file, but they are separate entries a user selects
-// independently. When a departed entry's identity still matches more than one
-// entry, there is no single answer to "where did it go", so selection is
-// dropped rather than guessed. Without the uniqueness requirement the search
-// would simply take the first match and move selection onto the other name.
 void DirectoryListModelTest::ambiguousIdentityDoesNotMoveSelection() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -1076,13 +1156,6 @@ void DirectoryListModelTest::ambiguousIdentityDoesNotMoveSelection() {
     QCOMPARE(selectedName(model), QString());
     QCOMPARE(model.selectedCount(), 0);
 }
-
-// Reconciliation happens on two paths, and both have to reject a recycled
-// identity. The watcher path compares identities directly; a completed rescan
-// groups entries by a hashed spelling of the identity instead, because it
-// reconciles whole listings at once. A spelling that omitted any part of the
-// identity would collapse a recycled pair back onto the entry that held it,
-// which is why this exercise drives a full refresh rather than a watch update.
 void DirectoryListModelTest::recycledIdentityDoesNotMoveSelectionAcrossRefresh() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -1133,507 +1206,6 @@ void DirectoryListModelTest::recycledIdentityDoesNotMoveSelectionAcrossRefresh()
     QCOMPARE(selectedName(model), QString());
     QCOMPARE(model.selectedCount(), 0);
 }
-
-void DirectoryListModelTest::selectionSurvivesSortFilterAndRefresh() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    writeFile(root / "small.txt", "x");
-    writeFile(root / "large.txt", "xxxxxxxx");
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    const int selectedRow = rowForName(model, QStringLiteral("small.txt"));
-    QVERIFY(selectedRow >= 0);
-    model.selectRow(selectedRow, Qt::NoModifier);
-
-    model.setSortMode(DirectoryListModel::SortBySize);
-    QCOMPARE(selectedName(model), QStringLiteral("small.txt"));
-
-    model.setFilterText(QStringLiteral("large"));
-    QCOMPARE(model.selectedCount(), 0);
-    model.setFilterText({});
-    QCOMPARE(model.selectedCount(), 1);
-    QCOMPARE(selectedName(model), QStringLiteral("small.txt"));
-
-    model.refresh();
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.selectedCount(), 1);
-    QCOMPARE(selectedName(model), QStringLiteral("small.txt"));
-}
-
-void DirectoryListModelTest::explicitGeometricSelectionUsesRowSet() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    for (int row = 0; row < 5; ++row) {
-        writeFile(root / ("entry-" + std::to_string(row) + ".txt"),
-                  std::string(static_cast<std::size_t>(5 - row), 'x'));
-    }
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-
-    model.beginRubberBand(false);
-    model.updateRubberBandSelection(QVariantList{0, 2, 4, 4, -1, 99}, 2);
-    model.endRubberBand();
-    QCOMPARE(selectedNames(model),
-             QStringList({QStringLiteral("entry-0.txt"), QStringLiteral("entry-2.txt"),
-                          QStringLiteral("entry-4.txt")}));
-    QCOMPARE(model.currentIndex(), 2);
-
-    model.selectRow(0, Qt::NoModifier);
-    model.selectRow(4, Qt::ShiftModifier);
-    model.setSortMode(DirectoryListModel::SortBySize);
-    model.selectRow(rowForName(model, QStringLiteral("entry-1.txt")), Qt::ShiftModifier);
-    QCOMPARE(selectedNames(model),
-             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-0.txt")}));
-
-    model.setSortMode(DirectoryListModel::SortByName);
-    model.selectRow(1, Qt::NoModifier);
-    model.beginRubberBand(true);
-    model.updateRubberBandSelection(QVariantList{3}, 3);
-    model.endRubberBand();
-    QCOMPARE(selectedNames(model),
-             QStringList({QStringLiteral("entry-1.txt"), QStringLiteral("entry-3.txt")}));
-    QCOMPARE(model.currentIndex(), 3);
-
-    model.beginRubberBand(false);
-    model.updateRubberBandSelection({}, -1);
-    model.endRubberBand();
-    QCOMPARE(model.selectedCount(), 0);
-}
-
-void DirectoryListModelTest::cursorMovementAndPrefixSearchPreserveSelectionContracts() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    for (const std::string_view name :
-         {"alpha.txt", "Alpine.md", "beta.txt", "bravo.txt", "zulu.txt"}) {
-        writeFile(root / name);
-    }
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.rowCount(), 5);
-
-    model.selectRow(rowForName(model, QStringLiteral("beta.txt")), Qt::NoModifier);
-    QVERIFY(model.selectByPrefix(QStringLiteral("AL"), false));
-    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
-    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
-
-    QVERIFY(model.selectByPrefix(QStringLiteral("al"), true));
-    QCOMPARE(currentName(model), QStringLiteral("Alpine.md"));
-    QVERIFY(model.selectByPrefix(QStringLiteral("al"), true));
-    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
-
-    QVERIFY(!model.selectByPrefix(QStringLiteral("missing"), true));
-    QCOMPARE(currentName(model), QStringLiteral("alpha.txt"));
-    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
-
-    QVERIFY(model.selectByPrefix(QStringLiteral("br"), false));
-    QCOMPARE(currentName(model), QStringLiteral("bravo.txt"));
-    model.moveCursorTo(rowForName(model, QStringLiteral("zulu.txt")), false, true);
-    QCOMPARE(currentName(model), QStringLiteral("zulu.txt"));
-    QCOMPARE(selectedName(model), QStringLiteral("bravo.txt"));
-    model.moveCursorTo(rowForName(model, QStringLiteral("beta.txt")), true, false);
-    QCOMPARE(selectedNames(model),
-             QStringList({QStringLiteral("beta.txt"), QStringLiteral("bravo.txt")}));
-
-    model.moveCursorTo(rowForName(model, QStringLiteral("alpha.txt")), false, false);
-    model.moveCursor(1, false, true);
-    QCOMPARE(currentName(model), QStringLiteral("Alpine.md"));
-    QCOMPARE(selectedName(model), QStringLiteral("alpha.txt"));
-    model.moveCursorTo(rowForName(model, QStringLiteral("beta.txt")), true, false);
-    QCOMPARE(selectedNames(model),
-             QStringList({QStringLiteral("alpha.txt"), QStringLiteral("Alpine.md"),
-                          QStringLiteral("beta.txt")}));
-}
-
-void DirectoryListModelTest::sameParentCopyCreatesSiblingDuplicate() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path source = root / "source";
-    const fs::path document = source / "document.txt";
-    fs::create_directories(source);
-    writeFile(document);
-
-    DirectoryListModel model;
-    model.setPath(QString::fromStdString(source.string()));
-    QVERIFY(waitForScan(model));
-
-    const int documentRow = rowForName(model, QStringLiteral("document.txt"));
-    QVERIFY(documentRow >= 0);
-    model.selectRow(documentRow, Qt::NoModifier);
-    QVERIFY(model.canDropSelection(QString::fromStdString(source.string()), false));
-    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string()), true));
-    QVERIFY(model.dropSelection(QString::fromStdString(source.string()), false,
-                                DirectoryListModel::ConflictFail));
-    QVERIFY(waitForOperation(model));
-    QVERIFY(fs::exists(source / "document (2).txt"));
-}
-
-void DirectoryListModelTest::directDirectoryActivationNavigates() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path source = root / "source";
-    const fs::path folder = source / "folder";
-    fs::create_directories(folder);
-
-    DirectoryListModel model;
-    model.setPath(QString::fromStdString(source.string()));
-    QVERIFY(waitForScan(model));
-
-    const int folderRow = rowForName(model, QStringLiteral("folder"));
-    QVERIFY(folderRow >= 0);
-    model.activate(folderRow);
-    QVERIFY(waitForScan(model));
-    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
-}
-
-void DirectoryListModelTest::navigationInputResolvesTilde() {
-    QCOMPARE(DirectoryListModel::resolveNavigationInput(QStringLiteral("~")), QDir::homePath());
-    QCOMPARE(DirectoryListModel::resolveNavigationInput(QStringLiteral("~/synthetic")),
-             QDir::cleanPath(QDir::homePath() + QStringLiteral("/synthetic")));
-    QCOMPARE(DirectoryListModel::navigationCompletion(QStringLiteral("~"))
-                 .value(QStringLiteral("completed"))
-                 .toString(),
-             QStringLiteral("~/"));
-    QVERIFY(
-        DirectoryListModel::resolveNavigationInput(QStringLiteral("~someone/elsewhere")).isEmpty());
-}
-
-void DirectoryListModelTest::directPathInputValidatesDirectory() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path folder = root / "folder";
-    fs::create_directories(folder);
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QVERIFY(waitForScan(model));
-    QVERIFY(model.navigateFromInput(QString::fromStdString(folder.string())));
-    QVERIFY(waitForScan(model));
-    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
-    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Opened ")));
-}
-
-void DirectoryListModelTest::invalidDirectPathInputDoesNotNavigate() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path document = root / "document.txt";
-    writeFile(document);
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QVERIFY(waitForScan(model));
-    QVERIFY(!model.navigateFromInput(QStringLiteral("relative/path")));
-    QVERIFY(model.statusMessage().contains(QStringLiteral("absolute path")));
-    QVERIFY(!model.navigateFromInput(QString::fromStdString(document.string())));
-    QVERIFY(model.statusMessage().contains(QStringLiteral("reachable directory")));
-    QVERIFY(!model.navigateFromInput(QString::fromStdString((root / "missing").string())));
-    QCOMPARE(model.path(), fixture.path());
-}
-
-void DirectoryListModelTest::sharedPathCompletionFinishesTheNextSegmentPrefix() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    fs::create_directories(root / "profile");
-    fs::create_directories(root / "projects");
-    fs::create_directories(root / "prose");
-    fs::create_directories(root / ".private");
-    writeFile(root / "project-file.txt");
-
-    const QString prefix = fixture.path() + QStringLiteral("/pr");
-    const QVariantMap shared = DirectoryListModel::navigationCompletion(prefix);
-    QCOMPARE(shared.value(QStringLiteral("completed")).toString(),
-             fixture.path() + QStringLiteral("/pro"));
-    QCOMPARE(shared.value(QStringLiteral("suffix")).toString(), QStringLiteral("o"));
-    QCOMPARE(shared.value(QStringLiteral("candidates")).toStringList(),
-             QStringList(
-                 {QStringLiteral("profile"), QStringLiteral("projects"), QStringLiteral("prose")}));
-}
-
-void DirectoryListModelTest::uniquePathCompletionFinishesTheDirectoryName() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    fs::create_directories(root / "projects");
-    fs::create_directories(root / ".private");
-    writeFile(root / "project-file.txt");
-
-    const QString uniquePrefix = fixture.path() + QStringLiteral("/proj");
-    const QVariantMap unique = DirectoryListModel::navigationCompletion(uniquePrefix);
-    QCOMPARE(unique.value(QStringLiteral("completed")).toString(),
-             fixture.path() + QStringLiteral("/projects/"));
-    QCOMPARE(unique.value(QStringLiteral("suffix")).toString(), QStringLiteral("ects/"));
-    QCOMPARE(unique.value(QStringLiteral("candidates")).toStringList(),
-             QStringList{QStringLiteral("projects")});
-
-    const QVariantMap hidden =
-        DirectoryListModel::navigationCompletion(fixture.path() + QStringLiteral("/.p"));
-    QCOMPARE(hidden.value(QStringLiteral("completed")).toString(),
-             fixture.path() + QStringLiteral("/.private/"));
-    QVERIFY(DirectoryListModel::navigationCompletion(QStringLiteral("relative"))
-                .value(QStringLiteral("candidates"))
-                .toStringList()
-                .isEmpty());
-}
-
-void DirectoryListModelTest::activationBreadcrumbsAndDropContracts() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path source = root / "source space";
-    const fs::path destination = root / "destination";
-    const fs::path folder = source / "folder";
-    const fs::path descendant = folder / "descendant";
-    const fs::path folderLink = source / "folder-link";
-    const fs::path remoteTarget = destination / "faraway";
-    const fs::path remoteLink = source / "remote-link";
-    const fs::path document = source / "document.txt";
-    fs::create_directories(descendant);
-    fs::create_directories(remoteTarget);
-    writeFile(document);
-    writeFile(remoteTarget / "remote-document.txt");
-    std::error_code linkError;
-    fs::create_directory_symlink(folder, folderLink, linkError);
-    QVERIFY2(!linkError, linkError.message().c_str());
-    fs::create_directory_symlink(remoteTarget, remoteLink, linkError);
-    QVERIFY2(!linkError, linkError.message().c_str());
-
-    FakeEntryLauncher launcher;
-    DirectoryListModel model(launcher);
-    model.setPath(QString::fromStdString(source.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-
-    const QVariantList breadcrumbs = model.breadcrumbSegments();
-    QVERIFY(breadcrumbs.size() >= 2);
-    QCOMPARE(breadcrumbs.front().toMap().value(QStringLiteral("path")).toString(),
-             QStringLiteral("/"));
-    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("label")).toString(),
-             QStringLiteral("source space"));
-    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("path")).toString(),
-             QString::fromStdString(source.string()));
-    QCOMPARE(breadcrumbs.back().toMap().value(QStringLiteral("url")).toString(),
-             QUrl::fromLocalFile(QString::fromStdString(source.string())).toString());
-
-    const int documentRow = rowForName(model, QStringLiteral("document.txt"));
-    QVERIFY(documentRow >= 0);
-    model.selectRow(documentRow, Qt::NoModifier);
-    QVERIFY(model.rowSelected(documentRow));
-    QVERIFY(!model.rowIsDirectory(documentRow));
-    QCOMPARE(model.selectedFileUrls(),
-             QStringList{QUrl::fromLocalFile(QString::fromStdString(document.string()))
-                             .toString(QUrl::FullyEncoded)});
-    QSignalSpy openSpy(&model, &DirectoryListModel::openRequested);
-    model.activateCurrent();
-    QCOMPARE(launcher.callCount, 1);
-    QCOMPARE(launcher.openedPath, document);
-    QCOMPARE(openSpy.count(), 1);
-    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Opened ")));
-
-    launcher.fail = true;
-    model.activate(documentRow);
-    QCOMPARE(launcher.callCount, 2);
-    QCOMPARE(openSpy.count(), 2);
-    QVERIFY(model.statusMessage().startsWith(QStringLiteral("Could not open ")));
-
-    QVERIFY(model.canDropSelection(QString::fromStdString(destination.string()), false));
-    QVERIFY(model.dropSelection(QString::fromStdString(destination.string()), false,
-                                DirectoryListModel::ConflictFail));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(fs::exists(destination / "document.txt"));
-
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder-link")) >= 0, 5000);
-    const int remoteLinkRow = rowForName(model, QStringLiteral("remote-link"));
-    QVERIFY(remoteLinkRow >= 0);
-    model.selectRow(remoteLinkRow, Qt::NoModifier);
-    QVERIFY(model.canDropSelection(QString::fromStdString(source.string()), false));
-    QVERIFY(!model.canDropSelection(QString::fromStdString(source.string()), true));
-
-    const int folderLinkRow = rowForName(model, QStringLiteral("folder-link"));
-    QVERIFY(model.rowIsDirectory(folderLinkRow));
-    QVERIFY(model.data(model.index(folderLinkRow), DirectoryListModel::IsDirRole).toBool());
-    model.selectRow(documentRow, Qt::NoModifier);
-    QVERIFY(model.canDropSelection(QString::fromStdString(folderLink.string()), false));
-    model.activate(folderLinkRow);
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.path(), QString::fromStdString(folderLink.string()));
-    QCOMPARE(launcher.callCount, 2);
-
-    model.navigateToPath(QString::fromStdString(source.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("folder")) >= 0, 5000);
-    const int folderRow = rowForName(model, QStringLiteral("folder"));
-    QVERIFY(model.rowIsDirectory(folderRow));
-    model.selectRow(folderRow, Qt::NoModifier);
-    QVERIFY(!model.canDropSelection(QString::fromStdString(folder.string()), false));
-    QVERIFY(!model.canDropSelection(QString::fromStdString(descendant.string()), false));
-    QVERIFY(!model.dropSelection(QString::fromStdString(descendant.string()), true,
-                                 DirectoryListModel::ConflictFail));
-    QVERIFY(model.statusMessage().contains(QStringLiteral("cannot be transferred")));
-
-    model.navigateToPath(QString::fromStdString(folder.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.path(), QString::fromStdString(folder.string()));
-    QCOMPARE(launcher.callCount, 2);
-
-    model.navigateToPath(QString::fromStdString(remoteTarget.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    const int remoteDocumentRow = rowForName(model, QStringLiteral("remote-document.txt"));
-    QVERIFY(remoteDocumentRow >= 0);
-    model.selectRow(remoteDocumentRow, Qt::NoModifier);
-    QVERIFY(model.canDropSelection(QString::fromStdString(remoteLink.string()), false));
-    QVERIFY(!model.canDropSelection(QString::fromStdString(remoteLink.string()), true));
-}
-
-void DirectoryListModelTest::symlinkTargetDirectoryChangesRefreshRole() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path link = root / "changing-link";
-    std::error_code linkError;
-    fs::create_symlink(root / "missing-target", link, linkError);
-    QVERIFY2(!linkError, linkError.message().c_str());
-
-    DirectoryListModel model;
-    model.setPath(fixture.path());
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    model.watchService_.stop();
-
-    const int linkRow = rowForName(model, QStringLiteral("changing-link"));
-    QVERIFY(linkRow >= 0);
-    QVERIFY(!model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
-    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsSymlinkRole).toBool());
-
-    const auto scannedLink = std::ranges::find(model.scannedEntries_, std::string{"changing-link"},
-                                               &odysea::core::Entry::name);
-    QVERIFY(scannedLink != model.scannedEntries_.end());
-    odysea::core::Entry updated = *scannedLink;
-    updated.target_is_directory = true;
-
-    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
-    model.applyWatchUpdate(DirectoryWatchUpdate{.token = model.watchToken_,
-                                                .directory = root,
-                                                .removedNames = {},
-                                                .updatedEntries = {std::move(updated)},
-                                                .renamedEntries = {},
-                                                .error = {},
-                                                .rescanRequired = false});
-
-    QCOMPARE(changedSpy.count(), 1);
-    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsDirRole).toBool());
-    QVERIFY(model.data(model.index(linkRow), DirectoryListModel::IsSymlinkRole).toBool());
-}
-
-void DirectoryListModelTest::operationsReachCoreAndReportFailures() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path source = root / "source";
-    const fs::path destination = root / "destination";
-    const fs::path dataHome = root / "data";
-    fs::create_directories(source);
-    fs::create_directories(destination);
-    fs::create_directories(dataHome);
-    writeFile(source / "copy.txt");
-    writeFile(source / "move.txt");
-    writeFile(source / "rename.txt");
-    writeFile(source / "trash.txt");
-
-    EnvironmentRestore restoreDataHome("XDG_DATA_HOME");
-    EnvironmentRestore restoreHome("HOME");
-    qputenv("XDG_DATA_HOME", QByteArray::fromStdString(dataHome.string()));
-    qunsetenv("HOME");
-
-    DirectoryListModel model;
-    model.setPath(QString::fromStdString(source.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-
-    model.selectRow(rowForName(model, QStringLiteral("copy.txt")), Qt::NoModifier);
-    model.performCopy(QString::fromStdString(destination.string()),
-                      DirectoryListModel::ConflictFail);
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(fs::exists(destination / "copy.txt"));
-    QVERIFY(model.operationErrorString().isEmpty());
-
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("move.txt")) >= 0, 5000);
-    model.selectRow(rowForName(model, QStringLiteral("move.txt")), Qt::NoModifier);
-    model.performMove(QString::fromStdString(destination.string()),
-                      DirectoryListModel::ConflictFail);
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(!fs::exists(source / "move.txt"));
-    QVERIFY(fs::exists(destination / "move.txt"));
-
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("rename.txt")) >= 0, 5000);
-    model.selectRow(rowForName(model, QStringLiteral("rename.txt")), Qt::NoModifier);
-    model.performRename(QStringLiteral("renamed.txt"), DirectoryListModel::ConflictFail);
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(fs::exists(source / "renamed.txt"));
-
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("trash.txt")) >= 0, 5000);
-    model.selectRow(rowForName(model, QStringLiteral("trash.txt")), Qt::NoModifier);
-    model.performTrash();
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(!fs::exists(source / "trash.txt"));
-    QVERIFY(fs::exists(dataHome / "Trash" / "files" / "trash.txt"));
-
-    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, QStringLiteral("renamed.txt")) >= 0, 5000);
-    model.selectRow(rowForName(model, QStringLiteral("renamed.txt")), Qt::NoModifier);
-    model.performCopy(QString::fromStdString((root / "missing").string()),
-                      DirectoryListModel::ConflictFail);
-    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
-    QVERIFY(!model.operationErrorString().isEmpty());
-}
-
-void DirectoryListModelTest::retainedRecoveryRemainsVisibleDuringOperation() {
-    QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
-    const fs::path root = fixture.path().toStdString();
-    const fs::path source = root / "source" / "project";
-    const fs::path target = root / "target";
-    fs::create_directories(source);
-    fs::create_directories(target / "project");
-    writeFile(source / "kept.txt", "only copy");
-    writeFile(target / "project" / "existing.txt", "existing");
-
-    const odysea::core::OperationOutcome outcome = odysea::core::detail::move_into_using(
-        source, target, {.conflict = odysea::core::ConflictPolicy::Overwrite},
-        failInstallAndUnwind());
-    QVERIFY(!outcome.succeeded());
-    QVERIFY(!fs::exists(source));
-    const fs::path retained = workingEntry(target, odysea::core::WorkingEntryRole::Prepared);
-    QVERIFY(!retained.empty());
-    QCOMPARE(QString::fromStdString(readFile(retained / "kept.txt")), QStringLiteral("only copy"));
-
-    DirectoryListModel model;
-    model.setPath(QString::fromStdString(target.string()));
-    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
-    QCOMPARE(model.rowCount(), 1);
-
-    model.setShowHidden(true);
-    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 2, 1000);
-    const int retainedRow = rowForName(model, QString::fromStdString(retained.filename().string()));
-    QVERIFY(retainedRow >= 0);
-    QCOMPARE(model.data(model.index(retainedRow), DirectoryListModel::RecoveryEntryRole).toBool(),
-             true);
-
-    model.setOperationBusy(true);
-    model.applyPresentationSettings();
-    QCOMPARE(model.rowCount(), 2);
-    QVERIFY(rowForName(model, QString::fromStdString(retained.filename().string())) >= 0);
-    QVERIFY(fs::exists(retained / "kept.txt"));
-}
-
 void DirectoryListModelTest::overflowRequestsARescan() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
@@ -1654,7 +1226,6 @@ void DirectoryListModelTest::overflowRequestsARescan() {
     QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
     QVERIFY(rowForName(model, QStringLiteral("after-overflow.txt")) >= 0);
 }
-
 void DirectoryListModelTest::destructionDropsQueuedWorkerCallbacks() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());

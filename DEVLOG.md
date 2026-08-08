@@ -17,6 +17,84 @@ the archive.
 
 ---
 
+## 2026-08-08 -- The scanned listing carries its own name index
+
+A folder-watch delivery no longer searches the scanned listing once per name
+it carries. Renames, removals, and updates each ran a linear search over the
+whole listing per delivered name, and the update search rebuilt every
+candidate's key inside the comparison, so a burst cost the product of its size
+and the directory's. Identity matching for a departed entry counted the whole
+listing per removed name on top of that.
+
+The listing now carries a name index maintained only by the three functions
+that may change it, mirroring the discipline the presented rows already
+follow. Entries are indexed by name rather than by key: every entry in a
+listing has the scanned directory as its parent, and a delivery is discarded
+unless it describes that same directory, so an entry's key is its name
+prefixed by a path both sides have already agreed on. Matching on the key and
+matching on the name therefore select the same entry, which is what lets one
+index answer a search that previously tested both, and the name costs neither
+a path normalization nor a string allocation to probe. That premise is
+asserted directly rather than assumed: every scanned entry's key is checked
+against its name under the scanned directory, and the listing is checked to
+hold one entry per name.
+
+The delivery itself is indexed once as well, since a burst can carry as many
+entries as the directory holds. Identity counts over both collections replace
+the per-name linear counts; the spelling they use carries every field the core
+identity compares, and the fields it omits when creation time is unknown are
+never written in that case, so two entries share a spelling exactly when the
+core calls them one entry.
+
+Measured on a delivery of 400 changed names against an 800-entry directory:
+241,400 key constructions before, 800 after, which is the presented row count
+and nothing more. The same instrument bounds it in the suite, at a ceiling of
+four per entry the update could legitimately have to key. Loading also
+benefits, because the scan path merges through the same index: key
+construction over a load and a refresh fell from 25.9 per entry to 15.4.
+
+The presented row index cannot serve this purpose and was not reused. It
+describes the rows on screen, and the listing differs from them by exactly the
+hidden and filtered entries, so answering a watch delivery from it would make
+removals and updates of withheld entries invisible. A case pins that
+difference by removing a hidden entry through a watch burst.
+
+Ten planted defects were rejected by the suites, keyed on exit status: a name
+index left stale after a removal renumbers the listing, a merge that appends
+instead of replacing, a listing replaced without its index, a rename resolved
+against the wrong collection, a departed entry followed without a unique match
+on the delivered side, a departed entry keeping its selection, its cursor, its
+range anchor, or its rubber-band membership, and unknown identities counted so
+that two of them match each other.
+
+Three planted defects survived, and each is recorded rather than papered over.
+Holding the last row of a repeated name instead of the first cannot be
+observed, because the listing holds one entry per name and that is now
+asserted. Erasing a remapped name from the listing cannot be observed, because
+the remap has already moved the entry's keyed state before the removal pass
+runs, which makes that guard a redundant second defence. Counting unknown
+identities in only one collection cannot be observed, because the decision
+requires a unique match in both and an early return rejects an unknown
+identity before either count is read; removing all three defences together
+does fail.
+
+The cases these two changes added carried the model's suite past the
+2,000-line ceiling for a tracked file, so it is split here by responsibility
+rather than by size. One half covers how a listing is acquired and kept
+consistent: scanning, publication, folder-watch deliveries, entry identity,
+and the derived indexes. The other covers what the model does when a person
+drives it: selection and cursor contracts, direct path entry and completion,
+activation and breadcrumbs, drop acceptance, and filesystem operations. Both
+halves build the same kinds of fixture, so the fixture builders moved into a
+shared header instead of being duplicated or arbitrarily owned by one side.
+The suites run as two checks rather than one, and every case moved verbatim.
+
+The warning-clean release build passed all 47 checks, including scoped static
+analysis and both real-display RHI entries. A fresh ASan/UBSan build passed
+all 46 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
 ## 2026-08-08 -- Directory loads publish on a growing interval
 
 Loading a directory no longer costs the square of its entry count. Merging a

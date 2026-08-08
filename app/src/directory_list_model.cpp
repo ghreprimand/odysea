@@ -650,6 +650,52 @@ int DirectoryListModel::rowForEntryKey(const QString& key) const {
     return entryRowsByKey_.value(key, -1);
 }
 
+void DirectoryListModel::setScannedEntries(std::vector<odysea::core::Entry> entries) {
+    scannedEntries_ = std::move(entries);
+    rebuildScannedRowIndex();
+}
+
+void DirectoryListModel::mergeScannedEntry(odysea::core::Entry entry) {
+    const QString name = QString::fromStdString(entry.name);
+    const auto existing = scannedRowsByName_.constFind(name);
+    if (existing == scannedRowsByName_.constEnd()) {
+        scannedRowsByName_.insert(name, scannedEntries_.size());
+        scannedEntries_.push_back(std::move(entry));
+        return;
+    }
+    // A name already in the listing describes the same entry seen again, so
+    // the later reading replaces the earlier one. Appending instead would
+    // present the entry twice for as long as the listing stood.
+    scannedEntries_.at(existing.value()) = std::move(entry);
+}
+
+void DirectoryListModel::eraseScannedEntries(const QSet<QString>& names) {
+    if (names.isEmpty()) {
+        return;
+    }
+    // One pass over the listing for the whole removal set, rather than one
+    // pass per removed name. Removing renumbers every later row, so the index
+    // is rebuilt once afterwards rather than repaired per removal.
+    const std::size_t before = scannedEntries_.size();
+    std::erase_if(scannedEntries_, [&names](const odysea::core::Entry& entry) {
+        return names.contains(QString::fromStdString(entry.name));
+    });
+    if (scannedEntries_.size() != before) {
+        rebuildScannedRowIndex();
+    }
+}
+
+void DirectoryListModel::rebuildScannedRowIndex() {
+    scannedRowsByName_.clear();
+    scannedRowsByName_.reserve(static_cast<qsizetype>(scannedEntries_.size()));
+    for (std::size_t row = 0; row < scannedEntries_.size(); ++row) {
+        const QString name = QString::fromStdString(scannedEntries_.at(row).name);
+        if (!scannedRowsByName_.contains(name)) {
+            scannedRowsByName_.insert(name, row);
+        }
+    }
+}
+
 void DirectoryListModel::setEntryRows(std::vector<odysea::core::Entry> entries,
                                       std::vector<QString> keys) {
     entries_ = std::move(entries);

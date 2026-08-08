@@ -178,7 +178,11 @@ class DirectoryListModel : public QAbstractListModel {
     void filesystemOperationRequested(const QString& operation, const QStringList& paths);
 
   private:
+    // The model's cases are split by responsibility: how a listing is
+    // acquired and kept consistent, and what a person does with the rows once
+    // it is. Both halves reach internal state that has no public spelling.
     friend class DirectoryListModelTest;
+    friend class DirectoryListModelInteractionTest;
 
     struct TabState {
         QString path;
@@ -219,6 +223,22 @@ class DirectoryListModel : public QAbstractListModel {
     // The only three ways the presented rows may change. Each keeps the row
     // keys and the key index in step with the entries, so no caller can leave
     // a stale key behind a live row.
+    // The only three ways the scanned listing may change. Each keeps the name
+    // index in step with the entries, so no caller can leave a stale row
+    // behind a live entry.
+    //
+    // The listing is indexed by name rather than by key. Every entry in it has
+    // the scanned directory as its parent, and a watch delivery is discarded
+    // unless it describes that same directory, so an entry's key is its name
+    // prefixed by a path both sides have already agreed on. Matching on the
+    // key and matching on the name therefore select the same entry, and the
+    // name costs neither a path normalization nor a string allocation to
+    // probe.
+    void setScannedEntries(std::vector<odysea::core::Entry> entries);
+    void mergeScannedEntry(odysea::core::Entry entry);
+    void eraseScannedEntries(const QSet<QString>& names);
+    void rebuildScannedRowIndex();
+
     void setEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
     void eraseEntryRows(int first, int last);
     void appendEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
@@ -259,6 +279,9 @@ class DirectoryListModel : public QAbstractListModel {
     QString currentEntryKey_;
     QString scannedPath_;
     std::vector<odysea::core::Entry> scannedEntries_;
+    // The row each name occupies in the scanned listing. Derived from
+    // scannedEntries_ and maintained only by the mutators above.
+    QHash<QString, std::size_t> scannedRowsByName_;
     std::vector<odysea::core::Entry> scanBaselineEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     // Delivered entries a scan has not published yet. They are held here, not

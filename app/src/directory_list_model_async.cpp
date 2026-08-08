@@ -66,7 +66,7 @@ void DirectoryListModel::startScan() {
         scanner_.cancel();
         watchService_.replace({}, ++watchToken_);
         scannedPath_.clear();
-        scannedEntries_.clear();
+        setScannedEntries({});
         scanBaselineEntries_.clear();
         scanEntries_.clear();
         applyPresentationSettings(true);
@@ -76,7 +76,7 @@ void DirectoryListModel::startScan() {
 
     if (scannedPath_ != path_) {
         scannedPath_ = path_;
-        scannedEntries_.clear();
+        setScannedEntries({});
         applyPresentationSettings();
     }
     scanBaselineEntries_ = scannedEntries_;
@@ -152,28 +152,8 @@ void DirectoryListModel::drainPendingScanEntries() {
     if (pendingScanEntries_.empty()) {
         return;
     }
-    // One key index per drain rather than a linear rescan per delivered
-    // entry. The previous search rebuilt every candidate's key on every
-    // comparison, which made a scan quadratic in the directory size on its
-    // own. First occurrence wins, matching the search it replaces.
-    QHash<QString, std::size_t> scannedRows;
-    scannedRows.reserve(static_cast<qsizetype>(scannedEntries_.size()));
-    for (std::size_t row = 0; row < scannedEntries_.size(); ++row) {
-        const QString key = entryKey(scannedEntries_.at(row));
-        if (!scannedRows.contains(key)) {
-            scannedRows.insert(key, row);
-        }
-    }
-
     for (odysea::core::Entry& entry : pendingScanEntries_) {
-        const QString key = entryKey(entry);
-        const auto existing = scannedRows.constFind(key);
-        if (existing == scannedRows.constEnd()) {
-            scannedRows.insert(key, scannedEntries_.size());
-            scannedEntries_.push_back(entry);
-        } else {
-            scannedEntries_.at(existing.value()) = entry;
-        }
+        mergeScannedEntry(entry);
         scanEntries_.push_back(std::move(entry));
     }
     pendingScanEntries_.clear();
@@ -231,7 +211,7 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
         }
     }
 
-    scannedEntries_ = std::move(scanEntries_);
+    setScannedEntries(std::move(scanEntries_));
     scanBaselineEntries_.clear();
     setErrorString(summary.error ? QString::fromStdString(summary.error.message()) : QString{});
     applyPresentationSettings(true);
@@ -279,86 +259,106 @@ void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
         return;
     }
 
-    QSet<QString> remappedOldKeys;
-    const auto remapKey = [this, &remappedOldKeys](const odysea::core::Entry& oldEntry,
+    // Indexes over the delivered burst, built once. A burst can carry as many
+    // entries as the directory holds, so probing it once per delivered name
+    // would be quadratic in the burst rather than in the listing.
+    QHash<QString, std::size_t> deliveredRowsByName;
+    deliveredRowsByName.reserve(static_cast<qsizetype>(update.updatedEntries.size()));
+    // Identity counts stand in for a linear count over each collection. The
+    // spelling carries every field the core identity compares, and the fields
+    // it omits when creation time is unknown are never written in that case,
+    // so two entries share a spelling exactly when the core calls them one
+    // entry. An unknown identity spells to nothing and is left out, which is
+    // the same rule the core applies.
+    QHash<QString, int> deliveredIdentityCounts;
+    QHash<QString, std::size_t> deliveredRowsByIdentity;
+    for (std::size_t row = 0; row < update.updatedEntries.size(); ++row) {
+        const odysea::core::Entry& delivered = update.updatedEntries.at(row);
+        const QString name = QString::fromStdString(delivered.name);
+        if (!deliveredRowsByName.contains(name)) {
+            deliveredRowsByName.insert(name, row);
+        }
+        const QString identity = entryIdentity(delivered);
+        if (!identity.isEmpty()) {
+            ++deliveredIdentityCounts[identity];
+            deliveredRowsByIdentity.insert(identity, row);
+        }
+    }
+    QHash<QString, int> scannedIdentityCounts;
+    for (const odysea::core::Entry& scanned : scannedEntries_) {
+        const QString identity = entryIdentity(scanned);
+        if (!identity.isEmpty()) {
+            ++scannedIdentityCounts[identity];
+        }
+    }
+
+    QSet<QString> remappedNames;
+    const auto remapEntry = [this, &remappedNames](const odysea::core::Entry& oldEntry,
                                                    const odysea::core::Entry& newEntry) {
-        const QString oldKey = entryKey(oldEntry);
-        const QString newKey = entryKey(newEntry);
-        remappedOldKeys.insert(oldKey);
-        remapEntryKey(oldKey, newKey);
+        remappedNames.insert(QString::fromStdString(oldEntry.name));
+        remapEntryKey(entryKey(oldEntry), entryKey(newEntry));
     };
 
     for (const DirectoryEntryRename& rename : update.renamedEntries) {
-        const auto oldEntry =
-            std::ranges::find(scannedEntries_, rename.oldName, &odysea::core::Entry::name);
-        const auto newEntry =
-            std::ranges::find(update.updatedEntries, rename.newName, &odysea::core::Entry::name);
-        if (oldEntry != scannedEntries_.end() && newEntry != update.updatedEntries.end()) {
-            remapKey(*oldEntry, *newEntry);
+        const auto oldRow = scannedRowsByName_.constFind(QString::fromStdString(rename.oldName));
+        const auto newRow = deliveredRowsByName.constFind(QString::fromStdString(rename.newName));
+        if (oldRow != scannedRowsByName_.constEnd() && newRow != deliveredRowsByName.constEnd()) {
+            remapEntry(scannedEntries_.at(oldRow.value()),
+                       update.updatedEntries.at(newRow.value()));
         }
     }
 
     for (const std::string& removedName : update.removedNames) {
-        const auto oldEntry =
-            std::ranges::find(scannedEntries_, removedName, &odysea::core::Entry::name);
-        if (oldEntry == scannedEntries_.end() || remappedOldKeys.contains(entryKey(*oldEntry))) {
+        const QString name = QString::fromStdString(removedName);
+        const auto oldRow = scannedRowsByName_.constFind(name);
+        if (oldRow == scannedRowsByName_.constEnd() || remappedNames.contains(name)) {
             continue;
         }
 
         // Follow a departed entry to its new name only when the identity picks
-        // out exactly one entry on each side. Counting and matching both go
-        // through the core, so the rule that an unknown identity matches
-        // nothing is stated once rather than restated per call site.
+        // out exactly one entry on each side. An unknown identity matches
+        // nothing, which is why it is absent from both counts rather than
+        // counted as zero matches.
         //
-        // Requiring exactly one match on the updated side is also what makes
-        // the search below safe to dereference. Relaxing either count to allow
-        // more than one would leave the search able to return the end
-        // iterator.
-        const odysea::core::EntryIdentity& identity = oldEntry->identity;
-        if (!identity.known()) {
+        // Requiring exactly one match on the delivered side is also what makes
+        // the lookup below safe: a unique count is what guarantees the row it
+        // returns is the only entry that identity could mean.
+        const QString identity = entryIdentity(scannedEntries_.at(oldRow.value()));
+        if (identity.isEmpty()) {
             continue;
         }
-        if (odysea::core::count_identity(scannedEntries_, identity) == 1 &&
-            odysea::core::count_identity(update.updatedEntries, identity) == 1) {
-            const auto newEntry =
-                std::ranges::find_if(update.updatedEntries, [&identity](const auto& entry) {
-                    return odysea::core::same_identity(entry.identity, identity);
-                });
-            remapKey(*oldEntry, *newEntry);
+        if (scannedIdentityCounts.value(identity) == 1 &&
+            deliveredIdentityCounts.value(identity) == 1) {
+            remapEntry(scannedEntries_.at(oldRow.value()),
+                       update.updatedEntries.at(deliveredRowsByIdentity.value(identity)));
         }
     }
 
+    QSet<QString> departedNames;
+    departedNames.reserve(static_cast<qsizetype>(update.removedNames.size()));
     for (const std::string& removedName : update.removedNames) {
-        std::erase_if(scannedEntries_, [this, &removedName, &remappedOldKeys](const auto& entry) {
-            if (entry.name != removedName) {
-                return false;
-            }
-            const QString key = entryKey(entry);
-            if (!remappedOldKeys.contains(key)) {
-                selectedEntryKeys_.remove(key);
-                if (currentEntryKey_ == key) {
-                    currentEntryKey_.clear();
-                }
-                if (selectionAnchorKey_ == key) {
-                    selectionAnchorKey_.clear();
-                }
-                rubberBandBaseKeys_.remove(key);
-            }
-            return true;
-        });
+        const QString name = QString::fromStdString(removedName);
+        departedNames.insert(name);
+        const auto row = scannedRowsByName_.constFind(name);
+        if (row == scannedRowsByName_.constEnd() || remappedNames.contains(name)) {
+            continue;
+        }
+        // A departed entry that was not followed to a new name takes its
+        // selection, cursor, anchor, and rubber-band membership with it.
+        const QString key = entryKey(scannedEntries_.at(row.value()));
+        selectedEntryKeys_.remove(key);
+        if (currentEntryKey_ == key) {
+            currentEntryKey_.clear();
+        }
+        if (selectionAnchorKey_ == key) {
+            selectionAnchorKey_.clear();
+        }
+        rubberBandBaseKeys_.remove(key);
     }
+    eraseScannedEntries(departedNames);
 
     for (odysea::core::Entry& updated : update.updatedEntries) {
-        const QString key = entryKey(updated);
-        const auto existing =
-            std::ranges::find_if(scannedEntries_, [this, &updated, &key](const auto& entry) {
-                return entryKey(entry) == key || entry.name == updated.name;
-            });
-        if (existing == scannedEntries_.end()) {
-            scannedEntries_.push_back(std::move(updated));
-        } else {
-            *existing = std::move(updated);
-        }
+        mergeScannedEntry(std::move(updated));
     }
 
     applyPresentationSettings();
