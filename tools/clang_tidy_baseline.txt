@@ -6,10 +6,10 @@
 3	app/src/directory_list_model_async.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
 1	app/src/directory_list_model_async.cpp	performance-unnecessary-value-param
 1	app/src/directory_list_model_async.cpp	readability-function-cognitive-complexity
-30	app/src/directory_list_model.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
-6	app/src/directory_list_model.cpp	modernize-use-integer-sign-comparison
+13	app/src/directory_list_model.cpp	cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+4	app/src/directory_list_model.cpp	modernize-use-integer-sign-comparison
 1	app/src/directory_list_model.cpp	performance-unnecessary-value-param
-3	app/src/directory_list_model.cpp	readability-convert-member-functions-to-static
+2	app/src/directory_list_model.cpp	readability-convert-member-functions-to-static
 1	app/src/directory_list_model.cpp	readability-function-cognitive-complexity
 1	app/src/directory_list_model.hpp	cppcoreguidelines-special-member-functions
 3	app/src/directory_list_model.hpp	cppcoreguidelines-use-enum-class
@@ -37,7 +37,7 @@
 1	app/src/thumbnail_image_provider.cpp	performance-move-const-arg
 1	app/src/thumbnail_image_provider.cpp	performance-unnecessary-value-param
 1	app/tests/tst_directory_list_model.cpp	cppcoreguidelines-special-member-functions
-19	app/tests/tst_directory_list_model.cpp	readability-function-cognitive-complexity
+22	app/tests/tst_directory_list_model.cpp	readability-function-cognitive-complexity
 2	app/tests/tst_shell_entry_interactions.cpp	readability-function-cognitive-complexity
 7	app/tests/tst_shell_loader.cpp	readability-function-cognitive-complexity
 2	app/tests/tst_shell_thumbnail_render.cpp	readability-function-cognitive-complexity

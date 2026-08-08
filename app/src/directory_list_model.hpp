@@ -199,6 +199,7 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QStringList selectedPaths() const;
     [[nodiscard]] QString entryKey(const odysea::core::Entry& entry) const;
     [[nodiscard]] QString entryIdentity(const odysea::core::Entry& entry) const;
+    [[nodiscard]] QString keyForRow(int row) const;
     [[nodiscard]] int rowForEntryKey(const QString& key) const;
     [[nodiscard]] std::optional<odysea::core::ThumbnailKey>
     thumbnailKeyForEntry(const odysea::core::Entry& entry) const;
@@ -212,6 +213,14 @@ class DirectoryListModel : public QAbstractListModel {
     void applyWatchUpdate(DirectoryWatchUpdate update);
     void replaceWatch();
     void applyPresentationSettings(bool finalScanBatch = false);
+
+    // The only three ways the presented rows may change. Each keeps the row
+    // keys and the key index in step with the entries, so no caller can leave
+    // a stale key behind a live row.
+    void setEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
+    void eraseEntryRows(int first, int last);
+    void appendEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
+    void rebuildEntryRowIndex();
     void setBusy(bool busy);
     void setErrorString(const QString& errorString);
     void setStatusMessage(const QString& statusMessage);
@@ -251,6 +260,16 @@ class DirectoryListModel : public QAbstractListModel {
     std::vector<odysea::core::Entry> scanBaselineEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
     std::vector<odysea::core::Entry> entries_;
+    // Row keys, parallel to entries_, plus the first row each key occupies.
+    // Both are derived from entries_ and exist so a key is built once per
+    // presented entry per update rather than once per comparison.
+    std::vector<QString> entryKeys_;
+    QHash<QString, int> entryRowsByKey_;
+    // Counts key constructions. Reconciliation cost is dominated by how many
+    // of these an update performs, and a count is a machine-independent way to
+    // hold that shape: wall clock alone cannot separate a regression from a
+    // loaded machine.
+    mutable std::uint64_t entryKeyBuilds_ = 0;
     QSet<int> selectedRows_;
     QSet<QString> selectedEntryKeys_;
     QHash<QString, QString> pendingEntryKeyRemaps_;

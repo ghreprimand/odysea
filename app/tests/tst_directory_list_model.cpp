@@ -6,11 +6,14 @@
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QPersistentModelIndex>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThreadPool>
+#include <QTimer>
 #include <QUrl>
 
 #include <algorithm>
@@ -49,6 +52,26 @@ bool waitForScan(DirectoryListModel& model) {
     }
     QSignalSpy finished(&model, &DirectoryListModel::busyChanged);
     return finished.wait(5000) && !model.busy();
+}
+
+// Waits without the polling step a QTRY macro imposes, so a measured load
+// reports the work it did rather than the next poll boundary.
+bool waitForIdleWithin(DirectoryListModel& model, qint64 timeoutMilliseconds) {
+    if (!model.busy()) {
+        return true;
+    }
+    QEventLoop loop;
+    QTimer guard;
+    guard.setSingleShot(true);
+    QObject::connect(&model, &DirectoryListModel::busyChanged, &loop, [&model, &loop] {
+        if (!model.busy()) {
+            loop.quit();
+        }
+    });
+    QObject::connect(&guard, &QTimer::timeout, &loop, &QEventLoop::quit);
+    guard.start(static_cast<int>(timeoutMilliseconds));
+    loop.exec();
+    return !model.busy();
 }
 
 bool waitForOperation(DirectoryListModel& model) {
@@ -158,6 +181,11 @@ class FakeEntryLauncher final : public EntryLauncher {
 class DirectoryListModelTest : public QObject {
     Q_OBJECT
 
+    // Empty when the row keys and the key index agree with the entries they
+    // are derived from; otherwise the first disagreement, so a failure names
+    // the row rather than only the count.
+    static QString rowKeyIndexMismatch(const DirectoryListModel& model);
+
   private slots:
     void rapidNavigationCancelsStaleBatches();
     void incrementalScannerPublishesBatches();
@@ -185,7 +213,268 @@ class DirectoryListModelTest : public QObject {
     void retainedRecoveryRemainsVisibleDuringOperation();
     void overflowRequestsARescan();
     void destructionDropsQueuedWorkerCallbacks();
+    void largeDirectoryLoadStaysWithinBudget();
+    void rowKeyIndexTracksEveryRowMutation();
+    void duplicateResolvedKeysCompareAgainstTheFirstRow();
 };
+
+QString DirectoryListModelTest::rowKeyIndexMismatch(const DirectoryListModel& model) {
+    if (model.entryKeys_.size() != model.entries_.size()) {
+        return QStringLiteral("key count %1 does not match row count %2")
+            .arg(model.entryKeys_.size())
+            .arg(model.entries_.size());
+    }
+
+    QHash<QString, int> expectedRows;
+    for (std::size_t row = 0; row < model.entryKeys_.size(); ++row) {
+        const QString expected = model.entryKey(model.entries_.at(row));
+        if (model.entryKeys_.at(row) != expected) {
+            return QStringLiteral("row %1 key %2 does not match entry key %3")
+                .arg(row)
+                .arg(model.entryKeys_.at(row), expected);
+        }
+        if (!expectedRows.contains(expected)) {
+            expectedRows.insert(expected, static_cast<int>(row));
+        }
+    }
+    if (model.entryRowsByKey_ != expectedRows) {
+        return QStringLiteral("key index does not hold the first row of each key");
+    }
+    for (auto element = expectedRows.constBegin(); element != expectedRows.constEnd(); ++element) {
+        if (model.rowForEntryKey(element.key()) != element.value()) {
+            return QStringLiteral("lookup of %1 did not return its first row %2")
+                .arg(element.key())
+                .arg(element.value());
+        }
+    }
+    if (model.rowForEntryKey(QStringLiteral("/absent")) != -1 ||
+        model.rowForEntryKey(QString{}) != -1) {
+        return QStringLiteral("lookup of an absent key did not report no row");
+    }
+    return {};
+}
+
+// The sanitizer build carries roughly an order of magnitude of instrumentation
+// overhead, so it gets its own budget rather than a bound loose enough to pass
+// there and useless in the release build.
+#ifdef __SANITIZE_ADDRESS__
+#define ODYSEA_INSTRUMENTED_BUILD 1
+#endif
+#ifdef __has_feature
+#if __has_feature(address_sanitizer)
+#define ODYSEA_INSTRUMENTED_BUILD 1
+#endif
+#endif
+
+void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
+    // A directory large enough for the reconciliation cost to dominate the
+    // fixed cost of starting a scan. Every other case in this file uses a
+    // handful of entries, which is why a load that grew with the square of the
+    // directory size went unnoticed.
+    //
+    // Two bounds, because neither one alone holds the shape.
+    //
+    // A growth ratio across two sizes does not separate the states at all.
+    // Reconciliation runs once per scan batch and inspects every presented
+    // entry, so a load is quadratic in the entry count by design; rebuilding
+    // keys inside a comparison raises the constant by orders of magnitude
+    // without changing that exponent.
+    //
+    // Wall clock catches the catastrophic case but is a weak instrument for
+    // the rest: it moves with machine load, and the sanitizer build carries
+    // roughly twenty times the release cost, so any bound loose enough to be
+    // safe there admits a real regression here.
+    //
+    // The count of key constructions carries the algorithmic shape instead. It
+    // is machine-independent and each construction normalizes a path and
+    // allocates a string, which is what the cost is made of. Measured over
+    // this case's load and refresh: 0.43 M healthy, 16.2 M with a linear
+    // rescan per delivered scan entry, 366 M with a linear search per
+    // reconciled row. The ceiling sits an order of magnitude above the healthy
+    // figure and well below either regression.
+    constexpr quint64 keyBuildCeiling = 4000000;
+#ifdef ODYSEA_INSTRUMENTED_BUILD
+    constexpr qint64 budgetMilliseconds = 20000;
+#else
+    constexpr qint64 budgetMilliseconds = 3000;
+#endif
+    constexpr int entryCount = 4000;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+    QElapsedTimer timer;
+    timer.start();
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, 4 * budgetMilliseconds));
+    const qint64 firstScan = timer.elapsed();
+    QCOMPARE(model.rowCount(), entryCount);
+
+    timer.restart();
+    model.refresh();
+    QVERIFY(waitForIdleWithin(model, 4 * budgetMilliseconds));
+    const qint64 refresh = timer.elapsed();
+    QCOMPARE(model.rowCount(), entryCount);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Reported unconditionally so a failure arrives with the measurements that
+    // produced it instead of only the bounds it missed.
+    const quint64 keyBuilds = model.entryKeyBuilds_;
+    qInfo("%d entries: first scan %lld ms, refresh %lld ms, budget %lld ms, %llu keys built, "
+          "ceiling %llu",
+          entryCount, static_cast<long long>(firstScan), static_cast<long long>(refresh),
+          static_cast<long long>(budgetMilliseconds), static_cast<unsigned long long>(keyBuilds),
+          static_cast<unsigned long long>(keyBuildCeiling));
+    QVERIFY(keyBuilds < keyBuildCeiling);
+    QVERIFY(firstScan < budgetMilliseconds);
+    QVERIFY(refresh < budgetMilliseconds);
+}
+
+void DirectoryListModelTest::rowKeyIndexTracksEveryRowMutation() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "alpha.txt", "a");
+    writeFile(root / "bravo.txt", "bb");
+    writeFile(root / "charlie.txt", "ccc");
+    writeFile(root / ".hidden.txt", "h");
+
+    DirectoryListModel model;
+
+    // The row mutations are only half the risk. Between a removal and the
+    // assignment that ends an update, the rows, their keys, and the key index
+    // are all mid-flight, and that is exactly when a view answers the signal
+    // by asking the model for data. So the invariant is checked from inside
+    // the signals as well as after them.
+    QString liveMismatch;
+    int liveChecks = 0;
+    const auto observe = [&model, &liveMismatch, &liveChecks] {
+        ++liveChecks;
+        if (liveMismatch.isEmpty()) {
+            liveMismatch = rowKeyIndexMismatch(model);
+        }
+    };
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, observe);
+    connect(&model, &QAbstractItemModel::rowsRemoved, &model, observe);
+    connect(&model, &QAbstractItemModel::layoutChanged, &model, observe);
+
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Reorder.
+    model.setSortMode(DirectoryListModel::SortBySize);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Removal, then insertion, through the filter.
+    model.setFilterText(QStringLiteral("alpha"));
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    model.setFilterText({});
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Insertion of rows the presentation previously withheld.
+    model.setShowHidden(true);
+    QCOMPARE(model.rowCount(), 4);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // A rescan that replaces every row.
+    fs::rename(root / "alpha.txt", root / "delta.txt");
+    fs::remove(root / "charlie.txt");
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    QVERIFY(rowForName(model, QStringLiteral("delta.txt")) >= 0);
+    QCOMPARE(rowForName(model, QStringLiteral("charlie.txt")), -1);
+
+    // A watch burst that renames and removes in one delivery.
+    model.watchService_.stop();
+    fs::rename(root / "bravo.txt", root / "echo.txt");
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {"bravo.txt"},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "echo.txt"))},
+        .renamedEntries = {DirectoryEntryRename{.oldName = "bravo.txt", .newName = "echo.txt"}},
+        .error = {},
+        .rescanRequired = false});
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    QVERIFY(rowForName(model, QStringLiteral("echo.txt")) >= 0);
+
+    // An empty listing, so the index is cleared rather than left behind.
+    model.setFilterText(QStringLiteral("no-such-entry"));
+    QCOMPARE(model.rowCount(), 0);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Asserted, not assumed: a silent observer that never ran would report a
+    // clean tree it had not looked at.
+    QVERIFY(liveChecks > 0);
+    QCOMPARE(liveMismatch, QString{});
+}
+
+void DirectoryListModelTest::duplicateResolvedKeysCompareAgainstTheFirstRow() {
+    // A pending rename remap is the one way two presented rows can resolve to
+    // a single key: the renamed row resolves to its new key while the row that
+    // already holds that key still carries it. Reconciliation compares the
+    // presented entry against the first such row, which is what the linear
+    // search it replaced returned. Comparing against the last one instead
+    // reports an unchanged entry as changed, so views repaint rows that did
+    // not move or change.
+    //
+    // The burst below is delivered to the model directly. A watcher does not
+    // produce this shape on its own, which is precisely why the ordering rule
+    // needs a test that does not depend on reproducing it from the filesystem.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    writeFile(root / "bravo.txt", "bb");
+    writeFile(root / "zulu.txt", "zz");
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.data(model.index(0), DirectoryListModel::NameRole).toString(),
+             QStringLiteral("bravo.txt"));
+
+    // This burst is also the one case where two rows carry the same key
+    // outright rather than only after remapping: the remapped row is
+    // reinserted while the original is still present. The row index has to
+    // report the first of them while that state is live, which is observable
+    // only from inside the insertion signal.
+    QString liveMismatch;
+    int liveChecks = 0;
+    connect(&model, &QAbstractItemModel::rowsInserted, &model,
+            [&model, &liveMismatch, &liveChecks] {
+                ++liveChecks;
+                if (liveMismatch.isEmpty()) {
+                    liveMismatch = rowKeyIndexMismatch(model);
+                }
+            });
+
+    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+    model.applyWatchUpdate(DirectoryWatchUpdate{
+        .token = model.watchToken_,
+        .directory = root,
+        .removedNames = {},
+        .updatedEntries = {odysea::core::make_entry(fs::directory_entry(root / "bravo.txt"))},
+        .renamedEntries = {DirectoryEntryRename{.oldName = "zulu.txt", .newName = "bravo.txt"}},
+        .error = {},
+        .rescanRequired = false});
+
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(changedSpy.count(), 0);
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    QVERIFY(liveChecks > 0);
+    QCOMPARE(liveMismatch, QString{});
+}
 
 void DirectoryListModelTest::rapidNavigationCancelsStaleBatches() {
     QTemporaryDir fixture;

@@ -1,5 +1,6 @@
 #include "directory_list_model.hpp"
 
+#include <QHash>
 #include <QMetaObject>
 
 #include <algorithm>
@@ -121,16 +122,27 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token,
     if (token != activeScanToken_) {
         return;
     }
+    // One key index per batch rather than a linear rescan per delivered
+    // entry. The previous search rebuilt every candidate's key on every
+    // comparison, which made a scan quadratic in the directory size on its
+    // own. First occurrence wins, matching the search it replaces.
+    QHash<QString, std::size_t> scannedRows;
+    scannedRows.reserve(static_cast<qsizetype>(scannedEntries_.size()));
+    for (std::size_t row = 0; row < scannedEntries_.size(); ++row) {
+        const QString key = entryKey(scannedEntries_.at(row));
+        if (!scannedRows.contains(key)) {
+            scannedRows.insert(key, row);
+        }
+    }
+
     for (odysea::core::Entry& entry : entries) {
         const QString key = entryKey(entry);
-        const auto existing =
-            std::ranges::find_if(scannedEntries_, [this, &key](const auto& candidate) {
-                return entryKey(candidate) == key;
-            });
-        if (existing == scannedEntries_.end()) {
+        const auto existing = scannedRows.constFind(key);
+        if (existing == scannedRows.constEnd()) {
+            scannedRows.insert(key, scannedEntries_.size());
             scannedEntries_.push_back(entry);
         } else {
-            *existing = entry;
+            scannedEntries_.at(existing.value()) = entry;
         }
         scanEntries_.push_back(std::move(entry));
     }

@@ -17,6 +17,61 @@ the archive.
 
 ---
 
+## 2026-08-07 -- Directory loads stop growing with the square of the listing
+
+Opening a large folder was unusable: 4,000 entries took 14.4 s to appear and
+36.1 s to refresh, and 8,000 entries never finished. The cost was in
+reconciliation, which runs once per scan batch and matched each presented
+entry to its current row with a linear search. Every comparison in that search
+rebuilt the candidate's key, and building a key normalizes a path and
+allocates a string, so a load performed key constructions on the order of the
+listing size cubed. A second search of the same shape deduplicated each
+delivered scan entry against everything scanned so far.
+
+Both searches are now indexed by key, and each key is built once per entry per
+update rather than once per comparison. The same 4,000 entries load in 0.09 s
+and refresh in 0.17 s, 8,000 load in 0.32 s, and 32,000 load in 7.0 s.
+
+Reconciliation is still quadratic in the listing size, by design rather than
+by oversight: it runs once per scan batch and inspects every presented entry,
+so this change lowers the constant by roughly two orders of magnitude without
+moving the exponent. Retiring the remainder means applying a batch as a
+difference against the presented rows instead of re-presenting the whole
+listing on every batch, which is a change to how updates are published and is
+kept separate from a fix that must not alter behavior.
+
+Row keys and the key index are derived state, so the rows may only be
+replaced, extended, or truncated through three functions that update all three
+together; no other code may touch the presented rows. Where two rows resolve
+to a single key, which a pending rename remap can produce, the first row wins,
+which is what the linear searches returned. Taking the last would report an
+unchanged entry as changed and repaint rows that did not move.
+
+The suite had no case anywhere near a size where any of this was visible, so
+the fix ships with one. It bounds two quantities. Wall-clock time catches a
+catastrophic regression, with a separate budget for the sanitizer build, whose
+instrumentation costs about twenty times the release build and would otherwise
+force a bound too loose to mean anything. The count of key constructions
+carries the algorithmic shape: it is independent of machine speed and of load,
+and over this case it reads 0.43 M healthy against 16.2 M and 366 M for the
+two searches this change removed. A growth ratio across two sizes was
+considered and rejected, because both the healthy and the defective code are
+quadratic and the difference between them is the constant, not the exponent.
+
+A directory-model invariant case covers the rows, their keys, and the index
+across reordering, filtering, insertion, removal, rescan, a watch burst, and
+an empty listing. It also checks them from inside the row-insertion and
+row-removal signals, because that is when a view asks the model for data and
+because a stale key repaired before the update ends is invisible from outside
+it. Thirteen deliberate defects were planted; every one is now caught, but
+four of them survived the first version of these cases and the mid-signal
+checks exist because of them.
+
+Known gap: the watch-update path still searches linearly by name and by key
+for each renamed, removed, or updated entry in a delivery. That cost grows
+with the delivery size times the listing size, is not on the load path, and is
+not covered by the new bounds.
+
 ## 2026-08-07 -- Cancellable recursive storage-usage accounting
 
 The core can answer "what is taking up the space here" for a subtree, as

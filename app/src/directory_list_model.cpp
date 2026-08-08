@@ -85,11 +85,11 @@ QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
         return odysea::core::classify_working_entry(entry.name) !=
                odysea::core::WorkingEntryRole::None;
     case ThumbnailSourceRole: {
-        const QString id = thumbnailIds_.value(entryKey(entry));
+        const QString id = thumbnailIds_.value(keyForRow(index.row()));
         return id.isEmpty() ? QString{} : ThumbnailImageProvider::sourceUrl(id);
     }
     case ThumbnailLoadingRole:
-        return thumbnailLoadingKeys_.contains(entryKey(entry));
+        return thumbnailLoadingKeys_.contains(keyForRow(index.row()));
     default:
         return {};
     }
@@ -387,10 +387,10 @@ void DirectoryListModel::selectRow(int row, Qt::KeyboardModifiers modifiers) {
         } else {
             selection.insert(row);
         }
-        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
+        selectionAnchorKey_ = keyForRow(row);
         replaceSelection(std::move(selection));
     } else {
-        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
+        selectionAnchorKey_ = keyForRow(row);
         replaceSelection(QSet<int>{row});
     }
     setCurrentIndex(row);
@@ -411,7 +411,7 @@ void DirectoryListModel::moveCursorTo(int row, bool extendSelection, bool preser
     if (extendSelection) {
         selectRangeTo(row);
     } else if (!preserveSelection) {
-        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(row)]);
+        selectionAnchorKey_ = keyForRow(row);
         replaceSelection(QSet<int>{row});
     }
     setCurrentIndex(row);
@@ -447,7 +447,7 @@ void DirectoryListModel::toggleCurrent() {
     } else {
         selection.insert(currentIndex_);
     }
-    selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(currentIndex_)]);
+    selectionAnchorKey_ = keyForRow(currentIndex_);
     replaceSelection(std::move(selection));
 }
 
@@ -481,7 +481,7 @@ void DirectoryListModel::updateRubberBandSelection(const QVariantList& rows, int
         bool converted = false;
         const int row = value.toInt(&converted);
         if (converted && row >= 0 && row < rowCount()) {
-            keys.insert(entryKey(entries_[static_cast<std::size_t>(row)]));
+            keys.insert(keyForRow(row));
         }
     }
     replaceSelectionKeys(std::move(keys));
@@ -605,6 +605,7 @@ QStringList DirectoryListModel::selectedPaths() const {
 }
 
 QString DirectoryListModel::entryKey(const odysea::core::Entry& entry) const {
+    ++entryKeyBuilds_;
     return QString::fromStdString(entry.path.lexically_normal().string());
 }
 
@@ -631,16 +632,61 @@ QString DirectoryListModel::entryIdentity(const odysea::core::Entry& entry) cons
         .arg(static_cast<qulonglong>(identity.birth_nanoseconds));
 }
 
+QString DirectoryListModel::keyForRow(int row) const {
+    if (row < 0) {
+        return {};
+    }
+    const auto offset = static_cast<std::size_t>(row);
+    if (offset >= entryKeys_.size()) {
+        return {};
+    }
+    return entryKeys_.at(offset);
+}
+
 int DirectoryListModel::rowForEntryKey(const QString& key) const {
     if (key.isEmpty()) {
         return -1;
     }
-    for (int row = 0; row < rowCount(); ++row) {
-        if (entryKey(entries_[static_cast<std::size_t>(row)]) == key) {
-            return row;
+    return entryRowsByKey_.value(key, -1);
+}
+
+void DirectoryListModel::setEntryRows(std::vector<odysea::core::Entry> entries,
+                                      std::vector<QString> keys) {
+    entries_ = std::move(entries);
+    entryKeys_ = std::move(keys);
+    rebuildEntryRowIndex();
+}
+
+void DirectoryListModel::eraseEntryRows(int first, int last) {
+    const auto begin = static_cast<std::ptrdiff_t>(first);
+    const auto end = static_cast<std::ptrdiff_t>(last) + 1;
+    entries_.erase(entries_.begin() + begin, entries_.begin() + end);
+    entryKeys_.erase(entryKeys_.begin() + begin, entryKeys_.begin() + end);
+    rebuildEntryRowIndex();
+}
+
+void DirectoryListModel::appendEntryRows(std::vector<odysea::core::Entry> entries,
+                                         std::vector<QString> keys) {
+    entries_.insert(entries_.end(), std::make_move_iterator(entries.begin()),
+                    std::make_move_iterator(entries.end()));
+    entryKeys_.insert(entryKeys_.end(), std::make_move_iterator(keys.begin()),
+                      std::make_move_iterator(keys.end()));
+    rebuildEntryRowIndex();
+}
+
+void DirectoryListModel::rebuildEntryRowIndex() {
+    // First occurrence wins, because that is the row the linear searches this
+    // index replaced would have returned. Two rows can carry one key while a
+    // rename remap is pending, and a last-wins index would quietly point
+    // reconciliation and thumbnail delivery at the wrong row.
+    entryRowsByKey_.clear();
+    entryRowsByKey_.reserve(static_cast<qsizetype>(entryKeys_.size()));
+    for (std::size_t row = 0; row < entryKeys_.size(); ++row) {
+        const QString& key = entryKeys_.at(row);
+        if (!entryRowsByKey_.contains(key)) {
+            entryRowsByKey_.insert(key, static_cast<int>(row));
         }
     }
-    return -1;
 }
 
 void DirectoryListModel::navigateTo(const QString& path, bool recordHistory) {
@@ -728,47 +774,67 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     const int previousSelectedCount = selectedCount();
     const QSet<int> previousSelectedRows = selectedRows_;
 
-    QSet<QString> targetKeys;
-    targetKeys.reserve(static_cast<qsizetype>(presented.size()));
+    // Every key below is built exactly once per entry per update and then
+    // reused. Building one costs a path normalization and a string
+    // allocation, so recomputing it inside a comparison made reconciliation
+    // quadratic in key construction, not merely in comparisons.
+    std::vector<QString> presentedKeys;
+    presentedKeys.reserve(presented.size());
     for (const odysea::core::Entry& entry : presented) {
-        const QString key = entryKey(entry);
+        presentedKeys.push_back(entryKey(entry));
+    }
+
+    QSet<QString> targetKeys;
+    targetKeys.reserve(static_cast<qsizetype>(presentedKeys.size()));
+    for (const QString& key : presentedKeys) {
         targetKeys.insert(key);
     }
 
-    QHash<QString, QString> resolvedKeyRemaps = pendingEntryKeyRemaps_;
-    const auto resolvedKey = [this, &resolvedKeyRemaps](const odysea::core::Entry& entry) {
-        const QString key = entryKey(entry);
+    const QHash<QString, QString> resolvedKeyRemaps = pendingEntryKeyRemaps_;
+    const auto resolveKey = [&resolvedKeyRemaps](const QString& key) {
         return resolvedKeyRemaps.value(key, key);
     };
 
+    // Resolved keys for the rows currently presented, held parallel to
+    // entries_ across the removals and insertions below.
+    std::vector<QString> currentKeys;
+    currentKeys.reserve(entryKeys_.size());
+    for (const QString& key : entryKeys_) {
+        currentKeys.push_back(resolveKey(key));
+    }
+
     for (int end = rowCount() - 1; end >= 0;) {
-        if (targetKeys.contains(resolvedKey(entries_[static_cast<std::size_t>(end)]))) {
+        if (targetKeys.contains(currentKeys.at(static_cast<std::size_t>(end)))) {
             --end;
             continue;
         }
         int first = end;
         while (first > 0 &&
-               !targetKeys.contains(resolvedKey(entries_[static_cast<std::size_t>(first - 1)]))) {
+               !targetKeys.contains(currentKeys.at(static_cast<std::size_t>(first - 1)))) {
             --first;
         }
         beginRemoveRows({}, first, end);
-        entries_.erase(entries_.begin() + first, entries_.begin() + end + 1);
+        eraseEntryRows(first, end);
+        currentKeys.erase(currentKeys.begin() + static_cast<std::ptrdiff_t>(first),
+                          currentKeys.begin() + static_cast<std::ptrdiff_t>(end) + 1);
         rebuildSelectionRows();
         endRemoveRows();
         end = first - 1;
     }
 
     QSet<QString> existingKeys;
-    existingKeys.reserve(static_cast<qsizetype>(entries_.size()));
-    for (const odysea::core::Entry& entry : entries_) {
-        existingKeys.insert(resolvedKey(entry));
+    existingKeys.reserve(static_cast<qsizetype>(currentKeys.size()));
+    for (const QString& key : currentKeys) {
+        existingKeys.insert(key);
     }
 
     std::vector<odysea::core::Entry> insertedEntries;
-    for (const odysea::core::Entry& entry : presented) {
-        const QString key = entryKey(entry);
+    std::vector<QString> insertedKeys;
+    for (std::size_t offset = 0; offset < presented.size(); ++offset) {
+        const QString& key = presentedKeys.at(offset);
         if (!existingKeys.contains(key)) {
-            insertedEntries.push_back(entry);
+            insertedEntries.push_back(presented.at(offset));
+            insertedKeys.push_back(key);
             existingKeys.insert(key);
         }
     }
@@ -776,51 +842,52 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         const int first = rowCount();
         const int last = first + static_cast<int>(insertedEntries.size()) - 1;
         beginInsertRows({}, first, last);
-        entries_.insert(entries_.end(), std::make_move_iterator(insertedEntries.begin()),
-                        std::make_move_iterator(insertedEntries.end()));
+        for (const QString& key : insertedKeys) {
+            currentKeys.push_back(resolveKey(key));
+        }
+        appendEntryRows(std::move(insertedEntries), std::move(insertedKeys));
         rebuildSelectionRows();
         endInsertRows();
     }
 
     QHash<QString, int> targetRows;
-    QStringList targetOrder;
-    targetOrder.reserve(static_cast<qsizetype>(presented.size()));
-    for (int row = 0; row < static_cast<int>(presented.size()); ++row) {
-        const QString key = entryKey(presented[static_cast<std::size_t>(row)]);
-        targetRows.insert(key, row);
-        targetOrder.push_back(key);
+    targetRows.reserve(static_cast<qsizetype>(presentedKeys.size()));
+    for (std::size_t row = 0; row < presentedKeys.size(); ++row) {
+        targetRows.insert(presentedKeys.at(row), static_cast<int>(row));
     }
 
-    QStringList currentOrder;
-    currentOrder.reserve(static_cast<qsizetype>(entries_.size()));
-    for (const odysea::core::Entry& entry : entries_) {
-        currentOrder.push_back(resolvedKey(entry));
-    }
-
-    QSet<int> changedRows;
-    for (int row = 0; row < static_cast<int>(presented.size()); ++row) {
-        const QString key = entryKey(presented[static_cast<std::size_t>(row)]);
-        const auto current =
-            std::ranges::find_if(entries_, [&resolvedKey, &key](const auto& entry) {
-                return resolvedKey(entry) == key;
-            });
-        if (current != entries_.end() &&
-            !entriesMatch(*current, presented[static_cast<std::size_t>(row)])) {
-            changedRows.insert(row);
+    // First occurrence wins, matching the linear search this index replaced.
+    // A pending rename remap can make two rows resolve to one key, and taking
+    // the later row would compare the presented entry against the wrong one.
+    QHash<QString, int> currentRows;
+    currentRows.reserve(static_cast<qsizetype>(currentKeys.size()));
+    for (std::size_t row = 0; row < currentKeys.size(); ++row) {
+        const QString& key = currentKeys.at(row);
+        if (!currentRows.contains(key)) {
+            currentRows.insert(key, static_cast<int>(row));
         }
     }
 
-    if (currentOrder != targetOrder) {
+    QSet<int> changedRows;
+    for (std::size_t row = 0; row < presented.size(); ++row) {
+        const int current = currentRows.value(presentedKeys.at(row), -1);
+        if (current >= 0 &&
+            !entriesMatch(entries_.at(static_cast<std::size_t>(current)), presented.at(row))) {
+            changedRows.insert(static_cast<int>(row));
+        }
+    }
+
+    const bool orderChanged = currentKeys != presentedKeys;
+    if (orderChanged) {
         const QModelIndexList oldPersistentIndexes = persistentIndexList();
         QStringList persistentKeys;
         persistentKeys.reserve(oldPersistentIndexes.size());
         for (const QModelIndex& persistent : oldPersistentIndexes) {
-            persistentKeys.push_back(
-                resolvedKey(entries_[static_cast<std::size_t>(persistent.row())]));
+            persistentKeys.push_back(currentKeys.at(static_cast<std::size_t>(persistent.row())));
         }
 
         emit layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
-        entries_ = presented;
+        setEntryRows(std::move(presented), std::move(presentedKeys));
         rebuildSelectionRows();
 
         QModelIndexList newPersistentIndexes;
@@ -833,14 +900,14 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         changePersistentIndexList(oldPersistentIndexes, newPersistentIndexes);
         emit layoutChanged({}, QAbstractItemModel::VerticalSortHint);
     } else {
-        entries_ = presented;
+        setEntryRows(std::move(presented), std::move(presentedKeys));
         rebuildSelectionRows();
     }
 
     currentIndex_ = currentEntryKey_.isEmpty() ? -1 : targetRows.value(currentEntryKey_, -1);
     if (currentIndex_ < 0 && finalScanBatch && !entries_.empty()) {
         currentIndex_ = 0;
-        currentEntryKey_ = entryKey(entries_.front());
+        currentEntryKey_ = keyForRow(0);
     }
     pendingEntryKeyRemaps_.clear();
     reconcileThumbnails();
@@ -893,9 +960,7 @@ void DirectoryListModel::setCurrentIndex(int row) {
         return;
     }
     currentIndex_ = row;
-    currentEntryKey_ = row >= 0 && row < rowCount()
-                           ? entryKey(entries_[static_cast<std::size_t>(row)])
-                           : QString{};
+    currentEntryKey_ = keyForRow(row);
     emit currentIndexChanged();
 }
 
@@ -923,7 +988,7 @@ void DirectoryListModel::replaceSelection(QSet<int> selection) {
     QSet<QString> keys;
     for (const int row : selection) {
         if (row >= 0 && row < rowCount()) {
-            keys.insert(entryKey(entries_[static_cast<std::size_t>(row)]));
+            keys.insert(keyForRow(row));
         }
     }
     replaceSelectionKeys(std::move(keys));
@@ -932,7 +997,7 @@ void DirectoryListModel::replaceSelection(QSet<int> selection) {
 void DirectoryListModel::replaceSelectionKeys(QSet<QString> keys) {
     QSet<int> rows;
     for (int row = 0; row < rowCount(); ++row) {
-        if (keys.contains(entryKey(entries_[static_cast<std::size_t>(row)]))) {
+        if (keys.contains(entryKeys_.at(static_cast<std::size_t>(row)))) {
             rows.insert(row);
         }
     }
@@ -949,7 +1014,7 @@ void DirectoryListModel::replaceSelectionKeys(QSet<QString> keys) {
 void DirectoryListModel::rebuildSelectionRows() {
     selectedRows_.clear();
     for (int row = 0; row < rowCount(); ++row) {
-        if (selectedEntryKeys_.contains(entryKey(entries_[static_cast<std::size_t>(row)]))) {
+        if (selectedEntryKeys_.contains(entryKeys_.at(static_cast<std::size_t>(row)))) {
             selectedRows_.insert(row);
         }
     }
@@ -959,7 +1024,7 @@ void DirectoryListModel::selectRangeTo(int row) {
     int anchorRow = rowForEntryKey(selectionAnchorKey_);
     if (anchorRow < 0) {
         anchorRow = currentIndex_ >= 0 ? currentIndex_ : row;
-        selectionAnchorKey_ = entryKey(entries_[static_cast<std::size_t>(anchorRow)]);
+        selectionAnchorKey_ = keyForRow(anchorRow);
     }
     const int first = std::min(anchorRow, row);
     const int last = std::max(anchorRow, row);
