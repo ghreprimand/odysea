@@ -23,8 +23,9 @@ graphical shell grows around it.
 
 - [x] Incremental adapter updates and geometry-driven selection foundation.
 - [x] Grid view with asynchronous, cached thumbnails.
-- [ ] Off-thread directory scanning; main-thread reconciliation remains to be
-      hardened for large directories.
+- [x] Off-thread directory scanning with main-thread reconciliation that stays
+      proportional to the listing, so navigating and filtering a large
+      directory does not stall the interface.
 - [x] Keyboard navigation and type-ahead.
 - [x] Mouse interaction parity: double-click open, context menus,
       drag-and-drop (internal + drag-out), clickable breadcrumbs.
