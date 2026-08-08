@@ -335,15 +335,29 @@ there is no apply step.
   the selection bed remains distinct from the ground. An unknown family
   identifier resolves to the default rather than rendering nothing.
 - **Measured contrast floors.** The contrast claims are asserted, not
-  eyeballed: a test measures every foreground role against the beds it
-  renders on, in every shipped family, in both override states. Under high
-  contrast, text-sized roles must clear the 4.5:1 ratio and non-text
-  indicators 3.0:1 — that override is the accessibility path. The default
-  state holds the same floors on the reading and indicator pairs, with two
-  accepted exceptions: icon ink is deliberately subdued below the Strong
-  bright-pass threshold and carries an anti-regression bound instead, and
-  the status inks hold the non-text floor while high contrast raises them
-  to text strength. Text lift is exempt on light families: their inks are
+  eyeballed: a test measures every foreground role against the beds tracked
+  surfaces actually paint it on, in every shipped family, in both override
+  states. The pair list is derived from render sites, not from the role
+  vocabulary — a floor asserted on a bed nothing paints can neither fail
+  nor protect anything, so roles without a render site carry no pair until
+  a surface paints them. Beds resolve to every variant the compositor can
+  present: the pane ground is measured flat and at each deep-field gradient
+  extreme, the panel both opaque and as a chrome strip over the window
+  ground, and the selection, hover, and pressed interaction beds are
+  measured under every ink that renders on them — entry text and icons keep
+  their floors while selected, hovered, and pressed, not only at rest.
+  Under high contrast, text-sized roles must clear the 4.5:1 ratio and
+  non-text indicators 3.0:1 — that override is the accessibility path, and
+  each family carries a curated high-contrast danger variant because the
+  base danger ink cannot reach text strength on the selection and hover
+  beds. The default state holds the same floors on the reading and
+  indicator pairs, with two accepted exceptions: icon ink is deliberately
+  subdued below the Strong bright-pass threshold and carries an
+  anti-regression bound instead, and the status inks hold the non-text
+  floor while high contrast raises them to text strength. Disabled chrome
+  ink keeps an anti-regression bound as well; inactive controls are exempt
+  from WCAG minima, so that floor is a perceivability guarantee, not a
+  conformance claim. Text lift is exempt on light families: their inks are
   dark marks on bright grounds, so multiplying toward white would lower
   contrast instead of raising emphasis.
 - **Adaptive chrome density.** Below a measured width bound the toolbar's
@@ -386,6 +400,11 @@ there is no apply step.
   weight under high contrast. Normal dark-palette icon ink remains below the
   Strong bright-pass threshold so orientation chrome does not become an
   unintended emitter; high contrast deliberately promotes it to primary text.
+  The ink under that cap is a curated per-family hue rather than a derivation
+  from the faint text ink: the cap limits the brightest channel, so a family
+  whose faint ink peaks in a low-luminance channel would land its capped
+  symbols below the measured pressed-bed floor, and the neutral families
+  choose a hue whose capped form stays measurable on every control bed.
 - **Versioned persistence.** Appearance, accessibility, Places, and recent
   navigation preferences serialize to one small key=value file, so independent
   surfaces cannot overwrite each other through competing stores. Repeated
@@ -430,7 +449,11 @@ is unchanged.
   therefore snaps to the nearest device texel, and the well border is
   verified byte-true against the plain path along its entire perimeter on
   the GPU path — including on a real 2x surface, where the rim leak was
-  observed and fixed.
+  observed and fixed. Protection is bounded from the outside as well: the
+  ring one device pixel beyond a well sits on receiving material in the
+  gate and must stay processed, so a mask oversized in any direction fails
+  loudly instead of silently exempting surrounding chrome from the
+  pipeline.
 - **Plain-path identity.** When every stage is at identity — the `Off`
   profile, or every gain zero — the pipeline disengages and the content
   renders on the plain path, byte-identical to having no pipeline at all.
@@ -482,7 +505,12 @@ shell scene, so its claims regress loudly instead of visually:
 - **Device pixels.** Well-mask geometry is logical-coordinate math at every
   scale, and on the GPU path a protected well's entire border is compared
   byte for byte against the plain path, armed by an emitter ring so a mask
-  misaligned in any direction fails. A vacuity sentinel rejects any
+  misaligned in any direction fails. A second well, separated from its
+  emitter frame by a dark gutter, arms the opposite direction: the ring one
+  device pixel outside it must differ from the plain path, so an oversized
+  mask — which every inner assertion tolerates — fails there. Every suite
+  that compares frame pixels carries a vacuity sentinel: an absolute-value
+  assertion on a coordinate the harness fixes, which rejects any
   environment whose grabbed frame does not carry the rendered scene. The
   offscreen platform never allocates a genuine high-density framebuffer —
   under a forced scale factor it reports 2x while rasterizing at 1x — so

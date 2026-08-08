@@ -17,6 +17,61 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Render-site contrast matrix, mask over-protection bound, and grab sentinels
+
+The measured contrast matrix is now derived from render sites instead of the
+role vocabulary. The previous matrix asserted twelve of its twenty-eight
+pairs against roles no tracked surface paints — ten on an unpainted well bed
+— while omitting the beds that carry most glyphs: the pane ground under
+transparent rows, and the selection, hover, and pressed interaction beds.
+The rebuilt matrix measures every painted foreground role on every bed
+variant the compositor can present, including the deep-field gradient
+extremes of the pane ground and the chrome strip's composited panel, in all
+six families and both override states.
+
+The honest matrix reported real defects, and the palettes moved to fix
+them. The faint ink — file icons on every row state — could not clear its
+non-text floor on the selection bed in four families or on the hover bed in
+two; it brightened in the dark families and darkened in parchment. Icon ink
+is now a curated per-family hue under the unchanged emission cap: the cap
+limits the brightest channel, so the graphite and aurora families, whose
+faint ink peaks in the low-luminance blue channel, landed their capped
+symbols below the pressed-bed floor; their curated icon hues are neutral
+enough to stay measurable on every control bed, and the other families keep
+byte-identical icon ink. Each family also gained a curated high-contrast
+danger variant, because five of six base danger inks could not reach the
+4.5:1 the override promises on the selection and hover beds.
+
+Protected-well masking gained its missing direction. The device-pixel gate
+verified that a mask too small leaves a processed seam on the well border,
+but nothing required a pixel just outside a well to be processed, so an
+oversized mask of any magnitude passed every assertion while silently
+exempting surrounding chrome. A second well, separated from its emitter
+frame by a dark gutter, now arms an outward sweep: the ring one device
+pixel outside the well sits on receiving material and must differ from the
+plain path. A painted-mask oversize of one device pixel with unchanged
+mirror geometry — invisible to the geometry and inner-border assertions —
+fails the new sweep at its first pixel.
+
+The presentation suite's frame claims were all relative — equalities and
+inequalities between grabs — which a scene that renders nothing satisfies
+perfectly; the regression guard for the viewport-escape defect and both
+shader-latch cases passed with the scene hidden. Every grab in that suite
+now passes an absolute-value vacuity sentinel on a coordinate the harness
+fixes on every profile and backend: the protected patch in the pipeline
+scenes and the white patch in the latch scenes. With the scene hidden, all
+six grabbing tests fail loudly through the sentinels, with grab dimensions
+and content verified rather than trusted.
+
+Verification: the rebuilt matrix passes all families and states with the
+moved colors and fails with named palette, pair, bed, and state when any
+fix is reverted; the outward sweep runs in the real-display GPU gate
+alongside the existing entries. The warning-clean release build passed all
+46 checks including both real-display RHI entries; a fresh ASan/UBSan build
+passed all 45 enabled checks; release and sanitizer binaries completed
+silent eight-second smoke launches on the software and OpenGL paths.
+
+---
 ## 2026-08-08 -- Storage usage deduplicates an inode however it was reached
 
 The counting policy says an inode reached twice is counted once. Storage usage
