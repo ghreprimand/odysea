@@ -73,6 +73,8 @@ class DirectoryListModelTest : public QObject {
     void supersededScanDropsTheEntriesItHeldBack();
     void rowKeyIndexTracksEveryRowMutation();
     void duplicateResolvedKeysCompareAgainstTheFirstRow();
+    void heldEntriesAppearOnceTheyHaveWaitedAsLongAsTheScanHasRun();
+    void publishingOnTimeAloneStaysLogarithmicInScanDuration();
 };
 QString DirectoryListModelTest::rowKeyIndexMismatch(const DirectoryListModel& model) {
     if (model.entryKeys_.size() != model.entries_.size()) {
@@ -914,6 +916,175 @@ void DirectoryListModelTest::supersededScanDropsTheEntriesItHeldBack() {
     QCOMPARE(model.data(model.index(0), DirectoryListModel::NameRole).toString(),
              QStringLiteral("winner.txt"));
     QCOMPARE(rowForName(model, QStringLiteral("stale.txt")), -1);
+}
+void DirectoryListModelTest::heldEntriesAppearOnceTheyHaveWaitedAsLongAsTheScanHasRun() {
+    // A scan publishes when the entries it holds amount to a quarter of the
+    // listing, which bounds what is held in entries and, while entries keep
+    // arriving at a steady rate, in time as well. It bounds nothing once that
+    // rate falls: the held quarter then waits for a source that has slowed
+    // down to produce another quarter. The clock rule publishes what has
+    // waited longer than the scan has been running, which is the case above
+    // and only that case.
+    //
+    // Time is supplied rather than spent. A rule about waiting is otherwise
+    // testable only by waiting, which decides by machine load and would take
+    // the intervals below in real seconds.
+    constexpr int presentedCount = 400;
+    constexpr int deliverySize = 32;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int index = 0; index < presentedCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, 10000));
+    QCOMPARE(model.rowCount(), presentedCount);
+    model.watchService_.stop();
+
+    // Deliveries stay below the size interval throughout, so every
+    // publication below is the clock's doing and not the interval's.
+    QCOMPARE(model.scanPublishInterval(), std::size_t{128});
+    QVERIFY(deliverySize < static_cast<int>(model.scanPublishInterval()));
+
+    // The production clock, checked before it is replaced. The rule reads a
+    // timer that starting a scan is responsible for starting, and a timer
+    // that was never started reports nothing: the rule would then never fire,
+    // and every step below would still pass on its supplied timeline.
+    QVERIFY(model.scanClock_.isValid());
+    const qint64 beforeWaiting = model.scanElapsedMilliseconds_();
+    QTest::qWait(5);
+    QVERIFY(model.scanElapsedMilliseconds_() > beforeWaiting);
+
+    qint64 now = 0;
+    model.scanElapsedMilliseconds_ = [&now] { return now; };
+
+    int nextEntry = presentedCount;
+    const auto deliverAt = [&model, &now, &nextEntry, &root](qint64 milliseconds) {
+        now = milliseconds;
+        std::vector<odysea::core::Entry> delivery;
+        delivery.reserve(deliverySize);
+        for (int index = 0; index < deliverySize; ++index) {
+            const fs::path path = root / ("entry-" + std::to_string(nextEntry++));
+            writeFile(path);
+            delivery.push_back(odysea::core::make_entry(fs::directory_entry(path)));
+        }
+        model.receiveScanBatch(model.activeScanToken_, std::move(delivery));
+    };
+
+    // Held: the floor has not passed, so a scan is not made to republish its
+    // listing on every delivery in its opening moments.
+    deliverAt(100);
+    QCOMPARE(model.rowCount(), presentedCount);
+    QCOMPARE(model.pendingScanEntries_.size(), std::size_t{deliverySize});
+
+    // Still held after 200 ms of waiting, which is the floor's doing: the
+    // scan has run for 300 ms, so a rule with no floor would publish here.
+    deliverAt(300);
+    QCOMPARE(model.rowCount(), presentedCount);
+    QCOMPARE(model.pendingScanEntries_.size(), 2 * static_cast<std::size_t>(deliverySize));
+
+    // Published: 300 ms of waiting clears the floor.
+    deliverAt(400);
+    QCOMPARE(model.rowCount(), presentedCount + (3 * deliverySize));
+    QVERIFY(model.pendingScanEntries_.empty());
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // The second hold begins at 500 ms, so it runs to 1,000 ms rather than to
+    // the floor. This is what separates the shipped rule from one that
+    // measures the wait from the start of the scan: that one publishes at
+    // 800 ms, 800 ms of scan having passed a 250 ms floor long before.
+    deliverAt(500);
+    QCOMPARE(model.rowCount(), presentedCount + (3 * deliverySize));
+    deliverAt(800);
+    QCOMPARE(model.rowCount(), presentedCount + (3 * deliverySize));
+    QCOMPARE(model.pendingScanEntries_.size(), 2 * static_cast<std::size_t>(deliverySize));
+
+    deliverAt(1100);
+    QCOMPARE(model.rowCount(), presentedCount + (6 * deliverySize));
+    QVERIFY(model.pendingScanEntries_.empty());
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // Named rather than counted: a listing of the right size assembled from
+    // the wrong entries passes a count on its own.
+    for (int index = presentedCount; index < nextEntry; ++index) {
+        QVERIFY2(rowForName(model, QStringLiteral("entry-%1").arg(index)) >= 0,
+                 qPrintable(QStringLiteral("entry-%1 is missing").arg(index)));
+    }
+}
+void DirectoryListModelTest::publishingOnTimeAloneStaysLogarithmicInScanDuration() {
+    // What makes the clock rule affordable, held as a property rather than as
+    // a wall-clock reading.
+    //
+    // A publication costs work proportional to the whole listing, so it takes
+    // longer as the listing grows. A fixed deadline therefore bounds nothing:
+    // once a publication takes longer than the deadline, the next delivery is
+    // already overdue, every delivery publishes, and the load costs the
+    // square of the entry count again. Measured on a 32,000-entry load, a
+    // 5 ms deadline turned 22 publications into 223 and 244 ms into 5,524 ms.
+    //
+    // Requiring a hold to have lasted as long as the scan has run makes each
+    // publication on time alone wait as long as every one before it, so their
+    // number grows with the logarithm of the scan's duration rather than in
+    // proportion to it. A ten-minute scan is the interesting length because
+    // it is where the two answers are furthest apart.
+    constexpr qint64 scanDurationMilliseconds = 600000;
+    constexpr qint64 deliveryIntervalMilliseconds = 10;
+    constexpr qint64 fixedDeadlineMilliseconds = DirectoryListModel::kScanHoldFloorMilliseconds;
+
+    int rulePublications = 0;
+    qint64 holdStart = -1;
+    int fixedPublications = 0;
+    qint64 fixedHoldStart = -1;
+    for (qint64 now = 0; now <= scanDurationMilliseconds; now += deliveryIntervalMilliseconds) {
+        if (holdStart < 0) {
+            holdStart = now;
+        }
+        if (DirectoryListModel::scanHoldExpired(holdStart, now)) {
+            ++rulePublications;
+            holdStart = -1;
+        }
+        if (fixedHoldStart < 0) {
+            fixedHoldStart = now;
+        }
+        if (now - fixedHoldStart >= fixedDeadlineMilliseconds) {
+            ++fixedPublications;
+            fixedHoldStart = -1;
+        }
+    }
+
+    // One publication per doubling of the scan's duration past the floor,
+    // plus the first. Written as the arithmetic rather than as the number it
+    // produces, so a change to the floor or to the growth rule is reflected
+    // here instead of papered over.
+    int logarithmicCeiling = 1;
+    for (qint64 reach = fixedDeadlineMilliseconds; reach <= scanDurationMilliseconds; reach *= 2) {
+        ++logarithmicCeiling;
+    }
+
+    qInfo("a %lld ms scan delivering every %lld ms publishes on time alone %d times under the "
+          "shipped rule, ceiling %d, against %d under a fixed %lld ms deadline",
+          static_cast<long long>(scanDurationMilliseconds),
+          static_cast<long long>(deliveryIntervalMilliseconds), rulePublications,
+          logarithmicCeiling, fixedPublications, static_cast<long long>(fixedDeadlineMilliseconds));
+
+    // Bounded below as well as above: a rule that never fires publishes
+    // nothing on time and satisfies any ceiling while leaving the tail
+    // exactly where it was.
+    QVERIFY(rulePublications > 0);
+    QVERIFY(rulePublications <= logarithmicCeiling);
+    // The contrasting count is exact rather than bounded: a fixed deadline
+    // holds for the deadline plus the delivery that notices it has passed, so
+    // a scan of a given length publishes a fixed number of times whatever its
+    // size, and that number is what makes the cost grow with the square of
+    // the listing.
+    QCOMPARE(fixedPublications,
+             static_cast<int>(scanDurationMilliseconds /
+                              (fixedDeadlineMilliseconds + deliveryIntervalMilliseconds)));
+    QVERIFY(fixedPublications > 100 * rulePublications);
 }
 void DirectoryListModelTest::rowKeyIndexTracksEveryRowMutation() {
     QTemporaryDir fixture;

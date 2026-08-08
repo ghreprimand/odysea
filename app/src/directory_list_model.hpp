@@ -6,6 +6,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QElapsedTimer>
 #include <QFutureWatcher>
 #include <QHash>
 #include <QSet>
@@ -17,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -218,15 +220,18 @@ class DirectoryListModel : public QAbstractListModel {
     void startScan();
     void receiveScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
     [[nodiscard]] std::size_t scanPublishInterval() const noexcept;
+    // The shortest a scan will hold delivered entries on the clock alone. A
+    // load that finishes inside it never reaches the rule at all, so a fast
+    // local directory pays nothing for it.
+    static constexpr qint64 kScanHoldFloorMilliseconds = 250;
+    [[nodiscard]] static bool scanHoldExpired(qint64 holdStartMilliseconds,
+                                              qint64 nowMilliseconds) noexcept;
     void drainPendingScanEntries();
     void receiveScanComplete(odysea::core::ScanSummary summary);
     void applyWatchUpdate(DirectoryWatchUpdate update);
     void replaceWatch();
     void applyPresentationSettings(bool finalScanBatch = false);
 
-    // The only four ways the presented rows may change. Each keeps the row
-    // keys and the key index in step with the entries, so no caller can leave
-    // a stale key behind a live row.
     // The only three ways the scanned listing may change. Each keeps the name
     // index in step with the entries, so no caller can leave a stale row
     // behind a live entry.
@@ -243,6 +248,9 @@ class DirectoryListModel : public QAbstractListModel {
     void eraseScannedEntries(const QSet<QString>& names);
     void rebuildScannedRowIndex();
 
+    // The only four ways the presented rows may change. Each keeps the row
+    // keys and the key index in step with the entries, so no caller can leave
+    // a stale key behind a live row.
     void setEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
     void eraseEntryRows(int first, int last);
     void appendEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
@@ -293,6 +301,16 @@ class DirectoryListModel : public QAbstractListModel {
     // in the scanned listing, so an unpublished batch cannot be observed as
     // presented state.
     std::vector<odysea::core::Entry> pendingScanEntries_;
+    // When the entries currently held began waiting, in milliseconds since
+    // the scan started. Meaningful only while entries are held: the next
+    // delivery to find the buffer empty overwrites it.
+    qint64 scanHoldStartMilliseconds_ = 0;
+    // Milliseconds since the current scan began. Held as a function rather
+    // than read from the clock directly so a case can drive the hold rule
+    // over a chosen timeline instead of sleeping through a real one; a rule
+    // about waiting is otherwise testable only by waiting.
+    std::function<qint64()> scanElapsedMilliseconds_;
+    QElapsedTimer scanClock_;
     std::vector<odysea::core::Entry> entries_;
     // Row keys, parallel to entries_, plus the first row each key occupies.
     // Both are derived from entries_ and exist so a key is built once per

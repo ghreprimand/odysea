@@ -71,6 +71,77 @@ The view itself is unchanged and remains reachable. Its own navigation,
 accessibility declarations, virtualization, and retained-state bounds hold as
 recorded.
 
+## 2026-08-08 -- Scan publication states its held share and bounds it in time
+
+A scan publishes delivered entries once they amount to a quarter of what is
+already presented, which is what keeps a large load's cost proportional to the
+directory rather than to its square. The consequence was not recorded: a share
+of the listing is always waiting. A 32,000-entry load reveals its largest group
+6,016 entries at a time and still holds 2,304 when the scan completes, and the
+bound is a fifth of the directory at any size. That is now stated where the
+interval is chosen, alongside the first-content guarantee it was documented
+next to.
+
+Stating it exposed a second fact that changes what the tail means. While
+entries arrive at a steady rate the same rule bounds the wait at about a
+quarter of the elapsed scan, and it does so at any speed, because producing
+another quarter of a listing takes a quarter of the time already spent. A
+uniformly slow source scales that guarantee rather than breaking it: a
+10,000-entry scan at 640 entries a second publishes identically whether or not
+anything bounds it in time. What breaks it is a delivery rate that falls
+partway through, because the held entries then wait on a speed they were not
+delivered at.
+
+Publication now also happens when held entries have waited longer than the scan
+has been running, floored so that a scan's opening moments do not republish on
+every delivery. On a source that delivers 25,600 entries a second and then
+drops to 640, the longest a delivered entry stays invisible falls from 2,410 ms
+to 1,000 ms for one additional publication out of sixteen. The rule is
+consulted when a delivery arrives, so a source that stops delivering entirely
+is not covered; what it has already handed over waits for its next delivery or
+for completion.
+
+The obvious spelling of that rule is a fixed deadline, and it is a feedback
+loop rather than a bound: a publication costs work proportional to the whole
+listing, so once one takes longer than the deadline every subsequent delivery
+is already overdue and publishes, which is the fixed-interval publishing whose
+cost grows with the square of the entry count. Measured on a 32,000-entry load,
+a 5 ms deadline turned 22 publications into 223 and 244 ms into 5,524 ms, and a
+25 ms deadline into 79 publications and 2,895 ms, with key construction growing
+4.5x and 12.1x across a doubled directory against 2.0x for the shipped rule. A
+deadline that grows with the elapsed scan outruns the growth instead: each
+publication on time alone must wait as long as every one before it, so their
+number follows the logarithm of the scan's duration. The same load with the
+rule forced to start at 5 ms published 23 times in 280 ms.
+
+Two cases cover it. One drives deliveries against a supplied timeline, since a
+rule about waiting is otherwise testable only by waiting, and separates the
+shipped rule from one measuring the wait from the start of the scan; it checks
+the production clock before replacing it, because a timer that was never
+started reports nothing and would retire the rule while every supplied-time
+step still passed. The other holds the affordability as a property, counting
+publications on time alone across a ten-minute scan: twelve against a ceiling
+of one per doubling past the floor, and 2,307 for a fixed deadline over the
+same timeline. Both counts are bounded below as well as above. Twelve planted
+mutations were caught, keyed on exit status; two of them were first rejected by
+the compiler and were replanted rather than counted.
+
+A stale comment is corrected in the same change. Indexing the scanned listing
+by name inserted its explanation between an existing comment and the
+declarations it described, leaving the rule for the presented rows standing
+above the listing mutators instead.
+
+The warning-clean release build passed all 52 checks, including scoped static
+analysis, 18 guards, and both GPU-path gates. The ASan/UBSan build passed all
+51 enabled checks; static analysis is disabled in that preset. The advisory
+clang-tidy baseline moves by one line: one additional cognitive-complexity
+report in the model's acquisition suite, from the new supplied-timeline case.
+Release and sanitizer binaries completed silent eight-second offscreen smoke
+launches on the OpenGL and software paths with no shared-memory residue. The
+GPU-path gates need a display to do anything: with none, their capability
+probe exits as a skip and the run stays green while asserting nothing, so they
+were run explicitly against one.
+
 ## 2026-08-08 -- Narrow the visual acceptance record to what the gates cover
 
 The visual foundation acceptance entry in the roadmap listed scale behavior
