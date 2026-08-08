@@ -17,6 +17,65 @@ the archive.
 
 ---
 
+## 2026-08-08 -- A scattered removal costs what a contiguous one costs
+
+Filtering a large listing no longer grows with the square of its size. The key
+index and the selection row set are both derived from every presented row, and
+a removal renumbers every row after it, so both were rebuilt after each
+contiguous run of departing rows. A filter removes a scattered set, so the
+number of runs grows with the listing: removing 10,206 of 16,000 rows took
+1,135 runs and 352 ms, while removing 8,000 rows as a single block took 11 ms.
+Typing in the filter box is exactly the scattered case, and the load work that
+made directories of that size openable is what put it within reach.
+
+Departing rows are now gathered at the end of the listing first, so the
+removal is a single suffix and the derived state is rebuilt a fixed number of
+times per update. Gathering them is published as a reorder, which is what it
+is, and which this model already emits when sorting changes; a removal that is
+already a suffix skips it, so a removal at the end of a listing still
+publishes exactly one signal. The same 16,000-entry scattered filter now takes
+10 ms against 11 ms for the contiguous one, and index rebuilds fell from 1,136
+to 3.
+
+The regression gate bounds three things. The count of index rebuilds carries
+the mechanism, and is exact and machine-independent: 2 and 3 against a ceiling
+of 8, where per-run publication reads 2 and 1,136. The ratio between the
+scattered and contiguous filters carries the shape without depending on
+machine speed, since both halves run in the same build on the same machine:
+0.91 against a ceiling of 4, where per-run publication reads 29. Wall clock
+bounds only the catastrophic case. Both counters are bounded below as well as
+above, because a counter that has stopped counting reads zero and satisfies
+any ceiling — a gap found by planting exactly that defect, and one that also
+applied to the key-construction counter shipped earlier.
+
+The reorder is verified as well as measured. A persistent index on a surviving
+row still names that row afterwards; one on a departing row is invalidated by
+the removal rather than left pointing at whatever moved into its place. The
+reorder is announced before it happens, so a view that saves state on
+`layoutAboutToBeChanged` has something to restore. Every row that leaves is
+accounted for against a removal signal, so the row count cannot fall silently.
+The key index and the selection are checked from inside the reorder and the
+removal as well as after them, because an update repairs its own derived state
+before returning and a lapse is observable only while a signal is in flight.
+
+Twelve planted defects were rejected by the suites, keyed on exit status:
+per-run publication, a skipped reorder, a reorder that rebuilds no index,
+publishes no layout change, relocates no persistent indexes, orders the two
+groups backwards, leaves the parallel key list unpermuted, or rebuilds no
+selection; a removal that rebuilds no selection or leaves one departing row
+behind; and each of the two counters silently retired. Four of those survived
+the first round of cases and are closed by the checks described above.
+
+Known gap: this bounds how many passes an update makes over the rows, not what
+a pass does. A single reconciliation still inspects every presented entry
+rather than only what changed.
+
+The warning-clean release build passed all 47 checks, including scoped static
+analysis and both real-display RHI entries. A fresh ASan/UBSan build passed
+all 46 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
 ## 2026-08-08 -- Density-aware action-bar compaction
 
 The action row now drops button labels according to the live width required by

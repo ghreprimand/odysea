@@ -35,6 +35,16 @@ class DirectoryListModelTest : public QObject {
     // the row rather than only the count.
     static QString rowKeyIndexMismatch(const DirectoryListModel& model);
     static QString scannedNameIndexMismatch(const DirectoryListModel& model);
+    // How many contiguous runs of rows the given needle would remove from the
+    // rows currently presented. The cost this file bounds depends on the run
+    // count, not the removed-row count, so a case that measures a scattered
+    // filter has to establish that its filter really is scattered.
+    static int removalRunCount(const DirectoryListModel& model, const QString& needle);
+    // Empty when the selected row numbers agree with the selected keys over
+    // the rows currently presented. Selection is derived state of the same
+    // family as the key index, and it is repaired before an update returns,
+    // so a lapse is observable only from inside a row signal.
+    static QString selectionRowsMismatch(const DirectoryListModel& model);
     static QString measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
                                         LoadMeasurement& measurement);
 
@@ -52,6 +62,8 @@ class DirectoryListModelTest : public QObject {
     void overflowRequestsARescan();
     void destructionDropsQueuedWorkerCallbacks();
     void largeDirectoryLoadStaysWithinBudget();
+    void scatteredFilterMovesDepartingRowsBeforeRemovingThem();
+    void filteringCostsTheSameScatteredAsContiguous();
     void aDepartedEntryTakesItsSelectionStateWithIt();
     void anUnknownIdentityFollowsNothing();
     void scannedNameIndexTracksEveryListingMutation();
@@ -141,6 +153,248 @@ QString DirectoryListModelTest::measureDirectoryLoad(int entryCount, SettleBudge
     measurement.keyBuilds = model.entryKeyBuilds_;
     return {};
 }
+QString DirectoryListModelTest::selectionRowsMismatch(const DirectoryListModel& model) {
+    QSet<int> expected;
+    for (int row = 0; row < model.rowCount(); ++row) {
+        if (model.selectedEntryKeys_.contains(model.entryKeys_.at(static_cast<std::size_t>(row)))) {
+            expected.insert(row);
+        }
+    }
+    if (model.selectedRows_ != expected) {
+        return QStringLiteral("selected rows %1 do not match the %2 selected keys present")
+            .arg(model.selectedRows_.size())
+            .arg(expected.size());
+    }
+    return {};
+}
+
+int DirectoryListModelTest::removalRunCount(const DirectoryListModel& model,
+                                            const QString& needle) {
+    int runs = 0;
+    bool departing = false;
+    for (const odysea::core::Entry& entry : model.entries_) {
+        const bool survives =
+            QString::fromStdString(entry.name).contains(needle, Qt::CaseInsensitive);
+        if (!survives && !departing) {
+            ++runs;
+        }
+        departing = !survives;
+    }
+    return runs;
+}
+
+void DirectoryListModelTest::scatteredFilterMovesDepartingRowsBeforeRemovingThem() {
+    // A scattered removal is published as a reorder that gathers the
+    // departing rows at the end, then one removal of that block. Both halves
+    // are observable, and both have to be right.
+    //
+    // A view holds persistent indexes on the rows it has realized. The
+    // reorder must relocate them, so an index on a surviving row still names
+    // that row afterwards, and an index on a departing row is invalidated by
+    // the removal rather than left pointing at whatever moved into its place.
+    // Getting that wrong is silent: the rows are correct and only the view's
+    // idea of them is not.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    // Named so that name order alternates keep and drop, which makes the
+    // removal scattered rather than one block.
+    for (int index = 0; index < 6; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index) +
+                          (index % 2 == 0 ? "-keep.txt" : "-drop.txt")));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.watchService_.stop();
+    QCOMPARE(model.rowCount(), 6);
+
+    const int survivorRow = rowForName(model, QStringLiteral("entry-4-keep.txt"));
+    const int departingRow = rowForName(model, QStringLiteral("entry-3-drop.txt"));
+    QVERIFY(survivorRow >= 0);
+    QVERIFY(departingRow >= 0);
+    const QPersistentModelIndex survivor = model.index(survivorRow);
+    const QPersistentModelIndex departing = model.index(departingRow);
+
+    // The derived state is checked from inside the reorder and the removal as
+    // well as after them, because a view answers those signals by asking the
+    // model for data.
+    QString liveMismatch;
+    int liveChecks = 0;
+    const auto observe = [&model, &liveMismatch, &liveChecks] {
+        ++liveChecks;
+        if (liveMismatch.isEmpty()) {
+            liveMismatch = rowKeyIndexMismatch(model);
+        }
+        if (liveMismatch.isEmpty()) {
+            liveMismatch = selectionRowsMismatch(model);
+        }
+    };
+    connect(&model, &QAbstractItemModel::layoutChanged, &model, observe);
+    connect(&model, &QAbstractItemModel::rowsRemoved, &model, observe);
+
+    // Every row that leaves has to leave through a removal signal. A removal
+    // that publishes fewer rows than it takes away lets the row count fall
+    // silently, which a view has no way to notice.
+    int rowsPublishedAsRemoved = 0;
+    connect(&model, &QAbstractItemModel::rowsAboutToBeRemoved, &model,
+            [&rowsPublishedAsRemoved](const QModelIndex&, int first, int last) {
+                rowsPublishedAsRemoved += last - first + 1;
+            });
+
+    model.selectRow(survivorRow, Qt::NoModifier);
+    model.selectRow(departingRow, Qt::ControlModifier);
+    QCOMPARE(model.selectedCount(), 2);
+
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy removedSpy(&model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy layoutAboutSpy(&model, &QAbstractItemModel::layoutAboutToBeChanged);
+    QSignalSpy layoutSpy(&model, &QAbstractItemModel::layoutChanged);
+
+    const int rowsBefore = model.rowCount();
+    model.setFilterText(QStringLiteral("keep"));
+
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(resetSpy.count(), 0);
+    // One removal, not one per run. Publishing three runs separately is the
+    // cost this change exists to remove, so the count is pinned rather than
+    // left to the timing bounds.
+    QCOMPARE(removedSpy.count(), 1);
+    QCOMPARE(rowsPublishedAsRemoved, rowsBefore - model.rowCount());
+    // A reorder is announced before it happens. Publishing only the second
+    // half leaves a view that never saved the state it is being told to
+    // restore, and persistent indexes are the visible part of that state.
+    QVERIFY(layoutSpy.count() >= 1);
+    QCOMPARE(layoutAboutSpy.count(), layoutSpy.count());
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    QCOMPARE(selectionRowsMismatch(model), QString{});
+    QCOMPARE(model.selectedCount(), 1);
+
+    QVERIFY(survivor.isValid());
+    QCOMPARE(model.data(survivor, DirectoryListModel::NameRole).toString(),
+             QStringLiteral("entry-4-keep.txt"));
+    QCOMPARE(survivor.row(), rowForName(model, QStringLiteral("entry-4-keep.txt")));
+    QVERIFY(!departing.isValid());
+
+    QVERIFY(liveChecks > 0);
+    QCOMPARE(liveMismatch, QString{});
+}
+
+void DirectoryListModelTest::filteringCostsTheSameScatteredAsContiguous() {
+    // Removing a scattered set costs what removing a contiguous block of the
+    // same listing costs. Publishing each contiguous run separately did not:
+    // the key index and the selection are both derived from every row, a
+    // removal renumbers every row after it, and rebuilding them once per run
+    // made a filter over a large directory grow with the square of its size.
+    // Typing in the filter box is exactly a scattered removal.
+    //
+    // Three bounds, because no one of them holds the shape alone.
+    //
+    // The count of index rebuilds carries the mechanism. It is exact and
+    // machine-independent, and it is the quantity that grew: a fixed number
+    // per update against one per removal run. Measured 2 contiguous and 3
+    // scattered here, against 2 and 2,898 for per-run publication.
+    //
+    // The ratio between the two filters carries the shape without depending
+    // on machine speed, because both halves run on the same machine in the
+    // same build. An instrumented build is roughly twenty times slower and
+    // the ratio does not move. Measured 0.9 healthy at this size, against 29
+    // for per-run publication.
+    //
+    // Wall clock catches only the catastrophic case, and is bounded per build
+    // for that reason.
+    constexpr quint64 indexRebuildCeiling = 8;
+    constexpr double scatteredCostRatioCeiling = 4.0;
+#ifdef ODYSEA_INSTRUMENTED_BUILD
+    constexpr qint64 budgetMilliseconds = 12000;
+#else
+    constexpr qint64 budgetMilliseconds = 600;
+#endif
+    constexpr int entryCount = 16000;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    // Two families of equal size. A needle matching one family prefix removes
+    // a single block; a needle matching a digit removes a set spread through
+    // both, which is many runs rather than one.
+    for (int index = 0; index < entryCount / 2; ++index) {
+        writeFile(root / ("alpha-" + std::to_string(index)));
+        writeFile(root / ("bravo-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, 30 * budgetMilliseconds));
+    QCOMPARE(model.rowCount(), entryCount);
+    // The watcher is stopped so a delivery cannot land inside a measurement.
+    model.watchService_.stop();
+
+    // Counted while every row is still presented, because a run count is a
+    // property of the removal the filter is about to perform.
+    const int contiguousRuns = removalRunCount(model, QStringLiteral("alpha"));
+
+    QElapsedTimer timer;
+    const quint64 buildsBeforeContiguous = model.entryRowIndexBuilds_;
+    timer.start();
+    model.setFilterText(QStringLiteral("alpha"));
+    const qint64 contiguousMilliseconds = timer.elapsed();
+    const quint64 contiguousRebuilds = model.entryRowIndexBuilds_ - buildsBeforeContiguous;
+    const int contiguousRows = model.rowCount();
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    model.setFilterText(QString{});
+    QCOMPARE(model.rowCount(), entryCount);
+
+    const int scatteredRuns = removalRunCount(model, QStringLiteral("7"));
+
+    const quint64 buildsBeforeScattered = model.entryRowIndexBuilds_;
+    timer.restart();
+    model.setFilterText(QStringLiteral("7"));
+    const qint64 scatteredMilliseconds = timer.elapsed();
+    const quint64 scatteredRebuilds = model.entryRowIndexBuilds_ - buildsBeforeScattered;
+    const int scatteredRows = model.rowCount();
+    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+
+    // The fixture is only meaningful if the two filters really do remove
+    // comparable numbers of rows in incomparable numbers of runs. A scattered
+    // filter that happened to remove a block would pass every bound below
+    // while testing nothing.
+    QCOMPARE(contiguousRows, entryCount / 2);
+    QVERIFY(scatteredRows > entryCount / 8);
+    QCOMPARE(contiguousRuns, 1);
+    QVERIFY2(scatteredRuns > 100,
+             qPrintable(QStringLiteral("scattered filter removed %1 runs").arg(scatteredRuns)));
+
+    const double ratio = static_cast<double>(std::max<qint64>(scatteredMilliseconds, 1)) /
+                         static_cast<double>(std::max<qint64>(contiguousMilliseconds, 1));
+
+    // Reported unconditionally so a failure arrives with the measurements
+    // that produced it instead of only the bounds it missed.
+    qInfo("%d entries: contiguous filter %lld ms, %d rows removed in %d run, %llu index rebuilds",
+          entryCount, static_cast<long long>(contiguousMilliseconds), entryCount - contiguousRows,
+          contiguousRuns, static_cast<unsigned long long>(contiguousRebuilds));
+    qInfo("%d entries: scattered filter %lld ms, %d rows removed in %d runs, %llu index rebuilds",
+          entryCount, static_cast<long long>(scatteredMilliseconds), entryCount - scatteredRows,
+          scatteredRuns, static_cast<unsigned long long>(scatteredRebuilds));
+    qInfo(
+        "scattered/contiguous cost ratio %.2f, ceiling %.2f; rebuild ceiling %llu; budget %lld ms",
+        ratio, scatteredCostRatioCeiling, static_cast<unsigned long long>(indexRebuildCeiling),
+        static_cast<long long>(budgetMilliseconds));
+
+    // Bounded below as well as above. An upper bound alone is satisfied by a
+    // counter that has stopped counting, which would retire the instrument
+    // while leaving the gate green.
+    QVERIFY(contiguousRebuilds > 0);
+    QVERIFY(scatteredRebuilds > 0);
+    QVERIFY(contiguousRebuilds < indexRebuildCeiling);
+    QVERIFY(scatteredRebuilds < indexRebuildCeiling);
+    QVERIFY(ratio < scatteredCostRatioCeiling);
+    QVERIFY(contiguousMilliseconds < budgetMilliseconds);
+    QVERIFY(scatteredMilliseconds < budgetMilliseconds);
+}
+
 void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
     // Directories large enough for reconciliation to dominate the fixed cost
     // of starting a scan. Every other case in this file uses a handful of

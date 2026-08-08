@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -220,7 +221,7 @@ class DirectoryListModel : public QAbstractListModel {
     void replaceWatch();
     void applyPresentationSettings(bool finalScanBatch = false);
 
-    // The only three ways the presented rows may change. Each keeps the row
+    // The only four ways the presented rows may change. Each keeps the row
     // keys and the key index in step with the entries, so no caller can leave
     // a stale key behind a live row.
     // The only three ways the scanned listing may change. Each keeps the name
@@ -242,6 +243,7 @@ class DirectoryListModel : public QAbstractListModel {
     void setEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
     void eraseEntryRows(int first, int last);
     void appendEntryRows(std::vector<odysea::core::Entry> entries, std::vector<QString> keys);
+    void reorderEntryRows(const std::vector<std::size_t>& order);
     void rebuildEntryRowIndex();
     void setBusy(bool busy);
     void setErrorString(const QString& errorString);
@@ -299,6 +301,11 @@ class DirectoryListModel : public QAbstractListModel {
     // hold that shape: wall clock alone cannot separate a regression from a
     // loaded machine.
     mutable std::uint64_t entryKeyBuilds_ = 0;
+    // Counts full passes over the rows that rebuild the key index. An update
+    // that performs a fixed number of them is linear in the listing; one that
+    // performs a pass per removal run is not, and no wall-clock bound
+    // separates those two on an unloaded machine at a small enough size.
+    std::uint64_t entryRowIndexBuilds_ = 0;
     QSet<int> selectedRows_;
     QSet<QString> selectedEntryKeys_;
     QHash<QString, QString> pendingEntryKeyRemaps_;

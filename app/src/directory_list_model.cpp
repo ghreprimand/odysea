@@ -720,7 +720,26 @@ void DirectoryListModel::appendEntryRows(std::vector<odysea::core::Entry> entrie
     rebuildEntryRowIndex();
 }
 
+void DirectoryListModel::reorderEntryRows(const std::vector<std::size_t>& order) {
+    std::vector<odysea::core::Entry> reorderedEntries;
+    std::vector<QString> reorderedKeys;
+    reorderedEntries.reserve(order.size());
+    reorderedKeys.reserve(order.size());
+    for (const std::size_t row : order) {
+        reorderedEntries.push_back(std::move(entries_.at(row)));
+        reorderedKeys.push_back(std::move(entryKeys_.at(row)));
+    }
+    entries_ = std::move(reorderedEntries);
+    entryKeys_ = std::move(reorderedKeys);
+    rebuildEntryRowIndex();
+}
+
 void DirectoryListModel::rebuildEntryRowIndex() {
+    // Counted for the same reason key construction is: this pass touches
+    // every row, so how many times an update performs it carries the shape of
+    // the update's cost, and a count is machine-independent where wall clock
+    // is not.
+    ++entryRowIndexBuilds_;
     // First occurrence wins, because that is the row the linear searches this
     // index replaced would have returned. Two rows can carry one key while a
     // rename remap is pending, and a last-wins index would quietly point
@@ -849,23 +868,74 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
         currentKeys.push_back(resolveKey(key));
     }
 
-    for (int end = rowCount() - 1; end >= 0;) {
-        if (targetKeys.contains(currentKeys.at(static_cast<std::size_t>(end)))) {
-            --end;
-            continue;
+    // Departing rows are published as one contiguous removal.
+    //
+    // Publishing each contiguous run separately cost a full key-index rebuild
+    // and a full selection rebuild per run, because both are derived from
+    // every row and a removal renumbers every row after it. A filter removes
+    // a scattered set, so the number of runs grows with the listing and those
+    // rebuilds turned filtering a large directory into work proportional to
+    // its size squared — while removing the same number of rows in one block
+    // stayed linear.
+    //
+    // Moving the departing rows to the end first makes the removal a single
+    // suffix, so the derived state is rebuilt a fixed number of times per
+    // update rather than once per run. The move is published as a reorder,
+    // which is what it is, and which is a signal this model already emits
+    // when sorting changes.
+    std::vector<std::size_t> survivingRows;
+    std::vector<std::size_t> departingRows;
+    survivingRows.reserve(currentKeys.size());
+    for (std::size_t row = 0; row < currentKeys.size(); ++row) {
+        if (targetKeys.contains(currentKeys.at(row))) {
+            survivingRows.push_back(row);
+        } else {
+            departingRows.push_back(row);
         }
-        int first = end;
-        while (first > 0 &&
-               !targetKeys.contains(currentKeys.at(static_cast<std::size_t>(first - 1)))) {
-            --first;
+    }
+
+    if (!departingRows.empty()) {
+        // A removal that is already a suffix needs no reorder, so a removal
+        // at the end of the listing still publishes exactly one signal.
+        if (departingRows.front() != survivingRows.size()) {
+            std::vector<std::size_t> order = survivingRows;
+            order.insert(order.end(), departingRows.begin(), departingRows.end());
+
+            const QModelIndexList movedPersistentIndexes = persistentIndexList();
+            std::vector<int> rowAfterMove(order.size(), -1);
+            for (std::size_t position = 0; position < order.size(); ++position) {
+                rowAfterMove.at(order.at(position)) = static_cast<int>(position);
+            }
+
+            emit layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
+            reorderEntryRows(order);
+            std::vector<QString> reorderedKeys;
+            reorderedKeys.reserve(order.size());
+            for (const std::size_t row : order) {
+                reorderedKeys.push_back(currentKeys.at(row));
+            }
+            currentKeys = std::move(reorderedKeys);
+            rebuildSelectionRows();
+
+            QModelIndexList relocatedPersistentIndexes;
+            relocatedPersistentIndexes.reserve(movedPersistentIndexes.size());
+            for (const QModelIndex& persistent : movedPersistentIndexes) {
+                relocatedPersistentIndexes.push_back(
+                    index(rowAfterMove.at(static_cast<std::size_t>(persistent.row())),
+                          persistent.column()));
+            }
+            changePersistentIndexList(movedPersistentIndexes, relocatedPersistentIndexes);
+            emit layoutChanged({}, QAbstractItemModel::VerticalSortHint);
         }
-        beginRemoveRows({}, first, end);
-        eraseEntryRows(first, end);
+
+        const int first = static_cast<int>(survivingRows.size());
+        const int last = rowCount() - 1;
+        beginRemoveRows({}, first, last);
+        eraseEntryRows(first, last);
         currentKeys.erase(currentKeys.begin() + static_cast<std::ptrdiff_t>(first),
-                          currentKeys.begin() + static_cast<std::ptrdiff_t>(end) + 1);
+                          currentKeys.end());
         rebuildSelectionRows();
         endRemoveRows();
-        end = first - 1;
     }
 
     QSet<QString> existingKeys;

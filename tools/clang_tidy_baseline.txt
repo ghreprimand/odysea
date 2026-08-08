@@ -37,7 +37,7 @@
 1	app/src/thumbnail_image_provider.cpp	performance-move-const-arg
 1	app/src/thumbnail_image_provider.cpp	performance-unnecessary-value-param
 1	app/tests/directory_list_model_test_support.hpp	cppcoreguidelines-special-member-functions
-21	app/tests/tst_directory_list_model.cpp	readability-function-cognitive-complexity
+23	app/tests/tst_directory_list_model.cpp	readability-function-cognitive-complexity
 7	app/tests/tst_directory_list_model_interaction.cpp	readability-function-cognitive-complexity
 2	app/tests/tst_shell_entry_interactions.cpp	readability-function-cognitive-complexity
 7	app/tests/tst_shell_loader.cpp	readability-function-cognitive-complexity
