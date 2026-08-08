@@ -22,11 +22,17 @@
 //   * A non-directory entry counts as a file, including symbolic links and
 //     special files. A symbolic link is counted at its own size, not its
 //     target's, unless the walk is configured to follow directory links.
-//   * The same inode reached twice is counted once. The first reach owns the
-//     bytes, and later reaches are counted as deduplicated instead. This is
-//     what stops a set of hard links from inflating a subtree, and it is why
-//     a child's total is "the space that would be freed by removing this
-//     child" only when nothing outside the subtree also links to its files.
+//   * The same inode reached twice is counted once, whatever brought the walk
+//     back to it. The first reach owns the bytes, and later reaches are
+//     counted as deduplicated instead. This is what stops a set of hard links
+//     from inflating a subtree, and it is why a child's total is "the space
+//     that would be freed by removing this child" only when nothing outside
+//     the subtree also links to its files. The guarantee does not depend on
+//     an entry's link count: a bind mount presents one inode at a second path
+//     with a single link at both, so link count says nothing about how often
+//     an inode can be reached. Holding it costs one identity per counted
+//     entry, on the order of sixty bytes each, which is the deliberate price
+//     of a figure that does not inflate silently.
 //   * Crossing a filesystem boundary is a caller's decision, never implicit.
 #pragma once
 

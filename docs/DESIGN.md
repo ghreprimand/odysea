@@ -280,11 +280,15 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   measurement. Directories count their own metadata as well as their contents.
   A symbolic link counts at its own size and is not followed unless the caller
   asks, because following one makes the figure depend on where the link
-  happens to point. The same inode reached twice — through hard links, or
-  through a link the caller asked to follow — is counted once, with the first
-  reach owning the bytes and later reaches reported as deduplicated; a child's
-  total is therefore "what removing this child would free" only when nothing
-  outside the subtree also links to its files. Space the walk could not read
+  happens to point. The same inode reached twice — through hard links, a
+  bind mount, or a link the caller asked to follow — is counted once, with the
+  first reach owning the bytes and later reaches reported as deduplicated; a
+  child's total is therefore "what removing this child would free" only when
+  nothing outside the subtree also links to its files. The guarantee does not
+  depend on an entry's link count, because a bind mount presents one inode at
+  a second path with a single link at both; holding it costs one identity per
+  counted entry, which is the deliberate price of a figure that cannot inflate
+  without saying so. Space the walk could not read
   is reported as a partial result, never dropped as if the subtree were empty.
 - **Crossing a filesystem boundary is a caller's decision.** A walk stays on
   the filesystem it started on unless told otherwise, because a walk from a

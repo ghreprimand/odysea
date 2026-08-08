@@ -18,8 +18,11 @@
 #include <initializer_list>
 #include <mutex>
 #include <optional>
+#include <sched.h>
 #include <string>
+#include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <system_error>
 #include <thread>
 #include <unistd.h>
@@ -261,6 +264,132 @@ void test_a_file_reached_twice_is_counted_once() {
         first->totals.deduplicated_entries + second->totals.deduplicated_entries;
     check(counted == 1 && deduplicated == 1,
           "exactly one of the two subtrees owns the bytes and the other records the repeat");
+}
+
+/// How the forked child below reported on the bind-mount fixture. Distinct
+/// values rather than a bare pass or fail, so a machine that cannot build the
+/// fixture is told apart from one where the walk got the wrong answer.
+/// The two ends of the bind mount, as distinct types. Both are paths and they
+/// sit next to each other, so transposing them would compile and then produce
+/// a fixture that still looks plausible: binding the covered file over the
+/// shared one leaves two ordinary files and proves nothing.
+struct BindSource {
+    fs::path path;
+};
+
+struct BindTarget {
+    fs::path path;
+};
+
+enum class BindOutcome : std::uint8_t {
+    CountedOnce = 0,
+    CountedTwice = 1,
+    NotReproduced = 2,
+    ScanFailed = 3,
+    Unavailable = 4,
+};
+
+/// Bind `source` over `target` inside a private namespace and report whether
+/// the walk counted the shared inode once.
+///
+/// Runs in a forked child because both the user namespace and the mount are
+/// process-wide: doing this in the test process would change its identity for
+/// every later case and leave a mount behind if the walk aborted. The child's
+/// namespace dies with it, so nothing outside this function can observe the
+/// mount, and nothing is left to clean up.
+BindOutcome bind_mount_walk_outcome(const fs::path& root, const BindSource& source,
+                                    const BindTarget& target) {
+    // A new user namespace grants a full capability set inside itself, which
+    // is what makes the mount below permissible. No identifier mapping is
+    // written: mapping is what translates owners for display, and this walk
+    // reads sizes and inode numbers, neither of which the mapping touches.
+    if (::unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0) {
+        return BindOutcome::Unavailable;
+    }
+    // Detach this namespace's mounts from the host's, so the bind below
+    // cannot propagate out of it.
+    if (::mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr) != 0) {
+        return BindOutcome::Unavailable;
+    }
+    if (::mount(source.path.c_str(), target.path.c_str(), nullptr, MS_BIND, nullptr) != 0) {
+        return BindOutcome::Unavailable;
+    }
+
+    // Asserted, not assumed. If the mount did not actually put one inode at
+    // both paths with a single link at each, the walk below would agree with
+    // a broken implementation for the wrong reason.
+    struct ::stat source_info{};
+    struct ::stat target_info{};
+    if (::lstat(source.path.c_str(), &source_info) != 0 ||
+        ::lstat(target.path.c_str(), &target_info) != 0) {
+        return BindOutcome::NotReproduced;
+    }
+    if (source_info.st_dev != target_info.st_dev || source_info.st_ino != target_info.st_ino ||
+        source_info.st_nlink != 1 || target_info.st_nlink != 1) {
+        return BindOutcome::NotReproduced;
+    }
+
+    const UsageSummary summary = walk(root);
+    if (summary.error || summary.cancelled) {
+        return BindOutcome::ScanFailed;
+    }
+    if (summary.totals.file_count == 1 && summary.totals.deduplicated_entries == 1) {
+        return BindOutcome::CountedOnce;
+    }
+    return BindOutcome::CountedTwice;
+}
+
+void test_a_single_link_file_reached_twice_is_counted_once() {
+    // The counting policy says an inode reached twice is counted once. A bind
+    // mount of a single file is the case that policy is easiest to get wrong
+    // for: the inode appears at two paths with one link at each, on one
+    // device, under two different directories. Nothing else in the walk
+    // notices. The boundary check does not fire because a bind mount of the
+    // same filesystem shares its device number, and directory deduplication
+    // does not apply because the two paths sit under different directories.
+    // Restricting the identity set to entries with more than one link
+    // therefore counted the bytes twice and left deduplicated_entries at
+    // zero, so the inflation was not merely wrong but undetectable.
+    const odysea::test::TemporaryTree tree("usage_bind_mount");
+    // The two holders are created by the files placed inside them.
+    const BindSource source{.path = tree.file("left/shared.bin", payload(3000))};
+    const BindTarget target{.path = tree.file("right/covered.bin", payload(64))};
+
+    const pid_t child = ::fork();
+    check(child >= 0, "the fixture can fork a namespace holder");
+    if (child < 0) {
+        return;
+    }
+    if (child == 0) {
+        // Never returns to the harness: this process exists only to carry the
+        // namespace, and running the remaining cases in it would report them
+        // twice.
+        ::_exit(static_cast<int>(bind_mount_walk_outcome(tree.root(), source, target)));
+    }
+
+    int status = 0;
+    const pid_t waited = ::waitpid(child, &status, 0);
+    check(waited == child && WIFEXITED(status) != 0,
+          "the namespace holder reports an outcome instead of dying");
+    if (waited != child || WIFEXITED(status) == 0) {
+        return;
+    }
+
+    const auto outcome = static_cast<BindOutcome>(WEXITSTATUS(status));
+    if (outcome == BindOutcome::Unavailable) {
+        // Stated rather than silent. A kernel without unprivileged user
+        // namespaces cannot build this fixture, and a case that quietly
+        // reported success there would be claiming a guarantee it never
+        // tested.
+        std::fputs("storage_usage: bind-mount case skipped, no unprivileged mount namespace\n",
+                   stdout);
+        return;
+    }
+    check(outcome != BindOutcome::NotReproduced,
+          "the bind mount really does present one inode at two paths with one link at each");
+    check(outcome != BindOutcome::ScanFailed, "the walk over the bind-mounted tree completes");
+    check(outcome == BindOutcome::CountedOnce,
+          "an inode reached twice through a bind mount is counted once and the repeat reported");
 }
 
 void test_a_symlink_cycle_terminates() {
@@ -651,6 +780,7 @@ int main() {
     test_totals_match_a_tree_of_known_sizes();
     test_apparent_and_allocated_sizes_stay_apart();
     test_a_file_reached_twice_is_counted_once();
+    test_a_single_link_file_reached_twice_is_counted_once();
     test_a_symlink_cycle_terminates();
     test_an_unreadable_subtree_reports_a_partial_result();
     test_cancellation_stops_a_walk_at_depth();

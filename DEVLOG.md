@@ -17,6 +17,50 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Storage usage deduplicates an inode however it was reached
+
+The counting policy says an inode reached twice is counted once. Storage usage
+only held that for entries with more than one link, on the reasoning that a
+single link means a single path. A bind mount of one file breaks that
+reasoning: the inode appears at two paths with a link count of one at each, on
+one device, under two different directories. Nothing else in the walk noticed.
+The boundary check does not fire, because a bind mount of the same filesystem
+shares its device number; and directory deduplication does not apply, because
+the two paths sit under different directories. The bytes were counted twice
+and `deduplicated_entries` stayed at zero, so the inflation was not merely
+wrong but undetectable by the field that exists to report it.
+
+Every known non-directory identity is now recorded. Link count says nothing
+about how often an inode can be reached, so it no longer gates the guarantee.
+The cost is one identity per counted entry rather than per multiply linked
+one: measured over a synthetic tree of 200,000 files, peak resident memory
+went from 4.6 MB to 16.7 MB and the walk from 142 ms to 174 ms, or about sixty
+bytes per counted entry. That trade is stated in the header and the design
+document rather than left implicit, because a measurement that is wrong
+without saying so is worth more memory than one that is right.
+
+The case that pins it performs the bind mount for real. A forked child enters
+a private user and mount namespace, binds one file over another, and reports
+what the walk counted; the namespace dies with the child, so nothing is left
+mounted and nothing outside the case can observe it. The child asserts the
+fixture before trusting it: unless both paths report one device, one inode,
+and one link, it reports the fixture as unreproduced rather than letting the
+walk agree with a broken implementation for the wrong reason. A kernel without
+unprivileged mount namespaces cannot build this fixture, and the case says so
+in its output instead of quietly reporting a guarantee it never tested.
+
+Four planted defects were rejected, keyed on exit status: restoring the link
+count precondition, recording no counted inode at all, binding something that
+is not the shared inode, and skipping the bind mount entirely. The last two
+fail the fixture assertions rather than the counting check, which is what
+shows the case cannot pass without the repeat actually happening.
+
+The warning-clean release build passed all 47 checks, including scoped static
+analysis and both real-display RHI entries. A fresh ASan/UBSan build passed
+all 46 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
 ## 2026-08-08 -- The scanned listing carries its own name index
 
 A folder-watch delivery no longer searches the scanned listing once per name

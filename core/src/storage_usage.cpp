@@ -52,9 +52,25 @@ struct WalkContext {
     /// quiet kind of wrong a usage map cannot afford. The cost is bounded by
     /// the number of directories, far below the number of files.
     IdentitySet visited_directories;
-    /// Inodes already counted for entries with more than one link. Entries
-    /// with a single link cannot be reached twice, so they stay out of the
-    /// set and a walk over ordinary files costs no extra memory.
+    /// Inodes already counted for non-directory entries.
+    ///
+    /// Every known identity is recorded, not only those with more than one
+    /// link. A single link means only that one directory entry names the
+    /// inode; it does not mean the inode can be reached only once. A bind
+    /// mount of a single file presents that inode at a second path with a
+    /// link count of one at both, on the same device, so nothing else in the
+    /// walk would notice the repeat: the boundary check does not fire, and
+    /// directory deduplication does not apply because the two paths sit under
+    /// different directories.
+    ///
+    /// The cost is one identity per non-directory entry counted rather than
+    /// per multiply linked one, on the order of sixty bytes each. That is the
+    /// price of the stated guarantee. Restricting the set by link count made
+    /// the walk's memory independent of the file count, but it also made the
+    /// repeat silent: the entry would be counted twice and
+    /// `deduplicated_entries` would stay at zero, so a caller could not even
+    /// detect the inflation, let alone correct it. A measurement that is
+    /// wrong without saying so is worth more memory than one that is right.
     IdentitySet counted_files;
 };
 
@@ -141,7 +157,7 @@ void note_unreadable(UsageTotals& child, UsageTotals& root) {
             note_duplicate(child, root);
             return std::nullopt;
         }
-    } else if (metadata.link_count > 1 && metadata.identity.known() &&
+    } else if (metadata.identity.known() &&
                !context.counted_files.insert(metadata.identity).second) {
         note_duplicate(child, root);
         return std::nullopt;
