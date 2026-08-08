@@ -33,6 +33,8 @@ Item {
             return "M5 6 L6 6 M10 6 L20 6 M5 12 L6 12 M10 12 L20 12 M5 18 L6 18 M10 18 L20 18";
         case "grid":
             return "M4 4 L10 4 L10 10 L4 10 Z M14 4 L20 4 L20 10 L14 10 Z M4 14 L10 14 L10 20 L4 20 Z M14 14 L20 14 L20 20 L14 20 Z";
+        case "columns":
+            return "M3 4 L8 4 L8 20 L3 20 Z M10 4 L16 4 L16 20 L10 20 Z M18 4 L21 4 L21 20 L18 20 Z";
         case "appearance":
             return "M4 6 L20 6 M8 3 L8 9 M4 12 L20 12 M16 9 L16 15 M4 18 L20 18 M11 15 L11 21";
         case "add":

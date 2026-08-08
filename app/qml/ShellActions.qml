@@ -243,7 +243,7 @@ ActionRegistry {
         shortLabel: qsTr("List")
         iconName: "list"
         checkable: true
-        checked: !actionSet.shell.gridMode
+        checked: !actionSet.shell.gridMode && !actionSet.shell.columnsMode
         shortcuts: [
             {
                 "sequence": "Ctrl+Shift+1"
@@ -257,13 +257,27 @@ ActionRegistry {
         shortLabel: qsTr("Grid")
         iconName: "grid"
         checkable: true
-        checked: actionSet.shell.gridMode
+        checked: actionSet.shell.gridMode && !actionSet.shell.columnsMode
         shortcuts: [
             {
                 "sequence": "Ctrl+Shift+2"
             }
         ]
         perform: () => actionSet.shell.switchView(true)
+    }
+    ShellAction {
+        actionId: "view.columns"
+        label: qsTr("Columns view")
+        shortLabel: qsTr("Columns")
+        iconName: "columns"
+        checkable: true
+        checked: actionSet.shell.columnsMode
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+3"
+            }
+        ]
+        perform: () => actionSet.shell.switchColumnsView()
     }
     ShellAction {
         actionId: "view.cycleSort"

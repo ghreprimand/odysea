@@ -9,7 +9,9 @@
 // maps well rectangles assuming that single clip level and identity
 // transforms; wrapping the views in a clipped or scaled container would
 // break that mapping silently.
+pragma ComponentBehavior: Bound
 import QtQuick
+import OdySea
 
 FocusScope {
     id: pane
@@ -21,12 +23,15 @@ FocusScope {
     /// Whether the grid or the list renders. The mode is workspace state,
     /// so it lives on the shell and arrives here as a binding.
     property bool gridMode: false
+    /// Miller/columns is a third, exclusive workspace view.
+    property bool columnsMode: false
     /// How long the current-entry ring persists when the cursor moves away.
     /// The shell binds the presentation layer's motion token; zero renders
     /// instantly under reduced motion.
     property int persistenceDurationMs: 0
     /// Optional protected-content mask layer for grid thumbnails.
     property WellMaskLayer wellLayer: null
+    readonly property MillerColumnsView millerView: millerLoader.item as MillerColumnsView
 
     /// The pane's one shared context menu. Both views open it for entry,
     /// selection, and blank-canvas targets; the menu builds its items from
@@ -34,7 +39,11 @@ FocusScope {
     readonly property ActionMenu actionMenu: paneActionMenu
 
     function focusCurrentView() {
-        if (pane.gridMode) {
+        if (pane.columnsMode) {
+            if (pane.millerView !== null) {
+                pane.millerView.focusView();
+            }
+        } else if (pane.gridMode) {
             directoryGrid.forceViewFocus();
         } else {
             directoryList.focusView();
@@ -42,7 +51,11 @@ FocusScope {
     }
 
     function revealCurrent() {
-        if (pane.gridMode) {
+        if (pane.columnsMode) {
+            if (pane.millerView !== null) {
+                pane.millerView.revealCurrent();
+            }
+        } else if (pane.gridMode) {
             directoryGrid.revealCurrent();
         } else {
             directoryList.revealCurrent();
@@ -60,14 +73,14 @@ FocusScope {
         deepColor: pane.theme.backgroundDeep
         fillOpacity: pane.theme.glassOpacity
         radius: 6
-        strokeColor: directoryList.activeFocus || directoryGrid.activeFocus ? pane.theme.accent : pane.theme.border
+        strokeColor: directoryList.activeFocus || directoryGrid.activeFocus || (pane.millerView !== null && pane.millerView.activeFocus) ? pane.theme.accent : pane.theme.border
     }
 
     DirectoryListView {
         id: directoryList
 
         anchors.fill: parent
-        visible: !pane.gridMode
+        visible: !pane.gridMode && !pane.columnsMode
         shellModel: pane.shellModel
         navigationController: pane.navigationController
         rowHeight: pane.theme.rowHeight
@@ -95,7 +108,7 @@ FocusScope {
         id: directoryGrid
 
         anchors.fill: parent
-        visible: pane.gridMode
+        visible: pane.gridMode && !pane.columnsMode
         shellModel: pane.shellModel
         navigationController: pane.navigationController
         backgroundColor: pane.theme.background
@@ -122,6 +135,24 @@ FocusScope {
         persistenceDurationMs: pane.persistenceDurationMs
         wellLayer: pane.wellLayer
         actionMenu: pane.actionMenu
+    }
+
+    Loader {
+        id: millerLoader
+
+        objectName: "millerColumnsLoader"
+        anchors.fill: parent
+        active: pane.columnsMode
+        visible: active
+        sourceComponent: MillerColumnsView {
+            columnsModel: MillerColumnsModel {
+                rootPath: pane.shellModel.path
+                showHidden: pane.shellModel.showHidden
+                filterText: pane.shellModel.filterText
+                sortMode: pane.shellModel.sortMode
+            }
+            theme: pane.theme
+        }
     }
 
     ActionMenu {

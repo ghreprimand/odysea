@@ -47,6 +47,8 @@ qt_add_qml_module(odysea_shell_qml
     # The appearance state lives in the module as the ShellTheme type, so the
     # application and every scene test configure the same implementation.
     SOURCES
+        src/miller_columns_model.cpp
+        src/miller_columns_model.hpp
         src/storage_usage_model.cpp
         src/storage_usage_model.hpp
         src/theme_controller.cpp
@@ -71,6 +73,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/EffectBrightPass.qml
         qml/EffectComposite.qml
         qml/Main.qml
+        qml/MillerColumnsView.qml
         qml/FilesystemDialogs.qml
         qml/LongFormText.qml
         qml/PanePlaceholder.qml
@@ -118,7 +121,7 @@ target_link_libraries(odysea_shell_qml
         odysea::core
         Qt6::Quick Qt6::QuickControls2
     PRIVATE
-        odysea_warnings odysea_sanitizers)
+        odysea_app_adapter odysea_warnings odysea_sanitizers)
 
 target_link_libraries(odysea_app_adapter
     PUBLIC
@@ -204,6 +207,17 @@ target_link_libraries(odysea_storage_usage_model_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_storage_usage_model COMMAND odysea_storage_usage_model_tests)
+
+qt_add_executable(odysea_miller_columns_model_tests
+    tests/tst_miller_columns_model.cpp)
+
+target_link_libraries(odysea_miller_columns_model_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_miller_columns_model COMMAND odysea_miller_columns_model_tests)
 
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic

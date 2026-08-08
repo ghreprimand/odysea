@@ -17,6 +17,31 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Miller columns navigation
+
+The shell now offers a Miller columns view alongside its list and grid views.
+Each visible column represents one directory level, and directory selection
+extends the live path to the right. Pointer and keyboard paths cover movement
+within and across columns, directory expansion, backtracking, and file
+activation. Columns and rows expose content-derived accessibility names plus
+current and selected state.
+
+Each live column owns one existing asynchronous directory model, so scanning,
+watch updates, filtering, sorting, and cancellation retain the established
+behavior. Replacing or collapsing a branch destroys its descendant models
+immediately instead of caching visited listings. Rows remain virtualized with
+delegate reuse and no cache buffer, bounding both retained scan state and
+instantiated delegates to the visible path and viewport. A five-level fixture
+with 1,000 files per level retained 5,004 rows across its five live models,
+loaded in 252 ms in release and 497 ms under ASan/UBSan, and released all four
+descendant models when it collapsed to the root.
+
+The warning-clean wiped release build passed all 52 checks, including static
+analysis and both executed RHI gates. The wiped ASan/UBSan build passed all 51
+enabled checks; static analysis is disabled in that preset, and both RHI gates
+executed. Release and sanitizer binaries completed silent eight-second smoke
+launches with both the software path and the real-Wayland OpenGL path.
+
 ## 2026-08-08 -- Interactive storage usage map and accessible list
 
 Storage accounting is now available from the canvas context menu, the command

@@ -50,6 +50,7 @@ ApplicationWindow {
     readonly property color selectionColor: shellTheme.selectionBed
     readonly property int typeAheadTimeoutMs: 900
     property bool gridMode: false
+    property bool columnsMode: false
     property string typeAheadBuffer: ""
     property int activePaneIndex: 0
     readonly property bool dualPaneEnabled: shellTheme.dualPaneEnabled
@@ -204,7 +205,15 @@ ApplicationWindow {
     }
 
     function switchView(useGrid) {
+        columnsMode = false;
         gridMode = useGrid;
+        root.clearTypeAhead();
+        root.focusCurrentView();
+    }
+
+    function switchColumnsView() {
+        gridMode = false;
+        columnsMode = true;
         root.clearTypeAhead();
         root.focusCurrentView();
     }
@@ -376,6 +385,7 @@ ApplicationWindow {
                 activePane: root.activePaneIndex
                 splitRatio: root.shellTheme.splitRatio
                 gridMode: root.gridMode
+                columnsMode: root.columnsMode
                 persistenceDurationMs: presentationLayer.motionDurationMs
                 wellLayer: wellMaskLayer
                 onPaneActivationRequested: paneIndex => root.activatePane(paneIndex)

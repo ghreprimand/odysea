@@ -16,6 +16,7 @@ Item {
     property real splitRatio: 0.5
     property real workingRatio: 0.5
     property bool gridMode: false
+    property bool columnsMode: false
     property int persistenceDurationMs: 0
     property var wellLayer: null
     property real minimumPaneWidth: 240
@@ -79,6 +80,7 @@ Item {
         activePane: layout.activePane === 0
         dualPane: layout.dualPaneEnabled
         gridMode: layout.gridMode
+        columnsMode: layout.columnsMode
         persistenceDurationMs: layout.persistenceDurationMs
         wellLayer: layout.wellLayer
         onActivationRequested: paneIndex => layout.paneActivationRequested(paneIndex)
@@ -147,6 +149,7 @@ Item {
             activePane: layout.activePane === 1
             dualPane: layout.dualPaneEnabled
             gridMode: layout.gridMode
+            columnsMode: layout.columnsMode
             persistenceDurationMs: layout.persistenceDurationMs
             wellLayer: layout.wellLayer
             onActivationRequested: paneIndex => layout.paneActivationRequested(paneIndex)

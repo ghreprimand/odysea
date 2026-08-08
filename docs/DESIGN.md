@@ -107,8 +107,13 @@ terminal file manager. Achieving both at once is a deliberate design target.
   bounded divider supports pointer dragging and declared keyboard resizing,
   and copy or move transfers the active selection directly to the opposite
   pane through the shared action registry. Single/dual state and divider ratio
-  use the existing versioned settings store. Miller/columns navigation remains
-  planned for deep trees.
+  use the existing versioned settings store. Miller/columns is the third
+  exclusive view mode for deep trees: up/down moves within a level, left/right
+  moves across levels, Return enters a child or opens a file, and Backspace or
+  the matching pointer control collapses the rightmost level. A pointer press
+  on a row selects it and reveals a directory to the right; double-click uses
+  the same activation path as Return. `Ctrl+Shift+3` and the toolbar choose the
+  view alongside the list and grid modes.
 - **Geometric selection.** Each view computes the explicit set of model rows
   intersected by its rubber-band rectangle. The shared selection model applies
   that set by stable entry key, so list and grid geometry do not leak into
@@ -197,6 +202,16 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   identity. Default-application launching is an injectable application-layer
   service, so tests record launch requests without invoking desktop programs;
   the core itself never includes a Qt header.
+- **Columns retain only the live path.** The Miller controller composes the
+  same `DirectoryListModel` adapter used by the primary views, one instance per
+  live path level, so every column inherits cancellable off-thread scanning and
+  incremental updates. Selecting a different branch or collapsing a level
+  destroys the displaced descendant models immediately, which cancels their
+  scans and releases their listings; previously visited branches are not kept
+  as a hidden cache. The horizontal column strip and every vertical entry list
+  are virtualized independently with no delegate cache buffer, so a deep path
+  multiplies listing state only by the levels it still represents and a large
+  directory does not multiply rendered rows by its entry count.
 - **Reusable shell components.** The chrome is composed from module
   components — the shared button and text field, the chrome strip material,
   the navigation toolbar, tab strip, action row, status strip, the

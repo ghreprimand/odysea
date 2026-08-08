@@ -207,6 +207,7 @@ Item {
     component RecordingController: QtObject {
         property var calls: []
         property bool gridMode: false
+        property bool columnsMode: false
         property var pathNavigator: null
         property int paneCount: 1
         property int activePaneIndex: 0
@@ -220,7 +221,13 @@ Item {
 
         function switchView(useGrid) {
             record("switchView:" + useGrid);
+            columnsMode = false;
             gridMode = useGrid;
+        }
+        function switchColumnsView() {
+            record("switchColumnsView");
+            gridMode = false;
+            columnsMode = true;
         }
         function activateTabIndex(index) {
             record("activateTabIndex:" + index);
@@ -478,13 +485,21 @@ Item {
 
             const gridButton = findChild(bar, "gridViewButton");
             const listButton = findChild(bar, "listViewButton");
-            verify(gridButton !== null && listButton !== null);
+            const columnsButton = findChild(bar, "columnsViewButton");
+            verify(gridButton !== null && listButton !== null && columnsButton !== null);
             verify(listButton.checked);
             verify(!gridButton.checked);
+            verify(!columnsButton.checked);
 
             mouseClick(gridButton);
             compare(controller.calls[controller.calls.length - 1], "switchView:true");
             verify(gridButton.checked);
+            verify(!listButton.checked);
+
+            mouseClick(columnsButton);
+            compare(controller.calls[controller.calls.length - 1], "switchColumnsView");
+            verify(columnsButton.checked);
+            verify(!gridButton.checked);
             verify(!listButton.checked);
         }
 

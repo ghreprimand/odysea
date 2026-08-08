@@ -17,6 +17,7 @@ FocusScope {
     property bool activePane: false
     property bool dualPane: false
     property bool gridMode: false
+    property bool columnsMode: false
     property int persistenceDurationMs: 0
     property var wellLayer: null
 
@@ -121,6 +122,7 @@ FocusScope {
         registry: frame.registry
         theme: frame.theme
         gridMode: frame.gridMode
+        columnsMode: frame.columnsMode
         persistenceDurationMs: frame.persistenceDurationMs
         wellLayer: frame.wellLayer
 

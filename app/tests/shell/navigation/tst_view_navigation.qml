@@ -399,6 +399,17 @@ Support.ShellTestCase {
         compare(listButton.checked, false);
         compare(gridButton.checked, true);
 
+        keyClick(Qt.Key_3, Qt.ControlModifier | Qt.ShiftModifier);
+        let columns = null;
+        tryVerify(function () {
+            columns = child("millerColumnStrip");
+            return columns !== null && columns.visible;
+        });
+        const columnsButton = child("columnsViewButton");
+        verify(columnsButton.checked);
+        verify(!listButton.checked);
+        verify(!gridButton.checked);
+
         mouseClick(listButton);
         tryCompare(list, "visible", true);
         tryVerify(function () {

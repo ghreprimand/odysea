@@ -96,6 +96,7 @@ Item {
     component RecordingShell: QtObject {
         property var calls: []
         property bool gridMode: false
+        property bool columnsMode: false
         property int paneCount: 1
         property int activePaneIndex: 0
         property bool transferAllowed: false
@@ -108,7 +109,13 @@ Item {
 
         function switchView(useGrid) {
             record("switchView:" + useGrid);
+            columnsMode = false;
             gridMode = useGrid;
+        }
+        function switchColumnsView() {
+            record("switchColumnsView");
+            gridMode = false;
+            columnsMode = true;
         }
         function activateTabIndex(index) {
             record("activateTabIndex:" + index);
@@ -258,6 +265,8 @@ Item {
             fakeModel.tabCount = 1;
             fakeModel.paneCount = 1;
             fakeShell.calls = [];
+            fakeShell.gridMode = false;
+            fakeShell.columnsMode = false;
             fakeShell.paneCount = 1;
             fakeShell.activePaneIndex = 0;
             fakeShell.transferAllowed = false;

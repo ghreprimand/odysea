@@ -84,6 +84,13 @@ ToolBar {
             showLabel: !bar.compact
         }
         ActionButton {
+            objectName: "columnsViewButton"
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "view.columns"
+            showLabel: !bar.compact
+        }
+        ActionButton {
             objectName: "paletteButton"
             theme: bar.theme
             registry: bar.registry
