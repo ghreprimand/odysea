@@ -409,7 +409,8 @@ add_test(NAME shell_visual_validation_rhi
     COMMAND odysea_validation_rhi_launcher
         DevicePixelScaling::test_maskGeometryStaysLogical
         DevicePixelScaling::test_frameRendersAtDeviceResolution
-        DevicePixelScaling::test_wellBorderStaysByteTrueAtDeviceResolution)
+        DevicePixelScaling::test_wellBorderStaysByteTrueAtDeviceResolution
+        DevicePixelScaling::test_ringOutsideWellStaysProcessed)
 
 set_tests_properties(shell_visual_validation_rhi PROPERTIES
     SKIP_RETURN_CODE 77

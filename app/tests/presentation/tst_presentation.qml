@@ -10,7 +10,14 @@
 // scene-graph backend. The frame-comparison and shader-failure tests need
 // a real GPU path and skip themselves when the scene graph falls back to
 // software.
+//
+// Every frame grab passes a vacuity sentinel: an absolute-value pixel
+// assertion on a coordinate whose color the harness fixes on every profile
+// and backend. The frame claims below are otherwise relative — equals and
+// not-equals between grabs — and an environment that renders nothing
+// satisfies every relative claim perfectly.
 import QtQuick
+import QtQuick.Window
 import QtTest
 import OdySea
 
@@ -186,7 +193,19 @@ Item {
         function settleAndGrab() {
             wait(60);
             waitForRendering(harness);
-            return grabImage(harness);
+            const frame = grabImage(harness);
+            // Vacuity sentinel: the registered well's saturated patch is
+            // protected, so its bytes are the plain path's on every
+            // profile — a grab that fails to carry the rendered scene
+            // fails here loudly instead of passing every relative
+            // comparison over nothing. grabImage returns the window
+            // region under the item's mapped rectangle, not the item's
+            // subtree, so only a genuinely unrendered scene trips this.
+            const dpr = Screen.devicePixelRatio;
+            const px = Math.round((thumbWell.x + 40) * dpr);
+            const py = Math.round((thumbWell.y + 35) * dpr);
+            verify(Qt.colorEqual(frame.pixel(px, py), "#ff2010"), "vacuous grab: the protected patch is missing from the frame");
+            return frame;
         }
 
         function test_uniformsTrackEffectiveNotStoredValues() {
@@ -539,7 +558,13 @@ Item {
         function grabScene(scene) {
             wait(60);
             waitForRendering(scene);
-            return grabImage(scene);
+            const frame = grabImage(scene);
+            // Vacuity sentinel: both grabs in a latch exercise are plain
+            // path frames, where the scene's white patch is exact — a
+            // blank grab must fail loudly, not satisfy the byte-equality.
+            const dpr = Screen.devicePixelRatio;
+            verify(Qt.colorEqual(frame.pixel(Math.round(240 * dpr), Math.round(180 * dpr)), "#ffffff"), "vacuous grab: the latch scene is missing from the frame");
+            return frame;
         }
 
         // Breaks one blur stage on a live scene and requires the latch to

@@ -4,8 +4,12 @@
 // device resolution, and a protected well must stay byte-true to the plain
 // path along its entire border — a misaligned mask leaves a processed seam
 // on the outermost well row and fails the border sweep, which an emitter
-// ring outside the well arms in every direction. The frame comparisons
-// need a real GPU path and skip themselves on the software scene graph.
+// ring outside the well arms in every direction. Protection is also bounded
+// from the outside: the ring one device pixel beyond a well sits on
+// receiving material and must stay processed, so an oversized mask fails
+// the outward sweep instead of silently exempting surrounding chrome. The
+// frame comparisons need a real GPU path and skip themselves on the
+// software scene graph.
 //
 // Scale coverage is split by what each environment can honestly render.
 // The offscreen platform never allocates a genuine high-density
@@ -85,6 +89,43 @@ Item {
                 color: "#ff2010"
             }
         }
+
+        // Second protected well, armed for the opposite direction: an
+        // emitter frame at a distance, with a dark gutter between it and
+        // the well, so the ring one device pixel OUTSIDE the well sits on
+        // receiving material instead of on the saturated emitter — white
+        // cannot brighten, so a ring hugging an emitter can never reveal an
+        // oversized mask. Every gutter pixel takes measurable bloom, which
+        // makes wrongful protection visible: a mask even half a device
+        // pixel too large leaves part of that ring byte-equal to the plain
+        // path and fails the outward sweep.
+        Rectangle {
+            id: gutterEmitter
+
+            x: gutterWell.x - 16
+            y: gutterWell.y - 16
+            width: gutterWell.width + 32
+            height: gutterWell.height + 32
+            color: "#ffffff"
+        }
+
+        Rectangle {
+            x: gutterWell.x - 3
+            y: gutterWell.y - 3
+            width: gutterWell.width + 6
+            height: gutterWell.height + 6
+            color: "#101010"
+        }
+
+        Rectangle {
+            id: gutterWell
+
+            x: 40
+            y: 120
+            width: 60
+            height: 60
+            color: "#303030"
+        }
     }
 
     WellMaskLayer {
@@ -114,7 +155,8 @@ Item {
             dpr = Screen.devicePixelRatio;
             verify(dpr >= 1);
             wells.registerWell(thumbWell);
-            compare(wells.wellCount, 1);
+            wells.registerWell(gutterWell);
+            compare(wells.wellCount, 2);
         }
 
         function init() {
@@ -202,6 +244,60 @@ Item {
             const cx = Math.round((thumbWell.x + 36) * testCase.dpr);
             const cy = Math.round((thumbWell.y + 31) * testCase.dpr);
             compare(strong.pixel(cx, cy), off.pixel(cx, cy));
+        }
+
+        function test_ringOutsideWellStaysProcessed() {
+            if (layer.softwareBackend) {
+                skip("software scene graph: the pipeline is disengaged by design");
+            }
+            // The inner sweep above catches a mask that is too small; this
+            // sweep catches one that is too large. Nothing else in the gate
+            // requires a pixel just outside a well to be processed, so
+            // without it an oversized mask silently exempts a growing band
+            // of chrome and every inner assertion stays green.
+            theme.profile = ShellTheme.Off;
+            theme.deepField = 0.3;
+            compare(theme.profile, ShellTheme.Custom);
+            const off = settleAndGrab();
+
+            // Vacuity sentinel on the second harness: the emitter frame is
+            // white on the plain path.
+            const sx = Math.round((gutterWell.x - 8) * testCase.dpr);
+            const sy = Math.round((gutterWell.y + 30) * testCase.dpr);
+            compare(off.pixel(sx, sy), Qt.rgba(1, 1, 1, 1));
+
+            theme.bloomCore = 0.6;
+            theme.bloomWide = 0.8;
+            theme.scanline = 0.3;
+            theme.vignette = 0.4;
+            verify(layer.active);
+            const strong = settleAndGrab();
+
+            // Sweep the ring one device pixel outside the well. Every pixel
+            // sits on dark gutter material that receives bloom from the
+            // emitter frame, so the pipeline must change each one; a pixel
+            // byte-equal to the plain path here is wrongly protected. This
+            // is what pins the mask's outer tolerance: an oversize of half
+            // a device pixel protects part of this ring, one full pixel
+            // protects all of it, and both fail loudly.
+            const left = Math.round(gutterWell.x * testCase.dpr) - 1;
+            const top = Math.round(gutterWell.y * testCase.dpr) - 1;
+            const right = Math.round((gutterWell.x + gutterWell.width) * testCase.dpr);
+            const bottom = Math.round((gutterWell.y + gutterWell.height) * testCase.dpr);
+            for (let x = left; x <= right; ++x) {
+                verify(!Qt.colorEqual(strong.pixel(x, top), off.pixel(x, top)), "over-protected device pixel at " + x + "," + top);
+                verify(!Qt.colorEqual(strong.pixel(x, bottom), off.pixel(x, bottom)), "over-protected device pixel at " + x + "," + bottom);
+            }
+            for (let y = top; y <= bottom; ++y) {
+                verify(!Qt.colorEqual(strong.pixel(left, y), off.pixel(left, y)), "over-protected device pixel at " + left + "," + y);
+                verify(!Qt.colorEqual(strong.pixel(right, y), off.pixel(right, y)), "over-protected device pixel at " + right + "," + y);
+            }
+
+            // The well itself stays byte-true: the outward requirement must
+            // not be satisfiable by shrinking the mask.
+            const wx = Math.round((gutterWell.x + 30) * testCase.dpr);
+            const wy = Math.round((gutterWell.y + 30) * testCase.dpr);
+            compare(strong.pixel(wx, wy), off.pixel(wx, wy));
         }
     }
 }
