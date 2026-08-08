@@ -32,6 +32,14 @@ Item {
     width: 320
     height: 240
 
+    // Bound on how many times a grab helper re-settles when its vacuity
+    // sentinel reports the scene is not yet in the frame. The bound tolerates
+    // a slow or momentarily starved frame under GPU contention; it never
+    // relaxes what a complete frame must contain, and it never retries a
+    // content comparison. On the happy path the first attempt satisfies the
+    // sentinel and the extra iterations cost nothing.
+    readonly property int grabSettleAttempts: 6
+
     ShellTheme {
         id: theme
     }
@@ -163,10 +171,37 @@ Item {
             theme.resetToDefaults();
         }
 
+        // The completeness signal for a DPR grab: thumbWell's protected red
+        // patch is byte-true on every profile and backend, so its presence
+        // means the frame carries the rendered scene. It gates the settle
+        // retry below without constraining any content comparison — the border
+        // and ring sweeps still judge their own pixels once, byte for byte.
+        function sceneRendered(frame) {
+            const px = Math.round((thumbWell.x + 36) * testCase.dpr);
+            const py = Math.round((thumbWell.y + 31) * testCase.dpr);
+            return Qt.colorEqual(frame.pixel(px, py), "#ff2010");
+        }
+
         function settleAndGrab() {
-            wait(60);
-            waitForRendering(harness);
-            return grabImage(harness);
+            // Retries bounded on the settle, never on the comparison. Under
+            // GPU contention a window grab can return before the frame it
+            // should carry is composited; sceneRendered() is the completeness
+            // signal, so the settle repeats up to grabSettleAttempts times
+            // until it holds. A slow frame is waited for; a genuinely absent
+            // scene fails loudly once the bound is spent; the returned frame
+            // is judged once by the caller's byte-exact sweeps, which are
+            // never retried, so a wrong frame is never retried into a pass.
+            let frame = null;
+            for (let attempt = 0; attempt < harness.grabSettleAttempts; ++attempt) {
+                wait(60);
+                waitForRendering(harness);
+                frame = grabImage(harness);
+                if (sceneRendered(frame)) {
+                    return frame;
+                }
+            }
+            verify(false, "vacuous grab: the protected patch is missing from the frame after " + harness.grabSettleAttempts + " settle attempts");
+            return frame;
         }
 
         function test_maskGeometryStaysLogical() {

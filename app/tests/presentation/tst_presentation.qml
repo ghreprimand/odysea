@@ -27,6 +27,14 @@ Item {
     width: 640
     height: 480
 
+    // Bound on how many times a grab helper re-settles when its vacuity
+    // sentinel reports the scene is not yet in the frame. The bound tolerates
+    // a slow or momentarily starved frame under GPU contention; it never
+    // relaxes what a complete frame must contain, and it never retries a
+    // content comparison. On the happy path the first attempt satisfies the
+    // sentinel and the extra iterations cost nothing.
+    readonly property int grabSettleAttempts: 6
+
     ShellTheme {
         id: theme
     }
@@ -191,20 +199,34 @@ Item {
         }
 
         function settleAndGrab() {
-            wait(60);
-            waitForRendering(harness);
-            const frame = grabImage(harness);
-            // Vacuity sentinel: the registered well's saturated patch is
-            // protected, so its bytes are the plain path's on every
-            // profile — a grab that fails to carry the rendered scene
-            // fails here loudly instead of passing every relative
-            // comparison over nothing. grabImage returns the window
-            // region under the item's mapped rectangle, not the item's
-            // subtree, so only a genuinely unrendered scene trips this.
+            // Vacuity sentinel as the settle's termination condition: the
+            // registered well's saturated patch is protected, so its bytes
+            // are the plain path's on every profile — a grab that fails to
+            // carry the rendered scene misses it. Under GPU contention a
+            // window grab can return before the frame it should carry is
+            // composited, so the settle is retried up to grabSettleAttempts
+            // times until the sentinel holds. A slow frame is waited for; a
+            // genuinely absent scene still fails loudly once the bound is
+            // spent, instead of passing every relative comparison over
+            // nothing. The retry gates only on completeness — the frame this
+            // returns is judged once by the caller's byte-exact comparisons,
+            // which are never retried, so a wrong frame can never be retried
+            // into a pass. grabImage returns the window region under the
+            // item's mapped rectangle, not the item's subtree, so only a
+            // genuinely unrendered scene trips the sentinel.
             const dpr = Screen.devicePixelRatio;
             const px = Math.round((thumbWell.x + 40) * dpr);
             const py = Math.round((thumbWell.y + 35) * dpr);
-            verify(Qt.colorEqual(frame.pixel(px, py), "#ff2010"), "vacuous grab: the protected patch is missing from the frame");
+            let frame = null;
+            for (let attempt = 0; attempt < harness.grabSettleAttempts; ++attempt) {
+                wait(60);
+                waitForRendering(harness);
+                frame = grabImage(harness);
+                if (Qt.colorEqual(frame.pixel(px, py), "#ff2010")) {
+                    return frame;
+                }
+            }
+            verify(false, "vacuous grab: the protected patch is missing from the frame after " + harness.grabSettleAttempts + " settle attempts");
             return frame;
         }
 
@@ -556,14 +578,29 @@ Item {
         when: windowShown
 
         function grabScene(scene) {
-            wait(60);
-            waitForRendering(scene);
-            const frame = grabImage(scene);
-            // Vacuity sentinel: both grabs in a latch exercise are plain
-            // path frames, where the scene's white patch is exact — a
-            // blank grab must fail loudly, not satisfy the byte-equality.
+            // Vacuity sentinel as the settle's termination condition: both
+            // grabs in a latch exercise are plain-path frames, where the
+            // scene's white patch is exact — a grab that fails to carry the
+            // scene misses it. Under GPU contention a grab can return before
+            // the frame is composited, so the settle retries up to
+            // grabSettleAttempts times until the sentinel holds; a blank grab
+            // that never resolves fails loudly once the bound is spent rather
+            // than satisfying the byte-equality below. The retry gates only on
+            // completeness — the latch equality the caller then checks is
+            // judged once and never retried.
             const dpr = Screen.devicePixelRatio;
-            verify(Qt.colorEqual(frame.pixel(Math.round(240 * dpr), Math.round(180 * dpr)), "#ffffff"), "vacuous grab: the latch scene is missing from the frame");
+            const px = Math.round(240 * dpr);
+            const py = Math.round(180 * dpr);
+            let frame = null;
+            for (let attempt = 0; attempt < harness.grabSettleAttempts; ++attempt) {
+                wait(60);
+                waitForRendering(scene);
+                frame = grabImage(scene);
+                if (Qt.colorEqual(frame.pixel(px, py), "#ffffff")) {
+                    return frame;
+                }
+            }
+            verify(false, "vacuous grab: the latch scene is missing from the frame after " + harness.grabSettleAttempts + " settle attempts");
             return frame;
         }
 

@@ -340,8 +340,17 @@ add_dependencies(odysea_presentation_rhi_launcher odysea_presentation_tests)
 
 add_test(NAME shell_presentation_rhi COMMAND odysea_presentation_rhi_launcher)
 
+# RESOURCE_LOCK serializes the two GPU-path gates against each other under a
+# parallel `ctest -j`. Both re-exec their suite with the OpenGL RHI backend
+# forced and drive synchronous window grabs; two of them holding a GPU context
+# at once contends the shared device and the render thread, which can return a
+# grab before its frame is composited. The gates' own bounded settle-retries
+# absorb a momentarily starved frame; this lock removes the largest avoidable
+# source of that contention without serializing the whole suite — the lock is
+# shared only among the GPU gates, so software tests still run alongside them.
 set_tests_properties(shell_presentation_rhi PROPERTIES
     SKIP_RETURN_CODE 77
+    RESOURCE_LOCK gpu
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 # The same pipeline under the forced software scene graph: the capability
@@ -415,6 +424,7 @@ add_test(NAME shell_visual_validation_rhi
 
 set_tests_properties(shell_visual_validation_rhi PROPERTIES
     SKIP_RETURN_CODE 77
+    RESOURCE_LOCK gpu
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 # Renders the real scene from the module against the real decoder, so the
