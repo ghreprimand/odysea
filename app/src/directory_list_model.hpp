@@ -209,6 +209,8 @@ class DirectoryListModel : public QAbstractListModel {
     void setCurrentPath(const QString& path);
     void startScan();
     void receiveScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
+    [[nodiscard]] std::size_t scanPublishInterval() const noexcept;
+    void drainPendingScanEntries();
     void receiveScanComplete(odysea::core::ScanSummary summary);
     void applyWatchUpdate(DirectoryWatchUpdate update);
     void replaceWatch();
@@ -259,6 +261,10 @@ class DirectoryListModel : public QAbstractListModel {
     std::vector<odysea::core::Entry> scannedEntries_;
     std::vector<odysea::core::Entry> scanBaselineEntries_;
     std::vector<odysea::core::Entry> scanEntries_;
+    // Delivered entries a scan has not published yet. They are held here, not
+    // in the scanned listing, so an unpublished batch cannot be observed as
+    // presented state.
+    std::vector<odysea::core::Entry> pendingScanEntries_;
     std::vector<odysea::core::Entry> entries_;
     // Row keys, parallel to entries_, plus the first row each key occupies.
     // Both are derived from entries_ and exist so a key is built once per

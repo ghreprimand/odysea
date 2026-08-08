@@ -17,6 +17,13 @@ std::uint64_t nextThumbnailOwnerId() noexcept {
     return counter.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
+// How many entries the scanner accumulates before it delivers them, and the
+// smallest interval at which the model republishes. The two are the same
+// number on purpose: publishing more often than the scanner delivers cannot
+// show anything new, and publishing less often than one delivery would delay
+// the first content on screen behind an arbitrary share of the directory.
+constexpr std::size_t kScanBatchSize = 128;
+
 } // namespace
 
 DirectoryListModel::DirectoryListModel(QObject* parent)
@@ -52,6 +59,9 @@ DirectoryListModel::~DirectoryListModel() {
 }
 
 void DirectoryListModel::startScan() {
+    // Entries held back from a superseded scan describe a listing this scan is
+    // about to replace, so they are dropped rather than merged into it.
+    pendingScanEntries_.clear();
     if (path_.isEmpty()) {
         scanner_.cancel();
         watchService_.replace({}, ++watchToken_);
@@ -78,7 +88,7 @@ void DirectoryListModel::startScan() {
     odysea::core::DirectoryScanner::Request request;
     request.directory = path_.toStdString();
     request.options = odysea::core::ListOptions{.show_hidden = true};
-    request.batch_size = 128;
+    request.batch_size = kScanBatchSize;
     request.on_batch = [this](std::uint64_t token, std::vector<odysea::core::Entry> entries) {
         postScanBatch(token, std::move(entries));
     };
@@ -117,12 +127,32 @@ void DirectoryListModel::postScanComplete(odysea::core::ScanSummary summary) {
         Qt::QueuedConnection);
 }
 
-void DirectoryListModel::receiveScanBatch(std::uint64_t token,
-                                          std::vector<odysea::core::Entry> entries) {
-    if (token != activeScanToken_) {
+std::size_t DirectoryListModel::scanPublishInterval() const noexcept {
+    // How many delivered entries a scan holds before it publishes them.
+    //
+    // Merging a batch into the scanned listing and reconciling the presented
+    // rows both cost work proportional to the whole listing, not to the batch.
+    // Publishing once per fixed-size batch therefore performs that
+    // listing-sized work once per fixed number of entries, so a load costs the
+    // square of the entry count however small each pass is made: the exponent
+    // comes from the number of passes, not from what a pass does.
+    //
+    // Growing the interval with the listing makes each pass cover a share of
+    // what is already presented. Successive passes then happen at sizes that
+    // grow geometrically, which bounds their number by a logarithm of the
+    // entry count and their summed cost by a constant multiple of it. The
+    // floor is one delivered batch, so the first content still reaches the
+    // view as soon as the scanner has produced any, and a refresh of an
+    // already large listing does not republish it once per delivery.
+    constexpr std::size_t listingShareDivisor = 4;
+    return std::max(kScanBatchSize, scannedEntries_.size() / listingShareDivisor);
+}
+
+void DirectoryListModel::drainPendingScanEntries() {
+    if (pendingScanEntries_.empty()) {
         return;
     }
-    // One key index per batch rather than a linear rescan per delivered
+    // One key index per drain rather than a linear rescan per delivered
     // entry. The previous search rebuilt every candidate's key on every
     // comparison, which made a scan quadratic in the directory size on its
     // own. First occurrence wins, matching the search it replaces.
@@ -135,7 +165,7 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token,
         }
     }
 
-    for (odysea::core::Entry& entry : entries) {
+    for (odysea::core::Entry& entry : pendingScanEntries_) {
         const QString key = entryKey(entry);
         const auto existing = scannedRows.constFind(key);
         if (existing == scannedRows.constEnd()) {
@@ -146,6 +176,20 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token,
         }
         scanEntries_.push_back(std::move(entry));
     }
+    pendingScanEntries_.clear();
+}
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token,
+                                          std::vector<odysea::core::Entry> entries) {
+    if (token != activeScanToken_) {
+        return;
+    }
+    pendingScanEntries_.insert(pendingScanEntries_.end(), std::make_move_iterator(entries.begin()),
+                               std::make_move_iterator(entries.end()));
+    if (pendingScanEntries_.size() < scanPublishInterval()) {
+        return;
+    }
+    drainPendingScanEntries();
     applyPresentationSettings();
 }
 
@@ -153,6 +197,10 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
     if (summary.token != activeScanToken_ || summary.cancelled) {
         return;
     }
+    // Entries still held back have to reach the scanned listing before it is
+    // treated as complete: the completion path replaces the listing outright,
+    // so anything unpublished at this point would be lost rather than late.
+    drainPendingScanEntries();
 
     QHash<QString, int> baselineIdentityCounts;
     QHash<QString, int> completedIdentityCounts;

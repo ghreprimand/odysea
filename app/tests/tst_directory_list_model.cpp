@@ -46,6 +46,14 @@ int rowForName(const DirectoryListModel& model, const QString& name) {
     return -1;
 }
 
+// A named type for the settle budget. It sits next to an entry count in the
+// load measurement below, and both are integers, so transposing them would
+// compile and then measure a load of a few entries against a budget of
+// several thousand.
+struct SettleBudget {
+    qint64 milliseconds = 0;
+};
+
 bool waitForScan(DirectoryListModel& model) {
     if (!model.busy()) {
         return true;
@@ -184,7 +192,15 @@ class DirectoryListModelTest : public QObject {
     // Empty when the row keys and the key index agree with the entries they
     // are derived from; otherwise the first disagreement, so a failure names
     // the row rather than only the count.
+    struct LoadMeasurement {
+        qint64 firstScanMilliseconds = 0;
+        qint64 refreshMilliseconds = 0;
+        quint64 keyBuilds = 0;
+    };
+
     static QString rowKeyIndexMismatch(const DirectoryListModel& model);
+    static QString measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
+                                        LoadMeasurement& measurement);
 
   private slots:
     void rapidNavigationCancelsStaleBatches();
@@ -214,6 +230,9 @@ class DirectoryListModelTest : public QObject {
     void overflowRequestsARescan();
     void destructionDropsQueuedWorkerCallbacks();
     void largeDirectoryLoadStaysWithinBudget();
+    void heldBackScanEntriesReachTheCompletedListing();
+    void republishedEntriesUpdateOneRowRatherThanAddingAnother();
+    void supersededScanDropsTheEntriesItHeldBack();
     void rowKeyIndexTracksEveryRowMutation();
     void duplicateResolvedKeysCompareAgainstTheFirstRow();
 };
@@ -266,42 +285,12 @@ QString DirectoryListModelTest::rowKeyIndexMismatch(const DirectoryListModel& mo
 #endif
 #endif
 
-void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
-    // A directory large enough for the reconciliation cost to dominate the
-    // fixed cost of starting a scan. Every other case in this file uses a
-    // handful of entries, which is why a load that grew with the square of the
-    // directory size went unnoticed.
-    //
-    // Two bounds, because neither one alone holds the shape.
-    //
-    // A growth ratio across two sizes does not separate the states at all.
-    // Reconciliation runs once per scan batch and inspects every presented
-    // entry, so a load is quadratic in the entry count by design; rebuilding
-    // keys inside a comparison raises the constant by orders of magnitude
-    // without changing that exponent.
-    //
-    // Wall clock catches the catastrophic case but is a weak instrument for
-    // the rest: it moves with machine load, and the sanitizer build carries
-    // roughly twenty times the release cost, so any bound loose enough to be
-    // safe there admits a real regression here.
-    //
-    // The count of key constructions carries the algorithmic shape instead. It
-    // is machine-independent and each construction normalizes a path and
-    // allocates a string, which is what the cost is made of. Measured over
-    // this case's load and refresh: 0.43 M healthy, 16.2 M with a linear
-    // rescan per delivered scan entry, 366 M with a linear search per
-    // reconciled row. The ceiling sits an order of magnitude above the healthy
-    // figure and well below either regression.
-    constexpr quint64 keyBuildCeiling = 4000000;
-#ifdef ODYSEA_INSTRUMENTED_BUILD
-    constexpr qint64 budgetMilliseconds = 20000;
-#else
-    constexpr qint64 budgetMilliseconds = 3000;
-#endif
-    constexpr int entryCount = 4000;
-
+QString DirectoryListModelTest::measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
+                                                     LoadMeasurement& measurement) {
     QTemporaryDir fixture;
-    QVERIFY(fixture.isValid());
+    if (!fixture.isValid()) {
+        return QStringLiteral("temporary directory unavailable");
+    }
     const fs::path root = fixture.path().toStdString();
     for (int index = 0; index < entryCount; ++index) {
         writeFile(root / ("entry-" + std::to_string(index)));
@@ -311,28 +300,253 @@ void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
     QElapsedTimer timer;
     timer.start();
     model.setPath(fixture.path());
-    QVERIFY(waitForIdleWithin(model, 4 * budgetMilliseconds));
-    const qint64 firstScan = timer.elapsed();
-    QCOMPARE(model.rowCount(), entryCount);
+    if (!waitForIdleWithin(model, settleBudget.milliseconds)) {
+        return QStringLiteral("first scan of %1 entries did not settle").arg(entryCount);
+    }
+    measurement.firstScanMilliseconds = timer.elapsed();
+    if (model.rowCount() != entryCount) {
+        return QStringLiteral("first scan presented %1 of %2 entries")
+            .arg(model.rowCount())
+            .arg(entryCount);
+    }
 
     timer.restart();
     model.refresh();
-    QVERIFY(waitForIdleWithin(model, 4 * budgetMilliseconds));
-    const qint64 refresh = timer.elapsed();
-    QCOMPARE(model.rowCount(), entryCount);
-    QCOMPARE(rowKeyIndexMismatch(model), QString{});
+    if (!waitForIdleWithin(model, settleBudget.milliseconds)) {
+        return QStringLiteral("refresh of %1 entries did not settle").arg(entryCount);
+    }
+    measurement.refreshMilliseconds = timer.elapsed();
+    if (model.rowCount() != entryCount) {
+        return QStringLiteral("refresh presented %1 of %2 entries")
+            .arg(model.rowCount())
+            .arg(entryCount);
+    }
+
+    QString mismatch = rowKeyIndexMismatch(model);
+    if (!mismatch.isEmpty()) {
+        return mismatch;
+    }
+    measurement.keyBuilds = model.entryKeyBuilds_;
+    return {};
+}
+
+void DirectoryListModelTest::largeDirectoryLoadStaysWithinBudget() {
+    // Directories large enough for reconciliation to dominate the fixed cost
+    // of starting a scan. Every other case in this file uses a handful of
+    // entries, which is why a load that grew with the square of the directory
+    // size went unnoticed.
+    //
+    // Three bounds, because no one of them holds the shape on its own.
+    //
+    // The count of key constructions carries the algorithmic shape. It is
+    // machine-independent, and each construction normalizes a path and
+    // allocates a string, which is what the cost is made of. Measured over a
+    // load and a refresh it is 25.4 per entry at 4,000 and 25.9 at 8,000, and
+    // it stays within a percent of 26 out to 128,000. That flat rate is the
+    // property worth holding, so it is bounded directly.
+    //
+    // The ratio between the two sizes bounds the exponent rather than the
+    // rate. A growth ratio was useless while both the healthy and the
+    // defective states were quadratic, because every reading landed near four.
+    // It discriminates now precisely because publishing on a growing interval
+    // moved the healthy state to linear: doubling the entry count doubles the
+    // count here and quadruples it if the interval stops growing. Measured
+    // 2.04 healthy against 3.74 for a fixed publishing interval, 3.66 for a
+    // linear rescan per delivered entry.
+    //
+    // Wall clock catches the catastrophic case and nothing finer: it moves
+    // with machine load, and the sanitizer build carries roughly twenty times
+    // the release cost, so any bound loose enough to be safe there admits a
+    // real regression here.
+    constexpr quint64 keyBuildsPerEntryCeiling = 60;
+    constexpr double keyBuildGrowthCeiling = 2.8;
+#ifdef ODYSEA_INSTRUMENTED_BUILD
+    constexpr qint64 budgetMilliseconds = 20000;
+#else
+    constexpr qint64 budgetMilliseconds = 3000;
+#endif
+    constexpr int smallerEntryCount = 4000;
+    constexpr int largerEntryCount = 2 * smallerEntryCount;
+
+    LoadMeasurement smaller;
+    LoadMeasurement larger;
+    const SettleBudget settleBudget{.milliseconds = 4 * budgetMilliseconds};
+    QCOMPARE(measureDirectoryLoad(smallerEntryCount, settleBudget, smaller), QString{});
+    QCOMPARE(measureDirectoryLoad(largerEntryCount, settleBudget, larger), QString{});
+
+    const double growth = static_cast<double>(larger.keyBuilds) /
+                          static_cast<double>(std::max<quint64>(smaller.keyBuilds, 1));
+    const quint64 keyBuildCeiling =
+        keyBuildsPerEntryCeiling * static_cast<quint64>(largerEntryCount);
 
     // Reported unconditionally so a failure arrives with the measurements that
     // produced it instead of only the bounds it missed.
-    const quint64 keyBuilds = model.entryKeyBuilds_;
-    qInfo("%d entries: first scan %lld ms, refresh %lld ms, budget %lld ms, %llu keys built, "
-          "ceiling %llu",
-          entryCount, static_cast<long long>(firstScan), static_cast<long long>(refresh),
-          static_cast<long long>(budgetMilliseconds), static_cast<unsigned long long>(keyBuilds),
+    qInfo("%d entries: scan %lld ms, refresh %lld ms, %llu keys built", smallerEntryCount,
+          static_cast<long long>(smaller.firstScanMilliseconds),
+          static_cast<long long>(smaller.refreshMilliseconds),
+          static_cast<unsigned long long>(smaller.keyBuilds));
+    qInfo("%d entries: scan %lld ms, refresh %lld ms, %llu keys built, ceiling %llu",
+          largerEntryCount, static_cast<long long>(larger.firstScanMilliseconds),
+          static_cast<long long>(larger.refreshMilliseconds),
+          static_cast<unsigned long long>(larger.keyBuilds),
           static_cast<unsigned long long>(keyBuildCeiling));
-    QVERIFY(keyBuilds < keyBuildCeiling);
-    QVERIFY(firstScan < budgetMilliseconds);
-    QVERIFY(refresh < budgetMilliseconds);
+    qInfo("key construction growth %.2f across a doubled directory, ceiling %.2f, budget %lld ms",
+          growth, keyBuildGrowthCeiling, static_cast<long long>(budgetMilliseconds));
+
+    QVERIFY(larger.keyBuilds < keyBuildCeiling);
+    QVERIFY(growth < keyBuildGrowthCeiling);
+    QVERIFY(smaller.firstScanMilliseconds < budgetMilliseconds);
+    QVERIFY(smaller.refreshMilliseconds < budgetMilliseconds);
+    QVERIFY(larger.firstScanMilliseconds < budgetMilliseconds);
+    QVERIFY(larger.refreshMilliseconds < budgetMilliseconds);
+}
+
+void DirectoryListModelTest::heldBackScanEntriesReachTheCompletedListing() {
+    // A scan publishes on a growing interval, so the entries delivered after
+    // its last publication are still held when the scan completes. Completion
+    // replaces the scanned listing outright, so those entries are lost rather
+    // than merely late if the completion path does not take them first.
+    //
+    // The count is chosen to leave a remainder: it is one publishing interval
+    // plus a partial one, so entries are certain to be outstanding at
+    // completion.
+    constexpr int entryCount = 200;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+
+    // A held-back group is published as one insertion covering more rows than
+    // a delivered batch, and a view answers that signal by asking the model
+    // for data. So the row keys and the key index are checked from inside the
+    // signal as well as after it.
+    QString liveMismatch;
+    int liveChecks = 0;
+    const auto observe = [&model, &liveMismatch, &liveChecks] {
+        ++liveChecks;
+        if (liveMismatch.isEmpty()) {
+            liveMismatch = rowKeyIndexMismatch(model);
+        }
+    };
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, observe);
+    connect(&model, &QAbstractItemModel::rowsRemoved, &model, observe);
+
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, 10000));
+
+    QCOMPARE(model.rowCount(), entryCount);
+    QCOMPARE(model.scannedEntries_.size(), static_cast<std::size_t>(entryCount));
+    QVERIFY(model.pendingScanEntries_.empty());
+    // Named, not just counted: a listing of the right size assembled from the
+    // wrong entries would pass a count on its own.
+    for (int index = 0; index < entryCount; ++index) {
+        QVERIFY2(rowForName(model, QStringLiteral("entry-%1").arg(index)) >= 0,
+                 qPrintable(QStringLiteral("entry-%1 is missing").arg(index)));
+    }
+
+    // Asserted, not assumed: a silent observer that never ran would report a
+    // clean tree it had not looked at.
+    QVERIFY(liveChecks > 0);
+    QCOMPARE(liveMismatch, QString{});
+}
+
+void DirectoryListModelTest::republishedEntriesUpdateOneRowRatherThanAddingAnother() {
+    // A publication merges the entries it holds into the scanned listing by
+    // key. A key it already carries has to update that entry in place: a
+    // refresh redelivers the whole directory, so appending instead would
+    // present every entry a second time for as long as the refresh ran, and
+    // the duplicates would disappear only when completion replaced the
+    // listing outright. That makes the damage invisible to anything that
+    // inspects a settled model.
+    //
+    // The delivery is driven directly, at one publishing interval, because a
+    // real refresh decides which entries land in which delivery by readdir
+    // order and would leave the case to timing.
+    constexpr int entryCount = 128;
+
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path nested = root / "listing";
+    fs::create_directories(nested);
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(nested / ("entry-" + std::to_string(index)), "a");
+    }
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(nested.string()));
+    QVERIFY(waitForIdleWithin(model, 5000));
+    QCOMPARE(model.rowCount(), entryCount);
+    model.watchService_.stop();
+
+    std::vector<odysea::core::Entry> delivery;
+    delivery.reserve(static_cast<std::size_t>(entryCount) + 1);
+    for (int index = 0; index < entryCount; ++index) {
+        delivery.push_back(odysea::core::make_entry(
+            fs::directory_entry(nested / ("entry-" + std::to_string(index)))));
+    }
+    // The repeat carries later metadata than the entry already presented, so
+    // the case can tell an update apart from a delivery that was dropped.
+    const fs::path repeated = nested / "entry-0";
+    writeFile(repeated, "grown past its first size");
+    const auto expectedSize = static_cast<qulonglong>(fs::file_size(repeated));
+    delivery.push_back(odysea::core::make_entry(fs::directory_entry(repeated)));
+
+    model.receiveScanBatch(model.activeScanToken_, delivery);
+
+    QCOMPARE(model.pendingScanEntries_.size(), std::size_t{0});
+    QCOMPARE(model.scannedEntries_.size(), static_cast<std::size_t>(entryCount));
+    QCOMPARE(model.rowCount(), entryCount);
+    const int repeatedRow = rowForName(model, QStringLiteral("entry-0"));
+    QVERIFY(repeatedRow >= 0);
+    QCOMPARE(model.data(model.index(repeatedRow), DirectoryListModel::SizeRole).toULongLong(),
+             expectedSize);
+}
+
+void DirectoryListModelTest::supersededScanDropsTheEntriesItHeldBack() {
+    // Entries held back belong to the scan that delivered them. A scan that
+    // supersedes it presents a different directory, and merging the held-back
+    // entries into that listing would show a departed directory's contents
+    // under the current path.
+    //
+    // The delivery is driven directly rather than raced: entries have to be
+    // outstanding at the moment the next scan starts, and waiting for a real
+    // scan to reach that state would make the case decide by timing.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path abandoned = root / "abandoned";
+    const fs::path destination = root / "destination";
+    fs::create_directories(abandoned);
+    fs::create_directories(destination);
+    writeFile(abandoned / "stale.txt");
+    writeFile(destination / "winner.txt");
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(abandoned.string()));
+    QVERIFY(waitForIdleWithin(model, 5000));
+
+    // Below the publishing interval, so the model holds this rather than
+    // presenting it.
+    std::vector<odysea::core::Entry> held;
+    held.push_back(odysea::core::make_entry(fs::directory_entry(abandoned / "stale.txt")));
+    model.receiveScanBatch(model.activeScanToken_, held);
+    QCOMPARE(model.pendingScanEntries_.size(), std::size_t{1});
+
+    model.setPath(QString::fromStdString(destination.string()));
+    QCOMPARE(model.pendingScanEntries_.size(), std::size_t{0});
+    QVERIFY(waitForIdleWithin(model, 5000));
+
+    QCOMPARE(model.path(), QString::fromStdString(destination.string()));
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0), DirectoryListModel::NameRole).toString(),
+             QStringLiteral("winner.txt"));
+    QCOMPARE(rowForName(model, QStringLiteral("stale.txt")), -1);
 }
 
 void DirectoryListModelTest::rowKeyIndexTracksEveryRowMutation() {

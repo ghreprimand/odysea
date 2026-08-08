@@ -17,6 +17,68 @@ the archive.
 
 ---
 
+## 2026-08-08 -- Directory loads publish on a growing interval
+
+Loading a directory no longer costs the square of its entry count. Merging a
+delivered batch into the scanned listing and reconciling the presented rows
+both cost work proportional to the whole listing rather than to the batch, and
+both ran once per fixed-size delivery, so a load performed listing-sized work
+once per fixed number of entries. Key indexing had already lowered the
+constant by roughly two orders of magnitude, but the exponent came from the
+number of passes rather than from what a pass does, so it survived.
+
+A scan now holds delivered entries until they amount to a share of the listing
+already presented, then publishes them together. Successive publications
+happen at geometrically growing sizes, which bounds their number by a
+logarithm of the entry count and their summed cost by a constant multiple of
+it. The interval never falls below one delivered batch, so the first content
+still reaches the view as soon as the scanner has produced any, and a refresh
+of an already large listing no longer republishes it once per delivery.
+Entries still held when a scan completes are merged before the completion path
+replaces the listing, and entries held by a superseded scan are dropped rather
+than merged into the directory that replaced it.
+
+Key construction is the machine-independent measure of reconciliation cost,
+and it is now flat per entry: 25.4 constructions per entry at 4,000 and 25.9
+at 8,000, staying within a percent of 26 out to 128,000. It was 26.7 per entry
+at 2,000 and 385 at 128,000 before. Release wall clock over a load and a
+refresh of the same directory: 4,000 entries 85/153 ms becomes 31/29 ms, 8,000
+becomes 63/69 ms, 16,000 1712/2912 ms becomes 174/140 ms, and 32,000 entries,
+which previously took 7.0 s to appear, now takes 302 ms.
+
+The regression gate holds the shape rather than the constant. It measures a
+load and a refresh at two sizes, one twice the other, and bounds three things:
+the flat per-entry rate, the ratio between the sizes, and wall clock for the
+catastrophic case. The ratio is a usable instrument only because the healthy
+state is now linear; while both the healthy and the defective states were
+quadratic every reading landed near four and no threshold separated them.
+Measured 2.04 against a 2.80 ceiling, with 3.74 for a publishing interval that
+stops growing.
+
+Ten planted defects were each rejected by the suites, keyed on exit status:
+losing entries at completion, carrying a superseded scan's entries into the
+next listing, a fixed publishing interval, no interval floor, republishing
+without clearing, dropping entries from the completed listing, publishing
+without reconciling, presenting entries before they are published, merging
+only the first held entry, and appending a redelivered entry instead of
+updating its row. The last of those is invisible to anything that inspects a
+settled model, because completion replaces the listing outright, so it is
+pinned by a delivery driven directly at one publishing interval.
+
+The warning-clean release build passed all 46 checks, including scoped static
+analysis and both real-display RHI entries. A fresh ASan/UBSan build passed
+all 45 enabled checks; static analysis is disabled in that preset. Release and
+sanitizer binaries also completed silent eight-second smoke launches with the
+software and OpenGL rendering paths.
+
+Known gap: this bounds how often the presented rows are reconciled, not what a
+reconciliation does. A single pass still inspects every presented entry rather
+than only what changed, so an update remains proportional to the listing. A
+pass that were proportional to the change instead would need the presented
+rows in a structure supporting ordered insertion without renumbering, since
+maintaining a sorted flat vector under scattered insertions costs the square
+of the entry count in element moves however the work is described.
+
 ## 2026-08-07 -- Directory view accessibility and roadmap alignment
 
 Directory lists and icon grids now identify themselves to assistive
