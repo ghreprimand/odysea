@@ -300,14 +300,57 @@ Item {
             waitForRendering(palette.contentItem);
         }
 
-        function test_enumeratesEveryLabeledDeclaration() {
+        function test_enumeratesEveryReachableDeclaration() {
             openPalette();
-            compare(palette.entries.length, shellActions.actions.length);
             const ids = palette.entries.map(entry => entry.actionId);
+            for (let i = 0; i < shellActions.actions.length; ++i) {
+                const action = shellActions.actions[i];
+                const listed = ids.indexOf(action.actionId) !== -1;
+                if (action.enabledFor === null || action.surfaces.indexOf("global") !== -1) {
+                    verify(listed, action.actionId + " should be listed in the palette");
+                } else {
+                    // A target-dependent predicate over non-global
+                    // surfaces can never be satisfied by the palette's
+                    // global context; the row would be permanently dead.
+                    verify(!listed, action.actionId + " is target-scoped and should be omitted");
+                }
+            }
             verify(ids.indexOf("palette.open") !== -1);
             verify(ids.indexOf("selection.trash") !== -1);
             palette.close();
             tryCompare(palette, "visible", false);
+        }
+
+        function test_everyListedRowIsEnabledOrStatesAReason() {
+            // The palette's honesty invariant: no row may sit disabled
+            // without telling the user why. Asserted over the whole
+            // enumeration rather than any fixed row count, so a future
+            // declaration that breaks the invariant fails here.
+            openPalette();
+            verify(palette.entries.length > 0);
+            for (let i = 0; i < palette.entries.length; ++i) {
+                const entry = palette.entries[i];
+                verify(entry.enabled || entry.reason.length > 0, entry.actionId + " is listed disabled without a stated reason");
+            }
+            palette.close();
+            tryCompare(palette, "visible", false);
+        }
+
+        function test_targetScopedDeclarationsReachableFromTheirOwnContext() {
+            // The omission is per-context, not a blocklist: the same
+            // registry lists a target-scoped declaration when the
+            // supplied context carries its target.
+            const globalIds = shellActions.paletteEntries("", null).map(entry => entry.actionId);
+            verify(globalIds.indexOf("entry.open") === -1);
+            verify(globalIds.indexOf("place.remove") === -1);
+            verify(globalIds.indexOf("tab.activate") === -1);
+            verify(globalIds.indexOf("pane.activate") === -1);
+
+            const entryIds = shellActions.paletteEntries("", shellActions.entryContext(0, false, 1)).map(entry => entry.actionId);
+            verify(entryIds.indexOf("entry.open") !== -1);
+
+            const placeIds = shellActions.paletteEntries("", shellActions.placeContext("/", "Filesystem")).map(entry => entry.actionId);
+            verify(placeIds.indexOf("place.remove") !== -1);
         }
 
         function test_runtimeDeclarationBecomesReachableWithoutPaletteChange() {
@@ -369,8 +412,8 @@ Item {
 
             // A declaration without a shortcut renders an empty column
             // rather than an invented one.
-            filterField().text = "Focus this pane";
-            const bare = rowByName("paletteShortcut-pane.activate");
+            filterField().text = "Clear recent destinations";
+            const bare = rowByName("paletteShortcut-recent.clear");
             verify(bare !== null);
             compare(bare.text, "");
             palette.close();
@@ -398,24 +441,34 @@ Item {
             const list = findChild(palette.contentItem, "paletteList");
             verify(list !== null);
             filterField().text = "selection.";
-            // Declaration order: copy, move, rename (disabled — nothing
-            // selected), all (enabled), trash (disabled).
+            // Row positions are derived from the enumeration instead of
+            // hardcoded counts, so the case survives future declarations.
+            // With nothing selected, selection.all is the only enabled
+            // row; rename sits directly above it and trash directly
+            // below in declaration order.
             tryVerify(function () {
-                return palette.entries.length === 5;
+                return palette.entries.map(entry => entry.actionId).indexOf("selection.trash") !== -1;
             });
-            compare(list.currentIndex, 3);
+            const ids = palette.entries.map(entry => entry.actionId);
+            const allIndex = ids.indexOf("selection.all");
+            const renameIndex = ids.indexOf("selection.rename");
+            const trashIndex = ids.indexOf("selection.trash");
+            verify(allIndex !== -1);
+            compare(renameIndex, allIndex - 1);
+            compare(trashIndex, allIndex + 1);
+            compare(list.currentIndex, allIndex);
             palette.moveHighlight(1);
-            compare(list.currentIndex, 3);
+            compare(list.currentIndex, allIndex);
             palette.moveHighlight(-1);
-            compare(list.currentIndex, 3);
+            compare(list.currentIndex, allIndex);
 
             fakeModel.selectedCount = 1;
             palette.moveHighlight(-1);
-            compare(list.currentIndex, 2);
+            compare(list.currentIndex, renameIndex);
             palette.moveHighlight(1);
-            compare(list.currentIndex, 3);
+            compare(list.currentIndex, allIndex);
             palette.moveHighlight(1);
-            compare(list.currentIndex, 4);
+            compare(list.currentIndex, trashIndex);
             palette.close();
             tryCompare(palette, "visible", false);
         }
@@ -483,6 +536,9 @@ Item {
                 return focusOrigin.activeFocus;
             });
             openPalette();
+            // The palette must have taken focus for restoration to mean
+            // anything — the same post-open verify its Escape twin makes.
+            verify(!focusOrigin.activeFocus);
             // A press outside the popup dismisses it.
             mouseClick(harness, 5, harness.height - 5);
             tryCompare(palette, "visible", false);

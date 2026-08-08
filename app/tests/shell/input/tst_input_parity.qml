@@ -49,8 +49,10 @@ Support.ShellTestCase {
         });
 
         // Mouse path: the toolbar button opens it, a press outside
-        // dismisses it, and focus leaves the palette with the dismissal.
-        mouseClick(child("paletteButton"));
+        // dismisses it, and focus returns to the summoning surface —
+        // the button itself, not merely anywhere in the window.
+        const paletteButton = child("paletteButton");
+        mouseClick(paletteButton);
         tryVerify(function () {
             return palette.opened;
         });
@@ -59,7 +61,7 @@ Support.ShellTestCase {
             return !palette.opened;
         });
         tryVerify(function () {
-            return shellWindow.activeFocusItem !== null && !field.activeFocus;
+            return paletteButton.activeFocus;
         });
     }
 

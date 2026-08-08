@@ -1,11 +1,16 @@
-// The command palette: every labeled action the registry declares,
-// searchable by label or id, operable from the keyboard and the pointer.
-// The list is enumerated from the registry at open and on every filter
-// change — the palette holds no action list of its own, so a declaration
-// added to the registry is reachable here with no palette-side change.
+// The command palette: every labeled action the registry declares and
+// can reach from the palette's context, searchable by label or id,
+// operable from the keyboard and the pointer. The list is enumerated
+// from the registry at open and on every filter change — the palette
+// holds no action list of its own, so a declaration added to the
+// registry is reachable here with no palette-side change. The registry
+// omits target-scoped declarations no palette context can ever enable,
+// so every listed row is either enabled or disabled with the reason the
+// declaration states.
 //
-// Disabled actions stay listed and render disabled with the reason the
-// declaration states; keyboard navigation skips them. Activation — row
+// Disabled rows stay listed, render disabled with their stated reason,
+// and read as disabled to assistive technology; keyboard navigation
+// skips them. Activation — row
 // click or Return — goes through registry.trigger(), which revalidates
 // enablement, so a stale row can never fire a dead action. Each row shows
 // the action's declared key sequence, read from the declaration rather
@@ -162,6 +167,13 @@ Popup {
                 height: palette.theme.rowHeight + (reasonText.visible ? reasonText.height : 0)
                 color: row.highlighted ? palette.theme.selectionBed : "transparent"
                 radius: 4
+                // Disabled rows are disabled at the item level, so
+                // assistive technology reads them as unavailable instead
+                // of actionable. The gate is the same live enablement
+                // that drives the row's rendering — one predicate, no
+                // second gate to drift — and the registry still
+                // revalidates at trigger time.
+                enabled: row.actionEnabled
 
                 Accessible.role: Accessible.ListItem
                 Accessible.name: row.modelData.label
@@ -169,9 +181,9 @@ Popup {
 
                 MouseArea {
                     anchors.fill: parent
-                    // The disabled row still routes through activate();
-                    // the registry refuses the trigger, so the row is
-                    // inert without a palette-side gate that could drift.
+                    // Activation routes through activate(), where the
+                    // registry revalidates enablement against the live
+                    // declarations before anything runs.
                     onClicked: palette.activate(row.modelData.actionId)
                 }
 

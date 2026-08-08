@@ -243,6 +243,32 @@ Item {
         }
     }
 
+    // Two alias spellings of one physical key. Qt normalizes both to the
+    // same sequence and routes them to the same press, so the detector
+    // must report a conflict even though the raw strings differ.
+    ActionRegistry {
+        id: aliasConflictedRegistry
+
+        ShellAction {
+            actionId: "sample.trashLike"
+            label: "Trash-like"
+            shortcuts: [
+                {
+                    "sequence": "Delete"
+                }
+            ]
+        }
+        ShellAction {
+            actionId: "sample.deleteAlias"
+            label: "Delete alias"
+            shortcuts: [
+                {
+                    "sequence": "Del"
+                }
+            ]
+        }
+    }
+
     ActionMenu {
         id: menu
 
@@ -324,6 +350,23 @@ Item {
             const conflicts = conflictedRegistry.shortcutConflicts();
             compare(conflicts.length, 1);
             compare(conflicts[0].toLowerCase(), "ctrl+k");
+        }
+
+        function test_conflictDetectorCatchesAliasSpellings() {
+            // "Delete" and "Del" are different strings but one key to
+            // Qt; a raw string comparison reports no conflict here.
+            const conflicts = aliasConflictedRegistry.shortcutConflicts();
+            compare(conflicts.length, 1);
+            compare(aliasConflictedRegistry.normalizedSequence(conflicts[0]), aliasConflictedRegistry.normalizedSequence("Delete"));
+        }
+
+        function test_sequenceNormalizationSeesWhatQtSees() {
+            compare(shellActions.normalizedSequence("Delete"), shellActions.normalizedSequence("Del"));
+            compare(shellActions.normalizedSequence("Escape"), shellActions.normalizedSequence("Esc"));
+            verify(shellActions.normalizedSequence("Delete") !== shellActions.normalizedSequence("Escape"));
+            // An unparseable sequence keys on its own raw string instead
+            // of colliding with other unparseable ones as "".
+            compare(shellActions.normalizedSequence("NotAKeyName"), "notakeyname");
         }
 
         function test_enablementComesFromContextNotSurface() {
@@ -471,8 +514,19 @@ Item {
         }
 
         function test_paletteEnumeratesAndFilters() {
+            // Enumeration covers exactly the declarations a global
+            // context can reach: target-scoped predicates over
+            // non-global surfaces are omitted rather than listed dead.
             const everything = shellActions.paletteEntries("", null);
-            verify(everything.length >= shellActions.actions.length - 1);
+            let reachable = 0;
+            for (let i = 0; i < shellActions.actions.length; ++i) {
+                const action = shellActions.actions[i];
+                if (action.enabledFor === null || action.surfaces.indexOf("global") !== -1) {
+                    ++reachable;
+                }
+            }
+            compare(everything.length, reachable);
+            verify(everything.length > 0);
 
             const filtered = shellActions.paletteEntries("trash", null);
             compare(filtered.length, 1);

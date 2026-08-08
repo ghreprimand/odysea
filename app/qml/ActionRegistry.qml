@@ -12,11 +12,20 @@
 // snapshot taken before a model change can never authorize a stale
 // operation.
 import QtQml
+import QtQuick as Quick
 
 QtObject {
     id: registry
 
     default property list<ShellAction> actions
+
+    /// Parses key sequences through Qt itself, so alias spellings of one
+    /// physical key ("Delete"/"Del", "Escape"/"Esc") compare equal
+    /// exactly as Qt routes them. Never enabled: it exists only for its
+    /// portableText normalization.
+    readonly property Quick.Shortcut sequenceNormalizer: Quick.Shortcut {
+        enabled: false
+    }
 
     // --- Context snapshot factories -----------------------------------
 
@@ -184,16 +193,28 @@ QtObject {
         return entries;
     }
 
+    /// A declared sequence reduced to the form Qt actually routes:
+    /// Qt's own parse, lower-cased. Falls back to the raw string when Qt
+    /// cannot parse the sequence, so an invalid declaration still gets a
+    /// stable key instead of colliding with other invalid ones as "".
+    function normalizedSequence(sequence) {
+        registry.sequenceNormalizer.sequence = sequence;
+        const portable = registry.sequenceNormalizer.portableText;
+        return portable.length > 0 ? portable.toLowerCase() : sequence.toLowerCase();
+    }
+
     /// Key sequences declared by more than one action. A non-empty result
     /// is a declaration bug; the test suite asserts emptiness so a
     /// conflicting shortcut fails the build gates instead of silently
-    /// shadowing another action at runtime.
+    /// shadowing another action at runtime. Comparison is on the
+    /// Qt-normalized sequence, so two alias spellings of one physical
+    /// key collide here the same way they collide at runtime.
     function shortcutConflicts() {
         const owners = ({});
         const conflicts = [];
         const entries = shortcutEntries();
         for (let i = 0; i < entries.length; ++i) {
-            const key = entries[i].sequence.toLowerCase();
+            const key = normalizedSequence(entries[i].sequence);
             if (owners[key] !== undefined && owners[key] !== entries[i].actionId) {
                 conflicts.push(entries[i].sequence);
             } else {
@@ -205,17 +226,35 @@ QtObject {
 
     // --- Enumeration for the command palette --------------------------
 
-    /// Every labeled action, filtered by a case-insensitive substring of
-    /// the label or id, with its live enablement for the given context.
-    /// The palette consumes this list; it never re-declares actions. The
-    /// shortcut and disabled reason come from the declaration, so the
-    /// palette cannot restate either.
+    /// Whether a declaration can possibly be enabled for the context the
+    /// palette supplies. A target-dependent predicate (`enabledFor`) is
+    /// written against the context shapes its `surfaces` declare — entry
+    /// index, place path, tab index — so a context of any other kind can
+    /// never satisfy it. Listing such an action would show a row that no
+    /// user action can ever enable; it is omitted instead.
+    function paletteReachable(action, context) {
+        if (action.enabledFor === null) {
+            return true;
+        }
+        return action.surfaces.indexOf(context.kind) !== -1;
+    }
+
+    /// Every labeled action reachable from the given context, filtered
+    /// by a case-insensitive substring of the label or id, with its live
+    /// enablement. The palette consumes this list; it never re-declares
+    /// actions. The shortcut and disabled reason come from the
+    /// declaration, so the palette cannot restate either. Every row is
+    /// either enabled or carries the declaration's stated reason; the
+    /// test suite pins that invariant.
     function paletteEntries(filterText, context) {
         const needle = filterText === undefined ? "" : filterText.toLowerCase();
         const effective = context !== undefined && context !== null ? context : globalContext(undefined);
         const entries = [];
         for (let i = 0; i < registry.actions.length; ++i) {
             const action = registry.actions[i];
+            if (!paletteReachable(action, effective)) {
+                continue;
+            }
             const label = labelFor(action, effective);
             if (label.length === 0) {
                 continue;

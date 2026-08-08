@@ -106,6 +106,7 @@ ActionRegistry {
         label: qsTr("Clear recent destinations")
         shortLabel: label
         enabled: actionSet.navigationSettings.recentDestinations.length > 0
+        disabledReasonFor: () => qsTr("No recent destinations recorded")
         perform: () => actionSet.navigationSettings.clearRecentDestinations()
     }
     ShellAction {
@@ -197,6 +198,7 @@ ActionRegistry {
         iconName: "up"
         surfaces: ["canvas"]
         enabled: actionSet.shellModel.canGoUp
+        disabledReasonFor: () => qsTr("Already at the filesystem root")
         shortcuts: [
             {
                 "sequence": "Alt+Up"
@@ -209,6 +211,7 @@ ActionRegistry {
         label: qsTr("Back")
         iconName: "back"
         enabled: actionSet.shellModel.canGoBack
+        disabledReasonFor: () => qsTr("No earlier location in this tab's history")
         shortcuts: [
             {
                 "sequence": "Alt+Left"
@@ -221,6 +224,7 @@ ActionRegistry {
         label: qsTr("Forward")
         iconName: "forward"
         enabled: actionSet.shellModel.canGoForward
+        disabledReasonFor: () => qsTr("No later location in this tab's history")
         shortcuts: [
             {
                 "sequence": "Alt+Right"
@@ -431,6 +435,7 @@ ActionRegistry {
         actionId: "pane.switch"
         label: qsTr("Switch pane")
         enabled: actionSet.shell.paneCount === 2
+        disabledReasonFor: () => qsTr("Only one pane is open")
         shortcuts: [
             {
                 "sequence": "F6"
@@ -442,6 +447,7 @@ ActionRegistry {
         actionId: "pane.resizeLeft"
         label: qsTr("Move pane divider left")
         enabled: actionSet.shell.paneCount === 2
+        disabledReasonFor: () => qsTr("Only one pane is open")
         shortcuts: [
             {
                 "sequence": "Ctrl+Alt+Left"
@@ -453,6 +459,7 @@ ActionRegistry {
         actionId: "pane.resizeRight"
         label: qsTr("Move pane divider right")
         enabled: actionSet.shell.paneCount === 2
+        disabledReasonFor: () => qsTr("Only one pane is open")
         shortcuts: [
             {
                 "sequence": "Ctrl+Alt+Right"
