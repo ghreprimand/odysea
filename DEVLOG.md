@@ -17,6 +17,26 @@ the archive.
 
 ---
 
+## 2026-08-09 -- Unclaim the columns view pending action and location wiring
+
+The roadmap claimed the Miller columns view. Two gaps make that claim
+premature and it is withdrawn until both close.
+
+Entry actions resolve their target through the list model, not through the
+view that holds focus. With the columns view focused and holding its own
+selection, a delete, copy, move, or rename acts on the list model's selected
+rows in a different directory, and nothing on screen indicates the mismatch.
+A filter applied while a chain is open also narrows ancestor columns, so the
+row anchoring a live column can leave the listing while the chain stays open.
+
+The columns view also does not drive the shell's location: its current path
+and activation signal have no consumers, so the path navigator and the rest
+of the shell stay where they were while the chain moves.
+
+The view itself is unchanged and remains reachable. Its own navigation,
+accessibility declarations, virtualization, and retained-state bounds hold as
+recorded.
+
 ## 2026-08-08 -- Narrow the visual acceptance record to what the gates cover
 
 The visual foundation acceptance entry in the roadmap listed scale behavior
