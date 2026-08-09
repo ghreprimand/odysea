@@ -112,6 +112,16 @@ while IFS= read -r -d '' source_file; do
     checked=$((checked + 1))
 done < <(git ls-files -z -- '*.cpp')
 
+# A floor under the count. Analysing nothing produces no diagnostics, which
+# matches an empty baseline exactly and reports as a clean gate. The corpus is
+# enumerated from a repository root and the baseline is a file that can be
+# emptied, so both halves of that coincidence are reachable without anyone
+# intending it.
+if ((checked == 0)); then
+    printf 'static_analysis: no tracked translation unit was found, so nothing was analysed\n' >&2
+    exit 1
+fi
+
 # A header is re-analysed by every translation unit that includes it, so the
 # same diagnostic is reported many times. Identity is the location plus the
 # check that produced it, and the duplicates are collapsed before counting: a

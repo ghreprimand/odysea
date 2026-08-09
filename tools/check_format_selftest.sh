@@ -86,6 +86,32 @@ while IFS= read -r extension; do
     fi
 done <<<"$required_extensions"
 
+# The floor under the count. Every file in a corpus with no C or C++ source in
+# it is correctly formatted, so the gate reaches its success line without
+# running clang-format once. The rejection has to be the named one: a gate that
+# failed here for some unrelated reason would satisfy a bare exit-status check
+# while still passing the case it exists to refuse.
+empty_corpus="$workspace/empty-corpus"
+mkdir -p "$empty_corpus"
+cp "$style" "$empty_corpus/.clang-format"
+git -C "$empty_corpus" init -q
+git -C "$empty_corpus" config core.hooksPath /dev/null
+printf 'no sources here\n' >"$empty_corpus/README.md"
+git -C "$empty_corpus" add -f ".clang-format" "README.md"
+
+empty_corpus_output=""
+empty_corpus_status=0
+empty_corpus_output="$( (cd "$empty_corpus" && bash "$guard") 2>&1 )" ||
+    empty_corpus_status=$?
+if ((empty_corpus_status == 0)); then
+    printf 'formatting_guard_self_test: a corpus with no covered file is passed\n' >&2
+    status=1
+elif [[ "$empty_corpus_output" != *"no tracked file matched"* ]]; then
+    printf 'formatting_guard_self_test: a corpus with no covered file is refused for the wrong reason: %s\n' \
+        "$empty_corpus_output" >&2
+    status=1
+fi
+
 if ((status != 0)); then
     exit "$status"
 fi

@@ -65,6 +65,9 @@ add_test(
     NAME qml_lint_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml.sh lint ${CMAKE_BINARY_DIR}/app)
 add_test(
+    NAME qml_lint_guard_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_lint_selftest.sh)
+add_test(
     NAME qml_lint_order_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_lint_order_selftest.sh)
 add_test(
@@ -84,6 +87,9 @@ add_test(
     NAME file_length_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length.sh)
 add_test(
+    NAME file_length_guard_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length_selftest.sh)
+add_test(
     NAME devlog_archive_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_devlog_archive.sh)
 add_test(
@@ -98,6 +104,12 @@ add_test(
 add_test(
     NAME static_analysis
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
+# The three self-tests added beside their gates are deliberately absent from
+# the skip list below. They build their own sandboxes and have no precondition
+# they can decline on, so a 77 from one of them would be a defect, not a skip.
+add_test(
+    NAME static_analysis_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy_selftest.sh)
 
 set_tests_properties(
     public_repository_guard public_repository_guard_self_test

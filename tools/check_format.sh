@@ -54,5 +54,16 @@ while IFS= read -r extension; do
     done < <(git ls-files -z -- "*.${extension}")
 done <<<"$covered_extensions"
 
+# A floor under the count. Every file in an empty corpus is correctly
+# formatted, so the check above passes without running clang-format once, and
+# the success line below reads identically to a full run. The corpus is
+# enumerated from a repository root, which is exactly the kind of thing that
+# can silently resolve somewhere else.
+if ((checked == 0)); then
+    printf 'formatting_guard: no tracked file matched any of the %d covered extensions, so nothing was checked\n' \
+        "$extension_count" >&2
+    exit 1
+fi
+
 printf 'formatting_guard: %d tracked C and C++ files passed across %d extensions\n' \
     "$checked" "$extension_count"

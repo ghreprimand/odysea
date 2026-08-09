@@ -4,6 +4,7 @@
 # exactly, so an entry cannot be dropped, reworded, reordered, or
 # duplicated without the gate failing. Append a line here in the same
 # commit that publishes the entry.
+## 2026-08-09 -- Gates that measured nothing reported success
 ## 2026-08-09 -- The record is archived in parts before the month closes
 ## 2026-08-09 -- Restate the columns gap to the one that remains
 ## 2026-08-09 -- A directory is watched before it is read, not after

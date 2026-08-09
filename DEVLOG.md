@@ -24,6 +24,43 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-09 -- Gates that measured nothing reported success
+
+Two gates passed over an empty corpus. The formatting gate printed that zero
+files had passed and called it a pass; the file-length gate printed no count at
+all, so its success line read the same over the whole tree as over none. Every
+file in an empty corpus is formatted correctly, and every file in it is under
+the ceiling: both results were true and neither meant anything. The corpus is
+enumerated from a repository root, which is exactly the kind of thing that can
+resolve somewhere unintended with no visible sign.
+
+Both now refuse an empty corpus by name and state the size of what they
+measured, so the success line can be checked by reading it. The file-length
+gate carries a second floor, because a corpus holding only binary assets
+measures nothing either. Static analysis gained the same floor, where the
+coincidence is sharper: with nothing analysed there are no diagnostics, and an
+empty set matches an emptied baseline exactly.
+
+The three gates without a self-test were the file-length ceiling, the QML lint
+pass, and static analysis, and two of those three were the two that passed
+vacuously. Each now has one. The ceiling is exercised at exactly 2,000 and
+2,001 lines, separately in the working tree and in the index. The lint
+self-test requires a scene with an unqualified access to be rejected, and
+counts the corpus in its success line. The static-analysis self-test holds the
+baseline in both directions: an unrecorded diagnostic is refused as new, and a
+recorded one that stopped occurring is refused as well. Every scenario requires
+a specific message rather than a bare non-zero exit, because a gate failing for
+an unrelated reason would satisfy the weaker check.
+
+Verified: 13 planted mutations of the floors, the ceiling boundary, both halves
+of the index comparison, the fatal report, the drift comparison and the lint
+threshold; 13 caught, keyed on exit status. Release 58/58 and ASan/UBSan 57/57
+with a display attached, warning-clean.
+
+Known gap: with an empty recorded baseline, the static-analysis comparison
+reports a new diagnostic in the wording meant for a cleared one. The gate still
+fails, so nothing passes that should not; the message is wrong. The self-test
+keeps clear of that path rather than pinning it.
 ## 2026-08-09 -- The record is archived in parts before the month closes
 
 The development record had 105 lines of headroom under the 2,000-line ceiling
