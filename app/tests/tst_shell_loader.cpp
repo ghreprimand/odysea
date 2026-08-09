@@ -10,6 +10,7 @@
 // point has to produce it in a real process rather than only the function it
 // calls.
 #include "directory_list_model.hpp"
+#include "miller_columns_model.hpp"
 #include "shell_loader.hpp"
 #include "theme_controller.hpp"
 #include "theme_palettes.hpp"
@@ -25,6 +26,8 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQmlExpression>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -216,6 +219,7 @@ class ShellLoaderTest : public QObject {
   private slots:
     void theShellSceneLoadsFromTheModule();
     void theShellSceneTearsDownWithLiveColumns();
+    void anInvokableColumnListingRemainsCppOwned();
     void theShellSceneReflectsStoredAppearanceOnLoad();
     void anAbsentSceneTypeReachesTheStandardErrorStream();
     void anAbsentModuleIsReported();
@@ -286,6 +290,32 @@ void ShellLoaderTest::theShellSceneTearsDownWithLiveColumns() {
     // holds a live listing reference. The columns controller remains the sole
     // owner, so ASan must see one destruction rather than two.
     engine.reset();
+}
+
+void ShellLoaderTest::anInvokableColumnListingRemainsCppOwned() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    QQmlEngine engine;
+    odysea::app::MillerColumnsModel columns;
+    columns.setRootPath(directory.path());
+    QCOMPARE(columns.liveColumnCount(), 1);
+
+    QQmlContext context(engine.rootContext());
+    context.setContextProperty(QStringLiteral("columnsUnderTest"), &columns);
+    QQmlExpression expression(&context, nullptr, QStringLiteral("columnsUnderTest.columnModel(0)"));
+    const QVariant result = expression.evaluate();
+    QVERIFY2(!expression.hasError(), qPrintable(expression.error().toString()));
+    auto* const listing = result.value<QObject*>();
+    QVERIFY(listing != nullptr);
+
+    const auto ownership = QQmlEngine::objectOwnership(listing);
+    if (ownership != QQmlEngine::CppOwnership) {
+        // Keep a deliberately broken mutation safe enough to report the failed
+        // assertion instead of turning the test process into a second owner.
+        QQmlEngine::setObjectOwnership(listing, QQmlEngine::CppOwnership);
+    }
+    QCOMPARE(ownership, QQmlEngine::CppOwnership);
 }
 
 void ShellLoaderTest::theShellSceneReflectsStoredAppearanceOnLoad() {

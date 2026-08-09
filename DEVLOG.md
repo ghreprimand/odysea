@@ -24,6 +24,25 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-09 -- Make columns ownership verification discriminating
+
+Column listings are owned by their C++ controller even when QML obtains them
+through the controller's invokable accessor. The existing teardown coverage
+exercised that lifetime, but it still passed if the explicit ownership marker
+was removed, so it did not guard the contract it described.
+
+The shell loader test now evaluates the invokable accessor through a real QML
+context and checks the returned listing's engine ownership. A deliberately
+broken build without the ownership marker changed the observed value from C++
+ownership to JavaScript ownership and failed the new assertion. The mutation
+path restores safe ownership before reporting the failure so the test itself
+does not create a second owner.
+
+Release and ASan/UBSan suites passed, including 55 release checks and 54
+sanitizer-enabled checks; four renderer or compositor capability cases skipped
+in the headless environment. Scoped static analysis and eight-second release
+and sanitizer software-renderer smoke launches also passed.
+
 ## 2026-08-09 -- Keep cross-pane transfers on visible listings
 
 Transfers now resolve both ends through the listings each pane displays. When
