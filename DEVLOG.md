@@ -17,6 +17,15 @@ the archive.
 
 ---
 
+## 2026-08-09 -- Restate the columns gap to the one that remains
+
+The roadmap described two gaps behind the columns view. One of them has since
+closed: entry actions resolve against the focused column listing, and the pane
+header names that listing. The roadmap text still asserted the closed gap, so
+it described a defect the tree no longer has. It now states only the remaining
+one, that the shell's location does not follow the column chain. The entry
+stays unclaimed.
+
 ## 2026-08-09 -- A directory is watched before it is read, not after
 
 A listing was acquired by reading the directory and then establishing a watch
