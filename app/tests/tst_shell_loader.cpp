@@ -215,6 +215,7 @@ class ShellLoaderTest : public QObject {
 
   private slots:
     void theShellSceneLoadsFromTheModule();
+    void theShellSceneTearsDownWithLiveColumns();
     void theShellSceneReflectsStoredAppearanceOnLoad();
     void anAbsentSceneTypeReachesTheStandardErrorStream();
     void anAbsentModuleIsReported();
@@ -246,6 +247,44 @@ void ShellLoaderTest::theShellSceneLoadsFromTheModule() {
     QVERIFY2(outcome.loaded, qPrintable(outcome.diagnostic));
     QCOMPARE(outcome.diagnostic, QString());
     QVERIFY(!engine->rootObjects().isEmpty());
+    engine.reset();
+}
+
+// Qt's wait macros expand into several branches around the assertions.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void ShellLoaderTest::theShellSceneTearsDownWithLiveColumns() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(QDir().mkpath(directory.filePath(QStringLiteral("folder"))));
+
+    QtThumbnailProducer producer;
+    MemoryThumbnailStore store;
+
+    auto engine = std::make_unique<QQmlApplicationEngine>();
+    ThumbnailImageProvider& provider = installThumbnailProvider(*engine);
+    DirectoryListModel model(provider, producer, store, {});
+    model.setPath(directory.path());
+
+    engine->setInitialProperties({{QStringLiteral("shellModel"), QVariant::fromValue(&model)}});
+    const ShellLoadOutcome outcome = loadShellScene(*engine, shellModuleUri(), shellSceneType());
+    QVERIFY2(outcome.loaded, qPrintable(outcome.diagnostic));
+    QVERIFY(!engine->rootObjects().isEmpty());
+    QObject* const window = engine->rootObjects().constFirst();
+    QVERIFY(QMetaObject::invokeMethod(window, "switchColumnsView"));
+
+    const auto activeListingForWindow = [window]() {
+        return qobject_cast<DirectoryListModel*>(
+            window->property("activeEntryModel").value<QObject*>());
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(
+        activeListingForWindow() != nullptr && activeListingForWindow() != &model, 5000);
+    DirectoryListModel* const activeListing = activeListingForWindow();
+    QTRY_VERIFY_WITH_TIMEOUT(!activeListing->busy(), 5000);
+    QVERIFY(activeListing->rowCount() > 0);
+
+    // This is the regression boundary: the engine tears down while QML still
+    // holds a live listing reference. The columns controller remains the sole
+    // owner, so ASan must see one destruction rather than two.
     engine.reset();
 }
 

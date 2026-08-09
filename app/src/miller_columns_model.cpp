@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QQmlEngine>
 #include <QVariant>
 
 #include <algorithm>
@@ -86,6 +87,10 @@ int MillerColumnsModel::activeColumn() const noexcept {
     return activeColumn_;
 }
 
+QObject* MillerColumnsModel::activeListing() const {
+    return modelAt(activeColumn_);
+}
+
 QString MillerColumnsModel::currentPath() const {
     DirectoryListModel* const listing = modelAt(activeColumn_);
     return listing == nullptr ? QString{} : listing->path();
@@ -115,8 +120,14 @@ void MillerColumnsModel::setFilterText(const QString& filterText) {
         return;
     }
     filterText_ = filterText;
-    for (const auto& column : columns_) {
-        column->setFilterText(filterText_);
+    // A text filter describes the folder currently being examined, not every
+    // ancestor in the path. Applying it to ancestors can hide the selected row
+    // that anchors a descendant column while leaving that descendant visible.
+    // Descendants are therefore released first and only the active listing is
+    // filtered.
+    truncateAfter(activeColumn_);
+    if (DirectoryListModel* const listing = modelAt(activeColumn_); listing != nullptr) {
+        listing->setFilterText(filterText_);
     }
     emit filterTextChanged();
 }
@@ -272,12 +283,19 @@ void MillerColumnsModel::setActiveColumn(int column) {
         return;
     }
     const int previous = activeColumn_;
+    if (DirectoryListModel* const previousListing = modelAt(previous); previousListing != nullptr) {
+        previousListing->setFilterText({});
+    }
     activeColumn_ = column;
+    if (DirectoryListModel* const listing = modelAt(activeColumn_); listing != nullptr) {
+        listing->setFilterText(filterText_);
+    }
     if (previous >= 0 && previous < liveColumnCount()) {
         emit dataChanged(index(previous), index(previous), {ActiveRole});
     }
     emit dataChanged(index(activeColumn_), index(activeColumn_), {ActiveRole});
     emit activeColumnChanged();
+    emit activeListingChanged();
     emit currentPathChanged();
 }
 
@@ -290,6 +308,10 @@ DirectoryListModel* MillerColumnsModel::modelAt(int column) const {
 
 std::unique_ptr<DirectoryListModel> MillerColumnsModel::makeListing() const {
     auto listing = std::make_unique<DirectoryListModel>(*entryLauncher_);
+    // The vector is the sole owner. A parentless QObject exposed through QML
+    // otherwise defaults to JavaScriptOwnership, making the engine a second
+    // owner and causing a double deletion when a live columns scene tears down.
+    QQmlEngine::setObjectOwnership(listing.get(), QQmlEngine::CppOwnership);
     applySettings(*listing);
     return listing;
 }
@@ -297,6 +319,9 @@ std::unique_ptr<DirectoryListModel> MillerColumnsModel::makeListing() const {
 void MillerColumnsModel::appendColumn(const QString& path) {
     const int row = liveColumnCount();
     auto listing = makeListing();
+    if (row == activeColumn_) {
+        listing->setFilterText(filterText_);
+    }
     listing->setPath(path);
     beginInsertRows({}, row, row);
     columns_.push_back(std::move(listing));
@@ -317,9 +342,11 @@ void MillerColumnsModel::truncateAfter(int column) {
     if (activeColumn_ >= liveColumnCount()) {
         activeColumn_ = std::max(0, liveColumnCount() - 1);
         if (liveColumnCount() > 0) {
+            modelAt(activeColumn_)->setFilterText(filterText_);
             emit dataChanged(index(activeColumn_), index(activeColumn_), {ActiveRole});
         }
         emit activeColumnChanged();
+        emit activeListingChanged();
         emit currentPathChanged();
     }
 }
@@ -330,18 +357,19 @@ void MillerColumnsModel::resetColumns() {
     activeColumn_ = 0;
     if (!rootPath_.isEmpty()) {
         auto listing = makeListing();
+        listing->setFilterText(filterText_);
         listing->setPath(rootPath_);
         columns_.push_back(std::move(listing));
     }
     endResetModel();
     emit columnCountChanged();
     emit activeColumnChanged();
+    emit activeListingChanged();
     emit currentPathChanged();
 }
 
 void MillerColumnsModel::applySettings(DirectoryListModel& model) const {
     model.setShowHidden(showHidden_);
-    model.setFilterText(filterText_);
     model.setSortMode(sortMode_);
 }
 

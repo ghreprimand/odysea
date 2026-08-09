@@ -21,6 +21,41 @@ Support.ShellTestCase {
         verify(!layer.active);
     }
 
+    function test_columnsDeleteTargetsTheVisibleListing() {
+        const sourceUrl = Qt.resolvedUrl("../../../qml").toString();
+        const sourcePath = sourceUrl.startsWith("file://") ? decodeURIComponent(sourceUrl.slice(7)) : "";
+        verify(sourcePath.length > 0);
+        fakeModel.path = sourcePath;
+        fakeModel.selectedCount = 3;
+        fakeModel.resetTelemetry();
+
+        shellWindow.switchColumnsView();
+        const loader = child("millerColumnsLoader");
+        tryVerify(function () {
+            return loader.item !== null;
+        });
+        const columnsView = loader.item;
+        const columnsModel = columnsView.columnsModel;
+        tryVerify(function () {
+            return columnsModel.columnModel(0) !== null && !columnsModel.columnBusy(0);
+        });
+        verify(columnsModel.entryCount(0) > 0);
+        columnsModel.moveToRow(0);
+        tryCompare(shellWindow.activeEntryModel, "selectedCount", 1);
+        verify(shellWindow.activeEntryModel !== fakeModel);
+        columnsView.focusView();
+        tryVerify(function () {
+            return columnsView.activeFocus;
+        });
+
+        keyClick(Qt.Key_Delete);
+
+        compare(fakeModel.requestTrashCalls, 0);
+        const trashDialog = child("trashDialog");
+        tryCompare(trashDialog, "opened", true);
+        trashDialog.close();
+    }
+
     function test_keyboardSelectionPaths() {
         let list = child("directoryList");
         list.forceActiveFocus();

@@ -184,6 +184,7 @@ class DirectoryListModel : public QAbstractListModel {
     // it is. Both halves reach internal state that has no public spelling.
     friend class DirectoryListModelTest;
     friend class DirectoryListModelInteractionTest;
+    friend class MillerColumnsModelTest;
 
     struct TabState {
         QString path;

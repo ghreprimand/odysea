@@ -17,6 +17,40 @@ the archive.
 
 ---
 
+## 2026-08-09 -- Harden columns ownership and focused-view actions
+
+Column listings now remain under one explicit C++ owner when exposed to QML,
+so tearing down the shell with a live columns chain destroys each adapter once.
+The sanitizer shell-load gate covers that exact lifetime boundary with a real
+directory listing active at engine teardown.
+
+The workspace adapter continues to own tabs, history, and the location from
+which a columns chain begins. Entry operations instead follow the focused view:
+copy, move, rename, trash, select-all, operation dialogs, status, and cross-pane
+transfers use the active column listing while columns mode is visible. The pane
+header identifies that active listing's path, so an operation cannot resolve to
+a selection retained invisibly by the list or grid model.
+
+Text filtering applies only to the active column and releases descendants
+before filtering can remove their anchor. Shared presentation settings still
+fan out over the live chain, so their work remains proportional to the number
+of visible columns; the per-keystroke filter path no longer pays that factor.
+The model gate bounds key construction and row-index rebuilding above and below
+using deterministic counters, and separately proves that selecting an already
+open branch reuses its live listing. The five-level, 5,004-row fixture loaded in
+253 ms in release and 502 ms under ASan/UBSan; filtering its active 1,000-row
+listing built exactly 1,000 keys and one row index in both presets. Mutations
+that disabled same-branch reuse or tripled filter work failed their dedicated
+gates.
+
+The warning-clean release build passed all 50 executed checks, including the
+189.62-second static-analysis gate; two RHI probes skipped because the offscreen
+platform supplied no usable RHI context. ASan/UBSan passed all 49 executed
+checks, with static analysis disabled and the same two RHI probes skipped.
+Release and sanitizer binaries completed silent eight-second software smoke
+launches. The changed shell interaction ran at the test environment's default
+1x logical scale; it adds no pixel or frame-comparison claim.
+
 ## 2026-08-09 -- Unclaim the columns view pending action and location wiring
 
 The roadmap claimed the Miller columns view. Two gaps make that claim

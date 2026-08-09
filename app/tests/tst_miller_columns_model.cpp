@@ -56,13 +56,16 @@ int rowForName(const odysea::app::MillerColumnsModel& model, int column, const Q
     return -1;
 }
 
+} // namespace
+
 class MillerColumnsModelTest : public QObject {
     Q_OBJECT
 
   private slots:
     void selectionBuildsOnlyTheLivePathChain();
+    void reselectingAnOpenBranchReusesItsListing();
     void traversalAndActivationCoverFoldersAndFiles();
-    void presentationSettingsReachEveryLiveListing();
+    void presentationSettingsPreserveThePathChain();
     void fiveLargeColumnsBoundRetainedState();
 };
 
@@ -105,6 +108,29 @@ void MillerColumnsModelTest::selectionBuildsOnlyTheLivePathChain() {
     model.collapseBack();
     QCOMPARE(model.liveColumnCount(), 1);
     QCOMPARE(model.activeColumn(), 0);
+}
+
+void MillerColumnsModelTest::reselectingAnOpenBranchReusesItsListing() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    QVERIFY(QDir().mkpath(fixture.path() + QStringLiteral("/folder")));
+
+    RecordingLauncher launcher;
+    odysea::app::MillerColumnsModel model(launcher);
+    model.setRootPath(fixture.path());
+    waitForListing(model, 0);
+
+    const int folder = rowForName(model, 0, QStringLiteral("folder"));
+    QVERIFY(folder >= 0);
+    model.select(0, folder);
+    waitForListing(model, 1);
+    QPointer<DirectoryListModel> child = listing(model, 1);
+
+    model.select(0, folder);
+
+    QCOMPARE(model.liveColumnCount(), 2);
+    QVERIFY(!child.isNull());
+    QCOMPARE(listing(model, 1), child.data());
 }
 
 // Qt's assertion macros account for the reported branch count.
@@ -150,7 +176,7 @@ void MillerColumnsModelTest::traversalAndActivationCoverFoldersAndFiles() {
 
 // Qt's assertion macros account for the reported branch count.
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-void MillerColumnsModelTest::presentationSettingsReachEveryLiveListing() {
+void MillerColumnsModelTest::presentationSettingsPreserveThePathChain() {
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
     QVERIFY(QDir().mkpath(fixture.path() + QStringLiteral("/folder")));
@@ -178,6 +204,22 @@ void MillerColumnsModelTest::presentationSettingsReachEveryLiveListing() {
     QVERIFY(child->showHidden());
     QCOMPARE(child->sortMode(), static_cast<int>(DirectoryListModel::SortBySize));
     QCOMPARE(child->filterText(), QString{});
+
+    model.setFilterText(QStringLiteral("folder"));
+    QCOMPARE(model.liveColumnCount(), 1);
+    QCOMPARE(root->filterText(), QStringLiteral("folder"));
+
+    model.setFilterText({});
+    waitForListing(model, 0);
+    const int reopenedFolder = rowForName(model, 0, QStringLiteral("folder"));
+    QVERIFY(reopenedFolder >= 0);
+    model.select(0, reopenedFolder);
+    waitForListing(model, 1);
+    child = listing(model, 1);
+    model.setActiveColumn(1);
+    model.setFilterText(QStringLiteral("needle"));
+    QCOMPARE(root->filterText(), QString{});
+    QCOMPARE(child->filterText(), QStringLiteral("needle"));
 
     model.setShowHidden(false);
     model.setSortMode(DirectoryListModel::SortByType);
@@ -231,11 +273,39 @@ void MillerColumnsModelTest::fiveLargeColumnsBoundRetainedState() {
 
     QCOMPARE(model.liveColumnCount(), depth);
     QCOMPARE(retainedRows, (depth * filesPerLevel) + depth - 1);
-    QVERIFY2(
-        elapsedMilliseconds < 30000,
-        qPrintable(QStringLiteral("five large columns loaded in %1 ms").arg(elapsedMilliseconds)));
+    model.setActiveColumn(depth - 1);
+    std::uint64_t keyBuildsBefore = 0;
+    std::uint64_t rowIndexBuildsBefore = 0;
+    for (const auto& listingPointer : liveListings) {
+        keyBuildsBefore += listingPointer->entryKeyBuilds_;
+        rowIndexBuildsBefore += listingPointer->entryRowIndexBuilds_;
+    }
+
+    model.setFilterText(QStringLiteral("entry-"));
+
+    std::uint64_t keyBuildsAfter = 0;
+    std::uint64_t rowIndexBuildsAfter = 0;
+    for (const auto& listingPointer : liveListings) {
+        keyBuildsAfter += listingPointer->entryKeyBuilds_;
+        rowIndexBuildsAfter += listingPointer->entryRowIndexBuilds_;
+    }
+    const std::uint64_t keyBuilds = keyBuildsAfter - keyBuildsBefore;
+    const std::uint64_t rowIndexBuilds = rowIndexBuildsAfter - rowIndexBuildsBefore;
+    const auto activeRows = static_cast<std::uint64_t>(filesPerLevel);
+    QVERIFY2(keyBuilds >= activeRows,
+             qPrintable(QStringLiteral("filter built only %1 keys for %2 active rows")
+                            .arg(keyBuilds)
+                            .arg(activeRows)));
+    QVERIFY2(keyBuilds <= activeRows + 8,
+             qPrintable(QStringLiteral("filter built %1 keys for %2 active rows")
+                            .arg(keyBuilds)
+                            .arg(activeRows)));
+    QVERIFY2(rowIndexBuilds >= 1, qPrintable(QStringLiteral("filter rebuilt no row index")));
+    QVERIFY2(rowIndexBuilds <= 2,
+             qPrintable(QStringLiteral("filter rebuilt %1 row indexes").arg(rowIndexBuilds)));
     qInfo().nospace() << depth << " live columns retained " << retainedRows
-                      << " rows and loaded in " << elapsedMilliseconds << " ms";
+                      << " rows and loaded in " << elapsedMilliseconds << " ms; filter built "
+                      << keyBuilds << " keys and " << rowIndexBuilds << " row indexes";
 
     model.collapseTo(0);
     QCOMPARE(model.liveColumnCount(), 1);
@@ -244,8 +314,6 @@ void MillerColumnsModelTest::fiveLargeColumnsBoundRetainedState() {
         QVERIFY(liveListings.at(column).isNull());
     }
 }
-
-} // namespace
 
 QTEST_GUILESS_MAIN(MillerColumnsModelTest)
 

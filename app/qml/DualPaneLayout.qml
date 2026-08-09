@@ -22,6 +22,8 @@ Item {
     property real minimumPaneWidth: 240
     readonly property real splitterWidth: 18
     readonly property real usableWidth: Math.max(0, width - (dualPaneEnabled ? splitterWidth : 0))
+    readonly property PaneFrame secondPane: secondPaneLoader.item as PaneFrame
+    readonly property var activeEntryModel: activePane === 0 ? firstPane.entryModel : (secondPane !== null ? secondPane.entryModel : secondaryModel)
 
     signal paneActivationRequested(int paneIndex)
     signal splitRatioCommitted(real ratio)

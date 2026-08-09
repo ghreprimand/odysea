@@ -35,6 +35,7 @@ ApplicationWindow {
     /// sequence in the shell renders from these declarations.
     readonly property ShellActions actions: ShellActions {
         shellModel: root.activeShellModel
+        entryModel: root.activeEntryModel
         shell: root
         navigationSettings: root.shellTheme
     }
@@ -57,6 +58,7 @@ ApplicationWindow {
     readonly property int paneCount: dualPaneEnabled ? 2 : 1
     readonly property var activeShellModel: activePaneIndex === 0 ? shellModel : secondaryShellModel
     readonly property var oppositeShellModel: activePaneIndex === 0 ? secondaryShellModel : shellModel
+    readonly property var activeEntryModel: paneLayout.activeEntryModel !== null ? paneLayout.activeEntryModel : activeShellModel
 
     onDualPaneEnabledChanged: {
         if (!dualPaneEnabled && activePaneIndex !== 0) {
@@ -137,14 +139,14 @@ ApplicationWindow {
     }
 
     function canTransferToOppositePane(move) {
-        return root.paneCount === 2 && root.activeShellModel !== root.oppositeShellModel && root.activeShellModel.selectedCount > 0 && !root.activeShellModel.operationBusy && !root.oppositeShellModel.operationBusy && root.oppositeShellModel.path.length > 0 && root.activeShellModel.path !== root.oppositeShellModel.path;
+        return root.paneCount === 2 && root.activeEntryModel !== root.oppositeShellModel && root.activeEntryModel.selectedCount > 0 && !root.activeEntryModel.operationBusy && !root.oppositeShellModel.operationBusy && root.oppositeShellModel.path.length > 0 && root.activeEntryModel.path !== root.oppositeShellModel.path;
     }
 
     function transferToOppositePane(move) {
         if (!root.canTransferToOppositePane(move)) {
             return false;
         }
-        return root.activeShellModel.dropSelection(root.oppositeShellModel.path, move, 0);
+        return root.activeEntryModel.dropSelection(root.oppositeShellModel.path, move, 0);
     }
 
     function clearTypeAhead() {
@@ -394,7 +396,7 @@ ApplicationWindow {
 
             StatusBar {
                 Layout.fillWidth: true
-                shellModel: root.activeShellModel
+                shellModel: root.activeEntryModel
                 activePane: root.activePaneIndex
                 paneCount: root.paneCount
                 theme: root.shellTheme
@@ -436,7 +438,7 @@ ApplicationWindow {
     }
 
     FilesystemDialogs {
-        shellModel: root.activeShellModel
+        shellModel: root.activeEntryModel
         theme: root.shellTheme
         backgroundColor: root.backgroundColor
         panelColor: root.panelColor

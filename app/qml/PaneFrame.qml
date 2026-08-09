@@ -20,6 +20,7 @@ FocusScope {
     property bool columnsMode: false
     property int persistenceDurationMs: 0
     property var wellLayer: null
+    readonly property var entryModel: directoryPane.entryModel
 
     signal activationRequested(int paneIndex)
 
@@ -81,7 +82,7 @@ FocusScope {
 
             Text {
                 Layout.fillWidth: true
-                text: frame.shellModel !== null ? frame.shellModel.path : ""
+                text: frame.entryModel !== null ? frame.entryModel.path : ""
                 color: frame.theme.textMuted
                 elide: Text.ElideMiddle
                 font.family: frame.theme.pathFontFamily

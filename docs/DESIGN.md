@@ -113,7 +113,13 @@ terminal file manager. Achieving both at once is a deliberate design target.
   the matching pointer control collapses the rightmost level. A pointer press
   on a row selects it and reveals a directory to the right; double-click uses
   the same activation path as Return. `Ctrl+Shift+3` and the toolbar choose the
-  view alongside the list and grid modes.
+  view alongside the list and grid modes. Workspace navigation and tab history
+  remain rooted in the directory from which the columns chain opened, while
+  entry operations follow the focused view: copy, move, rename, trash,
+  selection status, dialogs, and cross-pane transfers resolve against the
+  active column listing. The active column path is shown in the pane header.
+  This split preserves an exploratory path chain without allowing a shortcut
+  to act on an invisible selection retained by another view.
 - **Geometric selection.** Each view computes the explicit set of model rows
   intersected by its rubber-band rectangle. The shared selection model applies
   that set by stable entry key, so list and grid geometry do not leak into
@@ -211,7 +217,14 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   as a hidden cache. The horizontal column strip and every vertical entry list
   are virtualized independently with no delegate cache buffer, so a deep path
   multiplies listing state only by the levels it still represents and a large
-  directory does not multiply rendered rows by its entry count.
+  directory does not multiply rendered rows by its entry count. The controller
+  is the sole C++ owner of these QML-visible listing objects; they are marked
+  with C++ ownership before crossing the QML boundary so the engine never
+  becomes a second owner. Settings that describe every column, such as hidden
+  visibility and sorting, necessarily pay their linear presentation cost once
+  per live level. Text filtering instead applies only to the active listing
+  and releases its descendants first, preventing both per-keystroke fan-out
+  and a chain whose ancestor anchor has been filtered away.
 - **Reusable shell components.** The chrome is composed from module
   components — the shared button and text field, the chrome strip material,
   the navigation toolbar, tab strip, action row, status strip, the

@@ -15,6 +15,9 @@ ActionRegistry {
     id: actionSet
 
     required property var shellModel
+    // Entry operations follow the focused view. In list/grid mode this is the
+    // workspace model; in columns mode it is the active column listing.
+    property var entryModel: shellModel
     required property var shell
     required property var navigationSettings
 
@@ -34,7 +37,7 @@ ActionRegistry {
         iconFor: context => context.isDirectory ? "folder" : "open"
         surfaces: ["entry"]
         enabledFor: context => context.entryIndex !== undefined && context.entryIndex >= 0
-        perform: context => actionSet.shellModel.activate(context.entryIndex)
+        perform: context => actionSet.entryModel.activate(context.entryIndex)
     }
     ShellAction {
         actionId: "location.open"
@@ -120,14 +123,14 @@ ActionRegistry {
         shortLabel: qsTr("Copy")
         iconName: "copy"
         surfaces: ["entry", "selection"]
-        enabled: actionSet.shellModel.selectedCount > 0 && !actionSet.shellModel.operationBusy
-        disabledReasonFor: () => actionSet.shellModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
+        enabled: actionSet.entryModel.selectedCount > 0 && !actionSet.entryModel.operationBusy
+        disabledReasonFor: () => actionSet.entryModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
         shortcuts: [
             {
                 "sequence": "Ctrl+C"
             }
         ]
-        perform: () => actionSet.shellModel.requestCopy()
+        perform: () => actionSet.entryModel.requestCopy()
     }
     ShellAction {
         actionId: "selection.move"
@@ -135,28 +138,28 @@ ActionRegistry {
         shortLabel: qsTr("Move")
         iconName: "move"
         surfaces: ["entry", "selection"]
-        enabled: actionSet.shellModel.selectedCount > 0 && !actionSet.shellModel.operationBusy
-        disabledReasonFor: () => actionSet.shellModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
+        enabled: actionSet.entryModel.selectedCount > 0 && !actionSet.entryModel.operationBusy
+        disabledReasonFor: () => actionSet.entryModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
         shortcuts: [
             {
                 "sequence": "Ctrl+X"
             }
         ]
-        perform: () => actionSet.shellModel.requestMove()
+        perform: () => actionSet.entryModel.requestMove()
     }
     ShellAction {
         actionId: "selection.rename"
         label: qsTr("Rename")
         iconName: "rename"
         surfaces: ["entry", "selection"]
-        enabled: actionSet.shellModel.selectedCount === 1 && !actionSet.shellModel.operationBusy
-        disabledReasonFor: () => actionSet.shellModel.selectedCount > 1 ? qsTr("Renaming takes exactly one entry") : qsTr("Nothing is selected")
+        enabled: actionSet.entryModel.selectedCount === 1 && !actionSet.entryModel.operationBusy
+        disabledReasonFor: () => actionSet.entryModel.selectedCount > 1 ? qsTr("Renaming takes exactly one entry") : qsTr("Nothing is selected")
         shortcuts: [
             {
                 "sequence": "F2"
             }
         ]
-        perform: () => actionSet.shellModel.requestRename()
+        perform: () => actionSet.entryModel.requestRename()
     }
     ShellAction {
         actionId: "selection.all"
@@ -168,7 +171,7 @@ ActionRegistry {
                 "sequence": "Ctrl+A"
             }
         ]
-        perform: () => actionSet.shellModel.selectAll()
+        perform: () => actionSet.entryModel.selectAll()
     }
     ShellAction {
         actionId: "view.toggleHidden"
@@ -194,7 +197,7 @@ ActionRegistry {
                 "sequence": "F5"
             }
         ]
-        perform: () => actionSet.shellModel.refresh()
+        perform: () => actionSet.entryModel.refresh()
     }
     ShellAction {
         actionId: "nav.up"
@@ -515,7 +518,7 @@ ActionRegistry {
         iconName: "copy"
         surfaces: ["pane"]
         enabled: actionSet.shell.canTransferToOppositePane(false)
-        disabledReasonFor: () => actionSet.shellModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be copied to the other pane")
+        disabledReasonFor: () => actionSet.entryModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be copied to the other pane")
         shortcuts: [
             {
                 "sequence": "Ctrl+Shift+C"
@@ -530,7 +533,7 @@ ActionRegistry {
         iconName: "move"
         surfaces: ["pane"]
         enabled: actionSet.shell.canTransferToOppositePane(true)
-        disabledReasonFor: () => actionSet.shellModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be moved to the other pane")
+        disabledReasonFor: () => actionSet.entryModel.selectedCount === 0 ? qsTr("Nothing is selected") : qsTr("The selection cannot be moved to the other pane")
         shortcuts: [
             {
                 "sequence": "Ctrl+Shift+M"
@@ -541,21 +544,21 @@ ActionRegistry {
     ShellAction {
         actionId: "selection.trash"
         labelFor: context => {
-            const count = context !== null && context.targetCount !== undefined ? context.targetCount : actionSet.shellModel.selectedCount;
+            const count = context !== null && context.targetCount !== undefined ? context.targetCount : actionSet.entryModel.selectedCount;
             return count === 1 ? qsTr("Move 1 entry to Trash") : qsTr("Move %1 entries to Trash").arg(count);
         }
         shortLabel: qsTr("Trash")
         iconName: "trash"
         destructive: true
         surfaces: ["entry", "selection"]
-        enabled: actionSet.shellModel.selectedCount > 0 && !actionSet.shellModel.operationBusy
-        disabledReasonFor: () => actionSet.shellModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
+        enabled: actionSet.entryModel.selectedCount > 0 && !actionSet.entryModel.operationBusy
+        disabledReasonFor: () => actionSet.entryModel.operationBusy ? qsTr("An operation is already running") : qsTr("Nothing is selected")
         shortcuts: [
             {
                 "sequence": "Delete"
             }
         ]
-        perform: () => actionSet.shellModel.requestTrash()
+        perform: () => actionSet.entryModel.requestTrash()
     }
     ShellAction {
         actionId: "palette.open"

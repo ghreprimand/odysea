@@ -27,6 +27,7 @@ class MillerColumnsModel : public QAbstractListModel {
     Q_PROPERTY(QAbstractItemModel* columns READ columns CONSTANT)
     Q_PROPERTY(int columnCount READ liveColumnCount NOTIFY columnCountChanged)
     Q_PROPERTY(int activeColumn READ activeColumn NOTIFY activeColumnChanged)
+    Q_PROPERTY(QObject* activeListing READ activeListing NOTIFY activeListingChanged)
     Q_PROPERTY(QString currentPath READ currentPath NOTIFY currentPathChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
@@ -58,6 +59,7 @@ class MillerColumnsModel : public QAbstractListModel {
     void setRootPath(const QString& path);
     [[nodiscard]] int liveColumnCount() const noexcept;
     [[nodiscard]] int activeColumn() const noexcept;
+    [[nodiscard]] QObject* activeListing() const;
     [[nodiscard]] QString currentPath() const;
     [[nodiscard]] bool showHidden() const noexcept;
     void setShowHidden(bool showHidden);
@@ -88,6 +90,7 @@ class MillerColumnsModel : public QAbstractListModel {
     void rootPathChanged();
     void columnCountChanged();
     void activeColumnChanged();
+    void activeListingChanged();
     void currentPathChanged();
     void showHiddenChanged();
     void filterTextChanged();

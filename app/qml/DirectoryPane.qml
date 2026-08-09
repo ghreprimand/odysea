@@ -32,6 +32,7 @@ FocusScope {
     /// Optional protected-content mask layer for grid thumbnails.
     property WellMaskLayer wellLayer: null
     readonly property MillerColumnsView millerView: millerLoader.item as MillerColumnsView
+    readonly property var entryModel: pane.columnsMode && pane.millerView !== null && pane.millerView.columnsModel.activeListing !== null ? pane.millerView.columnsModel.activeListing : pane.shellModel
 
     /// The pane's one shared context menu. Both views open it for entry,
     /// selection, and blank-canvas targets; the menu builds its items from

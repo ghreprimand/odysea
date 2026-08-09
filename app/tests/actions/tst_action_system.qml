@@ -212,6 +212,10 @@ Item {
         id: fakeModel
     }
 
+    RecordingModel {
+        id: focusedEntryModel
+    }
+
     RecordingShell {
         id: fakeShell
     }
@@ -307,6 +311,10 @@ Item {
             fakeModel.operationBusy = false;
             fakeModel.tabCount = 1;
             fakeModel.paneCount = 1;
+            focusedEntryModel.calls = [];
+            focusedEntryModel.selectedCount = 0;
+            focusedEntryModel.operationBusy = false;
+            shellActions.entryModel = fakeModel;
             fakeShell.calls = [];
             fakeShell.gridMode = false;
             fakeShell.columnsMode = false;
@@ -414,6 +422,20 @@ Item {
             fakeModel.selectedCount = 1;
             compare(shellActions.trigger("selection.copy", shellActions.selectionContext(1)), true);
             compare(fakeModel.calls.join(","), "requestCopy");
+        }
+
+        function test_selectionActionsFollowTheFocusedViewModel() {
+            fakeModel.selectedCount = 3;
+            focusedEntryModel.selectedCount = 1;
+            shellActions.entryModel = focusedEntryModel;
+
+            compare(shellActions.trigger("selection.copy", shellActions.selectionContext(1)), true);
+            compare(shellActions.trigger("selection.move", shellActions.selectionContext(1)), true);
+            compare(shellActions.trigger("selection.rename", shellActions.selectionContext(1)), true);
+            compare(shellActions.trigger("selection.trash", shellActions.selectionContext(1)), true);
+
+            compare(fakeModel.calls.length, 0);
+            compare(focusedEntryModel.calls.join(","), "requestCopy,requestMove,requestRename,requestTrash");
         }
 
         function test_entryOpenTracksTargetKindAndIndex() {
