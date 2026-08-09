@@ -127,6 +127,59 @@ The view itself is unchanged and remains reachable. Its own navigation,
 accessibility declarations, virtualization, and retained-state bounds hold as
 recorded.
 
+## 2026-08-08 -- Frame-comparison correctness on fractional surfaces and a real-compositor gate
+
+The frame-comparing presentation and visual-validation suites now derive every
+probe's device coordinate from the grabbed frame's own ratio instead of
+`Screen.devicePixelRatio`. The two disagree under Wayland fractional scaling:
+the screen reports a rounded-up integer ratio while the compositor composites
+the buffer at the fractional one, so a 640x480 harness is grabbed as a larger
+image and a probe placed with the screen ratio lands outside the target region.
+That surfaced as spurious protected-well and border differences on a fractional
+output while every integer-scaled and offscreen run stayed green. A shared grab
+helper and both suites now sample the pixels that were actually rendered, and a
+total vacuity sentinel turns an out-of-bounds probe into an observable retry
+rather than an exception that unwinds past the settle bound.
+
+Two audits now skip with the platform constraint named rather than failing over
+state the platform never granted: a size-dependent layout audit skips where a
+compositor will not apply a client-requested window size, and a keyboard-focus
+audit skips where a compositor withholds input activation from a surface it is
+not presenting.
+
+A real-compositor GPU-path gate runs the full presentation suite on the ambient
+compositor with the OpenGL RHI scene graph forced, exercising the frame
+lifecycle -- first-frame exposure, surface configure/commit, frame-callback
+pacing -- that the offscreen RHI gate cannot. It skips with the CTest skip code
+and a printed reason where no compositor or usable OpenGL context exists, and
+turns that skip into a failure where a compositor is expected, so an unrun gate
+cannot read as green. Under it the suites turn their own software-fallback skips
+into hard failures. The gate records the frame ratio it reached; where that
+ratio equals the screen ratio -- offscreen, X11, or a virtual or integer-scaled
+compositor -- it skips the divergence check with the fractional path named
+unexercised, so a run that never met the defect class reads as a visibly weaker
+run rather than an equal pass. A forced-2x validation entry runs the
+device-resolution pixel sweeps on a real compositor at `QT_SCALE_FACTOR=2`,
+which the offscreen approximation and the software 2x pass could not, and
+asserts the grabbed frame carries at least the forced density.
+
+The warning-clean release build is green and both new launcher targets link.
+The offscreen software gates and both 2x software passes pass, and the two
+keyboard-focus audits run and pass on the offscreen platform, which grants
+activation. On a real compositor the presentation suite passes with the
+protected-well comparison byte-true and the ratio-divergence test recording the
+ratio and skipping the fractional check at a 1:1 buffer; the forced-2x entry
+renders and asserts device resolution at genuine 2x.
+
+On a fractionally scaled output the divergence assertion is exercised rather
+than skipped. The compositor gate reports a 1067x800 frame for a 640x480
+harness -- a frame ratio of 1.6672 against a reported screen ratio of 2.0000,
+the divergence this defect class turns on -- and the suite passes 20 checks
+with none skipped. The forced-2x entry on the same output reports an 800x600
+frame for a 320x240 harness and passes 15 checks with none skipped. The
+doubling assertion is a lower bound rather than an equality because a forced
+scale composes with the output's own scale: the measured density there is 2.5,
+which satisfies a bound of 2 and would fail an equality against it.
 ## 2026-08-08 -- The directory-model suite splits off its cost bounds
 
 The suite covering how the directory model acquires a listing had reached

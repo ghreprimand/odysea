@@ -565,6 +565,91 @@ The high-contrast contrast matrix in the appearance tests and the software
 scene-graph fallback suite complete the matrix; the fallback keeps content,
 controls, and protected regions intact with the pipeline disengaged.
 
+### GPU-path gates and the platform matrix
+
+The frame comparisons run under GPU-path gates that cover distinct platform
+axes, each of which either exercises the comparisons or reports a visible skip
+— never a silent pass over work it did not perform:
+
+- **Offscreen OpenGL RHI** (`shell_presentation_rhi`, `shell_visual_validation_rhi`).
+  A launcher probes for a usable OpenGL context and, when one exists, runs the
+  suite on a real OpenGL scene graph under the offscreen QPA platform. This
+  exercises the shaders and readbacks on real hardware, but the offscreen
+  platform has no compositor: it never drives first-frame exposure, surface
+  configure/commit, or frame-callback pacing, and it cannot allocate a genuine
+  high-density framebuffer — under a forced scale factor it reports a doubled
+  ratio while rasterizing at 1x — so its device-resolution assertions run at
+  1x.
+- **Real compositor** (`shell_presentation_compositor`). A launcher runs the
+  full presentation suite on the ambient real compositor — Wayland preferred,
+  X11 as the fallback display server — with OpenGL RHI forced. This is the only
+  gate that exercises the frame comparisons through a compositor's frame
+  lifecycle, which is a distinct path: frame-grabbing tests that pass offscreen
+  can fail there. It runs the whole suite rather than a named function list, so
+  a newly added presentation test is covered on the compositor path without a
+  registration edit.
+- **Genuine-2x device resolution** (`shell_visual_validation_compositor_2x`).
+  The same real-compositor launcher runs the validation suite with OpenGL RHI
+  and `QT_SCALE_FACTOR=2`, so a windowing system that can allocate a 2x surface
+  grabs frames at genuine device resolution and the mask-border, ring, and
+  interior sweeps run at full density rather than skipping as they do on the
+  software 2x pass. The gate declares its scale through
+  `ODYSEA_EXPECTED_FRAME_SCALE=2`; the device-resolution test then asserts the
+  grabbed frame carries at least twice the logical size, so a run that fell back
+  to 1x, or a pipeline that reported a high ratio while rasterizing low, fails
+  instead of passing as if it had rendered at full density. The bound is "at
+  least" because `QT_SCALE_FACTOR` composes with the screen's own scale, so on a
+  fractional output the effective ratio exceeds the forced factor. Where no
+  compositor
+  can allocate a 2x surface the gate skips (77) exactly like the other
+  compositor gate, so the 2x device-resolution claim rests on a run that
+  actually reached that surface rather than on an offscreen approximation.
+
+Which combinations are required versus best-effort:
+
+- **Required where available: a real compositor plus OpenGL RHI.** The
+  compositor gate skips with exit code 77 and a printed reason when no
+  compositor is advertised or no OpenGL context is usable, so a machine that
+  cannot render the gate is visibly skipped, distinguishable at a glance from a
+  pass. Setting `ODYSEA_REQUIRE_COMPOSITOR` turns that skip into a failure,
+  which is how an environment that is expected to have a compositor refuses to
+  let an unrun gate read as green.
+- **A compositor that actually presents the window.** Whether real frames
+  materialized is decided by the suite's vacuity sentinels, not by the
+  launcher: a standalone window grab succeeds even where a compositor withholds
+  frame callbacks from a background surface, so no launcher-side probe can
+  predict the suite's throttled grabs. An interactive session or a
+  nested/virtual output presents frames and the comparisons run; a background
+  window under a compositor that has gone quiet (a locked screen, an inactive
+  output) trips the sentinels and fails loudly rather than passing over empty
+  frames.
+- **Best-effort for paced timing and fractional scaling: a virtual or headless
+  compositor.** A virtual output composites each grab completely, so it runs
+  the frame comparisons, but it renders at a 1:1 buffer ratio and does not
+  reproduce either the display-paced first-frame timing or the fractional
+  buffer scale a real presenting display drives. It confirms the comparisons
+  execute; it does not stand in for a real display when a bug depends on frame
+  pacing or on the grabbed-frame ratio diverging from the reported screen
+  ratio.
+
+The coordinate-basis defect the compositor gate was built to catch — a probe
+placed with `Screen.devicePixelRatio` instead of the grabbed frame's own ratio,
+which misses under Wayland fractional scaling where the two disagree — only
+appears on a surface whose frame ratio actually diverges from the screen ratio.
+A run at frame ratio equal to the screen ratio (offscreen, X11, a virtual or
+integer-scaled compositor) cannot exercise it, so the presentation suite records
+the ratio it ran at and, when the two agree, skips the divergence check with the
+fractional path named unexercised — a visibly weaker run in the totals rather
+than a green pass equal to one that met the divergence. On a divergent surface
+it asserts that the frame-derived conversion stays in bounds where the
+screen-ratio conversion would have missed.
+
+Under the compositor gates the suite also refuses to skip its GPU assertions:
+the launcher exports `ODYSEA_REQUIRE_GPU_FRAMES`, and the suite turns its own
+"software scene graph" skips into hard failures when it is set, so a run that
+reached the suite on a software fallback cannot report success while every GPU
+assertion was skipped.
+
 ## Rendering
 
 Qt Quick renders through a hardware-accelerated scene graph. On Linux it drives

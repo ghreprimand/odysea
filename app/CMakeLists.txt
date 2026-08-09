@@ -366,8 +366,14 @@ add_test(NAME shell_navigation_input COMMAND odysea_shell_navigation_tests)
 # effect chain actually renders. The uniform-binding assertions hold on any
 # backend; the frame-comparison tests skip themselves when the environment
 # has no usable GPU path and the scene graph falls back to software.
+#
+# This suite uses the shared GPU-gate QuickTest main rather than the plain
+# runner: the real-compositor gate exports ODYSEA_REQUIRE_GPU_FRAMES, and the
+# setup main publishes it to the scene so a software fallback under that gate
+# is a failure instead of a silent skip. Every other entry leaves the variable
+# unset, so the property is false and the suite behaves exactly as before.
 qt_add_executable(odysea_presentation_tests
-    tests/tst_shell_quick.cpp)
+    tests/tst_gpu_gate_main.cpp)
 
 target_compile_definitions(odysea_presentation_tests
     PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/presentation")
@@ -413,6 +419,43 @@ set_tests_properties(shell_presentation_rhi PROPERTIES
     RESOURCE_LOCK gpu
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
+# The real-compositor gate. The offscreen RHI gate above renders on a real
+# OpenGL context but on the offscreen QPA platform, which never exercises a
+# real compositor's frame lifecycle — first-frame exposure, surface
+# configure/commit, frame-callback pacing — where six frame-grabbing tests
+# were failing undetected. This launcher runs the full presentation suite on
+# the ambient real compositor (Wayland preferred, then X11) with OpenGL RHI
+# forced, and runs the whole suite rather than a named function list, so a
+# newly added presentation test is exercised on the compositor path
+# automatically. It exits 77 (skip) when no compositor or no usable GL is
+# present, printing the reason; the skip is a hard failure instead when
+# ODYSEA_REQUIRE_COMPOSITOR is set in the environment, which is how the
+# verifying environment refuses to let an unrun gate read as green.
+qt_add_executable(odysea_presentation_compositor_launcher
+    tests/tst_presentation_compositor_launcher.cpp)
+
+target_compile_definitions(odysea_presentation_compositor_launcher
+    PRIVATE ODYSEA_PRESENTATION_BINARY="$<TARGET_FILE:odysea_presentation_tests>")
+
+target_link_libraries(odysea_presentation_compositor_launcher
+    PRIVATE
+        Qt6::Gui
+        odysea_warnings odysea_sanitizers)
+
+add_dependencies(odysea_presentation_compositor_launcher odysea_presentation_tests)
+
+add_test(NAME shell_presentation_compositor COMMAND odysea_presentation_compositor_launcher)
+
+# Shares the gpu RESOURCE_LOCK with the other two GPU-path gates so no two of
+# them hold a GPU context at once under a parallel run. ODYSEA_REQUIRE_COMPOSITOR
+# is deliberately not baked in here: a machine with no compositor must skip
+# honestly rather than fail. The verifying environment sets it externally so a
+# skip there becomes a failure.
+set_tests_properties(shell_presentation_compositor PROPERTIES
+    SKIP_RETURN_CODE 77
+    RESOURCE_LOCK gpu
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
 # The same pipeline under the forced software scene graph: the capability
 # fallback must disengage silently while content and controls keep working.
 qt_add_executable(odysea_presentation_fallback_tests
@@ -433,11 +476,15 @@ add_test(NAME shell_presentation_fallback COMMAND odysea_presentation_fallback_t
 # compact breakpoint and interface-scale extremes, focus indicators with
 # effects off, reduced-motion stability, effects-off usability, virtualization
 # under a representative large directory, and device-pixel-ratio behavior.
-# The suite runs twice — once at 1x and once with QT_SCALE_FACTOR=2 — because
-# every layout and mask assertion is written in logical coordinates and must
-# hold at both scales.
+# The suite runs twice on the software path — once at 1x and once with
+# QT_SCALE_FACTOR=2 — because every layout and mask assertion is written in
+# logical coordinates and must hold at both scales; a real-compositor entry
+# below runs the device-resolution pixel assertions at a genuine 2x surface.
+# It uses the shared GPU-gate main so that entry can turn a software fallback
+# into a failure and declare the scale it launched at; every other entry
+# leaves those variables unset and behaves exactly as before.
 qt_add_executable(odysea_validation_tests
-    tests/tst_shell_quick.cpp)
+    tests/tst_gpu_gate_main.cpp)
 
 target_compile_definitions(odysea_validation_tests
     PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/validation")
@@ -486,6 +533,42 @@ set_tests_properties(shell_visual_validation_rhi PROPERTIES
     SKIP_RETURN_CODE 77
     RESOURCE_LOCK gpu
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
+# The genuine-2x device-resolution gate. The offscreen platform cannot
+# allocate a real high-density framebuffer — under QT_SCALE_FACTOR=2 it reports
+# a ratio of two while rasterizing at 1x — so the offscreen RHI entry above
+# runs the pixel assertions at 1x, and the software 2x pass checks only the
+# logical-coordinate layout. Neither exercises the device-resolution pixel
+# comparisons at a true 2x surface. This launcher runs the validation suite on
+# the ambient real compositor with OpenGL RHI forced and QT_SCALE_FACTOR=2, so
+# a windowing system that can allocate a 2x surface grabs frames at genuine
+# device resolution and the border, ring, and interior sweeps run at full
+# density. ODYSEA_EXPECTED_FRAME_SCALE=2 makes the device-resolution test
+# assert the frame is exactly twice the logical size, so a run that fell back
+# to 1x fails instead of passing as if it had rendered at 2x. It reuses the
+# compositor launcher, which skips (77) when no compositor or no usable GL is
+# present and turns that skip into a failure when ODYSEA_REQUIRE_COMPOSITOR is
+# set in the verifying environment.
+qt_add_executable(odysea_validation_compositor_launcher
+    tests/tst_presentation_compositor_launcher.cpp)
+
+target_compile_definitions(odysea_validation_compositor_launcher
+    PRIVATE ODYSEA_PRESENTATION_BINARY="$<TARGET_FILE:odysea_validation_tests>")
+
+target_link_libraries(odysea_validation_compositor_launcher
+    PRIVATE
+        Qt6::Gui
+        odysea_warnings odysea_sanitizers)
+
+add_dependencies(odysea_validation_compositor_launcher odysea_validation_tests)
+
+add_test(NAME shell_visual_validation_compositor_2x
+    COMMAND odysea_validation_compositor_launcher)
+
+set_tests_properties(shell_visual_validation_compositor_2x PROPERTIES
+    SKIP_RETURN_CODE 77
+    RESOURCE_LOCK gpu
+    ENVIRONMENT "QT_SCALE_FACTOR=2;ODYSEA_EXPECTED_FRAME_SCALE=2;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 # Renders the real scene from the module against the real decoder, so the
 # thumbnail path is covered from a file on disk to a loaded Image.
