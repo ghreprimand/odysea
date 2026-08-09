@@ -18,7 +18,7 @@ ToolBar {
     /// minimum width. The bound is the measured implicit width of the fully
     /// labeled row at 1x, scaled with the interface; the labels stay
     /// available through each button's accessible name and tooltip.
-    readonly property bool compact: bar.width < 900 * bar.theme.uiScale
+    readonly property bool compact: bar.width < 1040 * bar.theme.uiScale
 
     background: ChromeStrip {
         theme: bar.theme
@@ -88,6 +88,13 @@ ToolBar {
             theme: bar.theme
             registry: bar.registry
             actionId: "view.columns"
+            showLabel: !bar.compact
+        }
+        ActionButton {
+            objectName: "treeSearchButton"
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "find.tree"
             showLabel: !bar.compact
         }
         ActionButton {

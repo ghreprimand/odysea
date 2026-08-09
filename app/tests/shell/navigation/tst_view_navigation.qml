@@ -56,6 +56,43 @@ Support.ShellTestCase {
         trashDialog.close();
     }
 
+    function test_columnsTreeSearchStartsFromTheVisibleListing() {
+        const sourceUrl = Qt.resolvedUrl("../../../qml").toString();
+        const sourcePath = sourceUrl.startsWith("file://") ? decodeURIComponent(sourceUrl.slice(7)) : "";
+        verify(sourcePath.length > 0);
+        fakeModel.path = sourcePath;
+
+        shellWindow.switchColumnsView();
+        const loader = child("millerColumnsLoader");
+        tryVerify(function () {
+            return loader.item !== null;
+        });
+        const columnsModel = loader.item.columnsModel;
+        tryVerify(function () {
+            return columnsModel.columnModel(0) !== null && !columnsModel.columnBusy(0);
+        });
+        let directoryRow = -1;
+        for (let row = 0; row < columnsModel.entryCount(0); ++row) {
+            if (columnsModel.entryIsDirectory(0, row)) {
+                directoryRow = row;
+                break;
+            }
+        }
+        verify(directoryRow >= 0);
+        columnsModel.activate(0, directoryRow);
+        tryVerify(function () {
+            return columnsModel.columnCount === 2 && !columnsModel.columnBusy(1);
+        });
+        verify(shellWindow.activeEntryModel !== fakeModel);
+        verify(shellWindow.activeEntryModel.path !== fakeModel.path);
+
+        shellWindow.openTreeSearch();
+        const overlay = child("fuzzyFindOverlay");
+        tryCompare(overlay, "opened", true);
+        compare(overlay.finderModel.rootPath, shellWindow.activeEntryModel.path);
+        overlay.close();
+    }
+
     function test_keyboardSelectionPaths() {
         let list = child("directoryList");
         list.forceActiveFocus();

@@ -24,6 +24,41 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-09 -- Cancellable fuzzy find across the current tree
+
+The shell now exposes current-tree fuzzy find through a toolbar button, the
+shared action registry and command palette, and `Ctrl+Shift+F`. Its modal
+surface follows the command palette's focus, dismissal, keyboard-navigation,
+pointer-activation, and accessibility conventions. Activating a directory
+enters it. Activating a file enters its parent and reveals that exact entry as
+the current selection, including when the previous folder filter would have
+hidden it.
+
+The Qt-free core separates tree indexing from ranking. Opening the surface
+starts one cancellable recursive walk, which never follows directory links and
+stays on the starting filesystem unless explicitly configured otherwise. The
+result becomes an immutable in-memory corpus with folded names and relative
+paths. Each keystroke submits only that corpus and the new query to a separate
+newest-request-wins ranker; it never rescans or copies the tree. Both loops poll
+cancellation per entry, and hidden subtrees follow the active view setting.
+
+The performance gate ranks 50,000 synthetic paths over eight successive
+keystrokes. Every completed query must account for all 50,000 candidates and a
+nonzero number of character comparisons, while bounding comparisons per
+candidate so an instrument that stops counting cannot satisfy the ceiling.
+The release measurement averaged 1 ms per keystroke with a 3 ms maximum. An
+adapter gate separately builds an 8,224-path filesystem tree and measures five
+successive queries below the clock's 1 ms resolution while requiring the
+filesystem-walk count to remain exactly one. Revealing a result in a 514-row
+listing built 2,824 keys and 14 row indexes, inside nonzero bounded counters.
+
+Verification passed the warning-clean release and ASan/UBSan builds, all 53
+executed runtime and safety checks in each supported offscreen configuration,
+staged static analysis, formatting and QML module gates, the public-repository
+and file-length guards, and eight-second software smoke launches. Four GPU and
+compositor probes skipped where the offscreen environment could not exercise
+them. A separate real-compositor presentation pass succeeded at 1.67x scale.
+
 ## 2026-08-09 -- Make columns ownership verification discriminating
 
 Column listings are owned by their C++ controller even when QML obtains them

@@ -266,6 +266,36 @@ void DirectoryListModel::navigateToPath(const QString& path) {
     navigateTo(path, true);
 }
 
+void DirectoryListModel::navigateToEntry(const QString& path, bool isDirectory) {
+    if (isDirectory) {
+        navigateTo(path, true);
+        return;
+    }
+
+    const std::filesystem::path target = normalizedFilesystemPath(path);
+    if (target.empty() || target.parent_path().empty()) {
+        return;
+    }
+    if (!filterText_.isEmpty()) {
+        setFilterText({});
+    }
+    pendingRevealEntryKey_ = entryKey(target);
+    const QString parent = QString::fromStdString(target.parent_path().string());
+    if (normalizedFilesystemPath(parent) == normalizedFilesystemPath(path_)) {
+        const int row = rowForEntryKey(pendingRevealEntryKey_);
+        if (row >= 0) {
+            replaceSelection({row});
+            selectionAnchorKey_ = pendingRevealEntryKey_;
+            setCurrentIndex(row);
+            pendingRevealEntryKey_.clear();
+        } else {
+            startScan();
+        }
+        return;
+    }
+    navigateTo(parent, true);
+}
+
 bool DirectoryListModel::navigateFromInput(const QString& input) {
     const QString target = resolveNavigationInput(input);
     if (target.isEmpty()) {
@@ -1036,6 +1066,18 @@ void DirectoryListModel::applyPresentationSettings(bool finalScanBatch) {
     } else {
         setEntryRows(std::move(presented), std::move(presentedKeys));
         rebuildSelectionRows();
+    }
+
+    if (finalScanBatch && !pendingRevealEntryKey_.isEmpty()) {
+        const int revealedRow = targetRows.value(pendingRevealEntryKey_, -1);
+        if (revealedRow >= 0) {
+            currentEntryKey_ = pendingRevealEntryKey_;
+            selectionAnchorKey_ = pendingRevealEntryKey_;
+            selectedEntryKeys_.clear();
+            selectedEntryKeys_.insert(pendingRevealEntryKey_);
+            rebuildSelectionRows();
+        }
+        pendingRevealEntryKey_.clear();
     }
 
     currentIndex_ = currentEntryKey_.isEmpty() ? -1 : targetRows.value(currentEntryKey_, -1);

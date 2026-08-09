@@ -253,6 +253,9 @@ Item {
         function openAppearancePanel() {
             record("openAppearancePanel");
         }
+        function openTreeSearch() {
+            record("openTreeSearch");
+        }
         function clearTypeAhead() {
             const seen = calls;
             seen.push("clearTypeAhead");
@@ -698,6 +701,20 @@ Item {
 
             mouseClick(findChild(bar, "appearanceButton"));
             compare(controller.calls[controller.calls.length - 1], "openAppearancePanel");
+        }
+
+        function test_toolBarTreeSearchRoutesThroughRegistry() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const bar = createTemporaryObject(toolBarFactory, harness, {
+                "shellModel": model,
+                "registry": makeRegistry(model, controller)
+            });
+            verify(bar !== null);
+            flush();
+
+            mouseClick(findChild(bar, "treeSearchButton"));
+            compare(controller.calls[controller.calls.length - 1], "openTreeSearch");
         }
 
         function test_tabStripActivationAndLifecycle() {

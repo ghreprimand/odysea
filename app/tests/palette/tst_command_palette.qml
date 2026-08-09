@@ -135,6 +135,10 @@ Item {
         function openCommandPalette() {
             record("openCommandPalette");
         }
+
+        function openTreeSearch() {
+            record("openTreeSearch");
+        }
         function activatePane(index) {
             record("activatePane:" + index);
             activePaneIndex = index;

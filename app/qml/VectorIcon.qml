@@ -55,6 +55,8 @@ Item {
             return "M5 5 L12 5 M5 5 L5 19 L19 19 L19 12 M12 12 L20 4 M14 4 L20 4 L20 10";
         case "commands":
             return "M4 6 L10 12 L4 18 M13 18 L20 18";
+        case "search":
+            return "M10.5 4 A6.5 6.5 0 1 0 10.5 17 A6.5 6.5 0 1 0 10.5 4 M15.5 15.5 L21 21";
         default:
             return "";
         }

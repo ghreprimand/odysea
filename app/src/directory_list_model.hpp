@@ -127,6 +127,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void activate(int row);
     Q_INVOKABLE void activateCurrent();
     Q_INVOKABLE void navigateToPath(const QString& path);
+    Q_INVOKABLE void navigateToEntry(const QString& path, bool isDirectory);
     Q_INVOKABLE bool navigateFromInput(const QString& input);
     Q_INVOKABLE static QVariantMap navigationCompletion(const QString& input);
     [[nodiscard]] static QString resolveNavigationInput(const QString& input);
@@ -311,6 +312,7 @@ class DirectoryListModel : public QAbstractListModel {
     QString statusMessage_;
     QString operationErrorString_;
     QString currentEntryKey_;
+    QString pendingRevealEntryKey_;
     QString scannedPath_;
     std::vector<odysea::core::Entry> scannedEntries_;
     // The row each name occupies in the scanned listing. Derived from

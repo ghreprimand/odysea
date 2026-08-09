@@ -136,6 +136,10 @@ Item {
         function openStorageUsage() {
             record("openStorageUsage");
         }
+
+        function openTreeSearch() {
+            record("openTreeSearch");
+        }
         function activatePane(index) {
             record("activatePane:" + index);
             activePaneIndex = index;
@@ -476,6 +480,14 @@ Item {
             compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,nav.up,storage.openUsage,tab.new");
             compare(shellActions.trigger("storage.openUsage", shellActions.canvasContext("/synthetic/fixture")), true);
             compare(fakeShell.calls.join(","), "openStorageUsage");
+        }
+
+        function test_treeSearchHasKeyboardAndSharedActionRoutes() {
+            const action = shellActions.find("find.tree");
+            verify(action !== null);
+            compare(action.shortcuts[0].sequence, "Ctrl+Shift+F");
+            compare(shellActions.trigger("find.tree", shellActions.globalContext(undefined)), true);
+            compare(fakeShell.calls.join(","), "openTreeSearch");
         }
 
         function test_locationActionsServeNavigationSurfaces() {

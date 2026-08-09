@@ -228,6 +228,21 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   per live level. Text filtering instead applies only to the active listing
   and releases its descendants first, preventing both per-keystroke fan-out
   and a chain whose ancestor anchor has been filtered away.
+- **Tree search walks once and ranks many times.** Opening fuzzy find starts one
+  cancellable, off-thread walk rooted at the focused listing's directory. The
+  completed corpus retains one folded name and root-relative path per entry;
+  every query ranks that immutable corpus on a separate newest-request-wins
+  core thread, so a keystroke performs no filesystem I/O and cannot restart
+  the recursive walk.
+  Directory links appear as results but are never followed, hidden subtrees
+  follow the active view's hidden-file setting, and the walk stays on the
+  root's filesystem by default. Matching prefers exact, prefix, and contiguous
+  name matches before non-contiguous name matches and relative-path matches,
+  with stable path ordering for ties. Both the walk and ranking poll
+  cancellation within their per-entry loops. Activating a directory enters it;
+  activating a file enters its parent, clears a local listing filter that would
+  hide it, and restores selection and current position to that exact entry when
+  the asynchronous listing settles.
 - **Reusable shell components.** The chrome is composed from module
   components — the shared button and text field, the chrome strip material,
   the navigation toolbar, tab strip, action row, status strip, the

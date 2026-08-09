@@ -30,6 +30,7 @@ class DirectoryListModelInteractionTest : public QObject {
     void cursorMovementAndPrefixSearchPreserveSelectionContracts();
     void sameParentCopyCreatesSiblingDuplicate();
     void directDirectoryActivationNavigates();
+    void fuzzyResultNavigationRevealsFilesAndEntersDirectories();
     void navigationInputResolvesTilde();
     void directPathInputValidatesDirectory();
     void invalidDirectPathInputDoesNotNavigate();
@@ -155,6 +156,53 @@ void DirectoryListModelInteractionTest::cursorMovementAndPrefixSearchPreserveSel
     QCOMPARE(selectedNames(model),
              QStringList({QStringLiteral("alpha.txt"), QStringLiteral("Alpine.md"),
                           QStringLiteral("beta.txt")}));
+}
+
+// QTRY_VERIFY_WITH_TIMEOUT expands into the branches reported here.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void DirectoryListModelInteractionTest::fuzzyResultNavigationRevealsFilesAndEntersDirectories() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path nested = root / "nested";
+    const fs::path document = nested / "target.txt";
+    fs::create_directories(nested / "child");
+    writeFile(document);
+    constexpr int decoyCount = 512;
+    for (int index = 0; index < decoyCount; ++index) {
+        writeFile(nested / ("decoy-" + std::to_string(index) + ".txt"));
+    }
+
+    DirectoryListModel model;
+    model.setPath(fixture.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.setFilterText(QStringLiteral("does-not-match"));
+
+    const quint64 keyBuildsBefore = model.entryKeyBuilds_;
+    const quint64 rowIndexBuildsBefore = model.entryRowIndexBuilds_;
+    model.navigateToEntry(QString::fromStdString(document.string()), false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(QDir::cleanPath(model.path()),
+             QDir::cleanPath(QString::fromStdString(nested.string())));
+    QCOMPARE(model.filterText(), QString());
+    QCOMPARE(model.selectedCount(), 1);
+    QCOMPARE(selectedName(model), QStringLiteral("target.txt"));
+    QCOMPARE(currentName(model), QStringLiteral("target.txt"));
+    constexpr auto listingRows = static_cast<quint64>(decoyCount) + 2ULL;
+    const quint64 keyBuilds = model.entryKeyBuilds_ - keyBuildsBefore;
+    const quint64 rowIndexBuilds = model.entryRowIndexBuilds_ - rowIndexBuildsBefore;
+    qInfo("fuzzy reveal of %llu rows built %llu keys and %llu row indexes",
+          static_cast<unsigned long long>(listingRows), static_cast<unsigned long long>(keyBuilds),
+          static_cast<unsigned long long>(rowIndexBuilds));
+    QVERIFY(keyBuilds >= listingRows);
+    QVERIFY(keyBuilds <= listingRows * 8);
+    QVERIFY(rowIndexBuilds >= 1);
+    QVERIFY(rowIndexBuilds <= 16);
+
+    model.navigateToEntry(QString::fromStdString((nested / "child").string()), true);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QCOMPARE(QDir::cleanPath(model.path()),
+             QDir::cleanPath(QString::fromStdString((nested / "child").string())));
 }
 void DirectoryListModelInteractionTest::sameParentCopyCreatesSiblingDuplicate() {
     QTemporaryDir fixture;

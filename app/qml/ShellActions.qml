@@ -337,6 +337,18 @@ ActionRegistry {
         perform: () => actionSet.shell.openAppearancePanel()
     }
     ShellAction {
+        actionId: "find.tree"
+        label: qsTr("Find in current tree")
+        shortLabel: qsTr("Find tree")
+        iconName: "search"
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+F"
+            }
+        ]
+        perform: () => actionSet.shell.openTreeSearch()
+    }
+    ShellAction {
         actionId: "storage.openUsage"
         label: qsTr("Storage usage")
         shortLabel: qsTr("Storage")

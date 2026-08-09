@@ -48,7 +48,7 @@ Item {
         }
 
         function test_everySemanticSymbolHasVectorGeometry() {
-            const names = ["folder", "file", "symlink", "back", "forward", "up", "refresh", "panes", "list", "grid", "appearance", "add", "close", "select-all", "copy", "move", "rename", "trash", "open"];
+            const names = ["folder", "file", "symlink", "back", "forward", "up", "refresh", "panes", "list", "grid", "appearance", "add", "close", "select-all", "copy", "move", "rename", "trash", "open", "commands", "search"];
             for (let index = 0; index < names.length; ++index) {
                 sample.name = names[index];
                 verify(sample.pathData.length > 0, names[index]);

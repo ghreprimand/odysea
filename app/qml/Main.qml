@@ -265,6 +265,10 @@ ApplicationWindow {
         commandPalette.openFor(root.actions.globalContext(0, root.activeShellModel.path));
     }
 
+    function openTreeSearch() {
+        fuzzyFindOverlay.openFor(root.activeEntryModel.path, root.activeEntryModel.showHidden);
+    }
+
     Timer {
         id: typeAheadTimer
 
@@ -320,6 +324,19 @@ ApplicationWindow {
 
         parent: root.contentItem
         registry: root.actions
+        theme: root.shellTheme
+    }
+
+    FuzzyFindModel {
+        id: fuzzyFindModel
+    }
+
+    FuzzyFindOverlay {
+        id: fuzzyFindOverlay
+
+        parent: root.contentItem
+        finderModel: fuzzyFindModel
+        shellModel: root.activeShellModel
         theme: root.shellTheme
     }
 
