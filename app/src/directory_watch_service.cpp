@@ -20,10 +20,31 @@ DirectoryWatchService::~DirectoryWatchService() {
 }
 
 void DirectoryWatchService::replace(std::filesystem::path directory, std::uint64_t token) {
+    bool stopped = false;
     {
         const std::lock_guard<std::mutex> guard(mutex_);
-        requestedDirectory_ = std::move(directory);
+        requestedDirectory_ = directory;
         requestedToken_ = token;
+        stopped = stopping_;
+    }
+    if (stopped) {
+        // A stopped service has no worker left to establish the watch, so the
+        // request would otherwise be accepted and never answered. Answering it
+        // here says so: the watch will not exist, and a caller waiting to know
+        // when it does is told now rather than waiting for a thread that has
+        // already returned.
+        if (handler_) {
+            handler_(
+                DirectoryWatchUpdate{.token = token,
+                                     .directory = std::move(directory),
+                                     .removedNames = {},
+                                     .updatedEntries = {},
+                                     .renamedEntries = {},
+                                     .error = std::make_error_code(std::errc::operation_canceled),
+                                     .rescanRequired = false,
+                                     .armed = true});
+        }
+        return;
     }
     commandChanged_.notify_one();
     if (watcher_.has_value()) {
@@ -74,7 +95,8 @@ void DirectoryWatchService::run() {
                                                   .updatedEntries = {},
                                                   .renamedEntries = {},
                                                   .error = creationError_,
-                                                  .rescanRequired = false});
+                                                  .rescanRequired = false,
+                                                  .armed = true});
                 }
             }
             std::unique_lock<std::mutex> guard(mutex_);
@@ -91,14 +113,24 @@ void DirectoryWatchService::run() {
             activeToken = requestedToken;
             if (!activeDirectory.empty()) {
                 std::error_code addError;
-                if (!watcher_->add(activeDirectory, addError) && handler_) {
+                const bool watching = watcher_->add(activeDirectory, addError);
+                // Reported whether or not the watch could be established, and
+                // reported after the attempt rather than before it, because
+                // its whole purpose is to mark the point from which changes
+                // are observed. A caller waiting for it and then reading the
+                // directory leaves no interval in which a change is in
+                // neither the reading nor an event. A failure is reported the
+                // same way so that caller is not left waiting for a watch
+                // that will never exist; it carries the error with it.
+                if (handler_) {
                     handler_(DirectoryWatchUpdate{.token = activeToken,
                                                   .directory = activeDirectory,
                                                   .removedNames = {},
                                                   .updatedEntries = {},
                                                   .renamedEntries = {},
-                                                  .error = addError,
-                                                  .rescanRequired = false});
+                                                  .error = watching ? std::error_code{} : addError,
+                                                  .rescanRequired = false,
+                                                  .armed = true});
                 }
             }
         }

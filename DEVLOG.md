@@ -17,6 +17,62 @@ the archive.
 
 ---
 
+## 2026-08-09 -- A directory is watched before it is read, not after
+
+A listing was acquired by reading the directory and then establishing a watch
+over it. Those two steps describe adjacent stretches of time, and in that
+order they do not meet. A reading reports what was there while it ran; a watch
+reports what happens after it exists. Between the reading passing an entry and
+the watch coming into being there is an interval that belongs to neither, and
+a change made in it is not late but absent: it is not in the listing that
+replaces the presented rows, and no event ever describes it. The listing stays
+wrong until something forces another reading.
+
+The interval was not a narrow one. Establishing the watch only queued the
+request for another thread, and the request was made after the reading
+completed, so the gap ran from the moment the reading passed an entry to some
+point after completion. One code path acquires every listing, so every
+navigation, refresh, and post-operation reload carried it.
+
+The order is now reversed. A reading starts only once the watch over the
+directory reports itself established, so a change is either already in what
+the reading returns or is reported as an event, with no moment that is
+neither. The watch service gained that report: a request to watch a directory
+is answered when the watch has been attempted, carrying the failure when there
+was one, so a caller waiting on it is never left waiting for a watch that will
+not exist. A service that has been stopped answers immediately for the same
+reason.
+
+Reversing the order moves the events into the middle of the reading, where
+applying them would be wrong: the completed listing replaces the presented
+rows outright, so a change applied to the rows being assembled would be undone
+by the completion that follows it. Deliveries that arrive while a reading is
+in flight are therefore held and applied on top of the listing it produces,
+before the model reports itself idle. Idle now means the listing is current,
+not that the reading finished.
+
+Two smaller consequences came with it. The model can no longer report itself
+idle before the watch exists, because the watch is established while it is
+already busy. And a reading that has been superseded is still delivering
+during the moment its replacement spends establishing a watch, so the current
+reading's token is cleared when the replacement is asked for rather than when
+it starts; without that, a superseded delivery would be published under the
+new directory's name.
+
+Verified by eight planted defects, each rebuilt and run: reading before
+watching, holding nothing, holding without applying, not reporting the watch
+established, reporting it established before establishing it, a stopped
+service accepting a request it cannot answer, and leaving the superseded
+token current. All eight were rejected. Reading without waiting for the report
+was rejected only by the check that the reading has not started while the
+report is outstanding; no case observes the residual interval it leaves, which
+is one thread hop wide, and none is claimed to. The branch that reports an
+established watch when no watcher could be created at all is also uncovered:
+nothing in the suite makes the kernel refuse one.
+
+Release and sanitizer suites pass warning-clean with the GPU-path gates run
+against a display, and both binaries completed silent offscreen smoke launches
+on the OpenGL and software paths.
 ## 2026-08-09 -- Harden columns ownership and focused-view actions
 
 Column listings now remain under one explicit C++ owner when exposed to QML,

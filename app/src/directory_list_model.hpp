@@ -237,9 +237,20 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] static bool scanHoldExpired(qint64 holdStartMilliseconds,
                                               qint64 nowMilliseconds) noexcept;
     void drainPendingScanEntries();
+    // Reads the directory. Called only once the watch over it reports itself
+    // armed, so that every change to the directory is either already in what
+    // this reads or is reported as an event; see startScan.
+    void beginArmedScan();
     void receiveScanComplete(odysea::core::ScanSummary summary);
     void applyWatchUpdate(DirectoryWatchUpdate update);
-    void replaceWatch();
+    // Applies the watch deliveries that arrived while the listing was being
+    // read, in the order they arrived. Reports whether one of them asked for
+    // a rescan, rather than starting it, because starting a scan from inside
+    // the drain would clear the buffer being drained.
+    [[nodiscard]] bool drainHeldWatchUpdates();
+    // Requests a watch over the current path and returns the token it will
+    // report under.
+    std::uint64_t replaceWatch();
     void applyPresentationSettings(bool finalScanBatch = false);
 
     // The only three ways the scanned listing may change. Each keeps the name
@@ -311,6 +322,17 @@ class DirectoryListModel : public QAbstractListModel {
     // in the scanned listing, so an unpublished batch cannot be observed as
     // presented state.
     std::vector<odysea::core::Entry> pendingScanEntries_;
+    // Watch deliveries that arrived while a scan was reading the directory.
+    // They describe changes the listing being assembled may predate, and the
+    // completed listing replaces the presented rows outright, so applying
+    // them before it is published would discard them. They are held here and
+    // applied on top of the completed listing before the model reports idle.
+    std::vector<DirectoryWatchUpdate> heldWatchUpdates_;
+    // Counts the held deliveries that have been applied on top of a completed
+    // listing. A case that makes a change during a scan reads this to
+    // establish that the change really did travel that path, rather than
+    // arriving late enough to take the ordinary one and prove nothing.
+    std::uint64_t heldWatchUpdatesApplied_ = 0;
     // When the entries currently held began waiting, in milliseconds since
     // the scan started. Meaningful only while entries are held: the next
     // delivery to find the buffer empty overwrites it.
@@ -358,6 +380,9 @@ class DirectoryListModel : public QAbstractListModel {
     std::uint64_t thumbnailOwnerId_ = 0;
     std::uint64_t activeScanToken_ = 0;
     std::uint64_t watchToken_ = 0;
+    // The watch token a scan is waiting to see armed before it reads the
+    // directory. Zero when no scan is waiting.
+    std::uint64_t pendingScanArmToken_ = 0;
     std::uint64_t thumbnailGeneration_ = 0;
     int sortMode_ = SortByName;
     int currentIndex_ = -1;
@@ -369,4 +394,7 @@ class DirectoryListModel : public QAbstractListModel {
     bool showHidden_ = false;
     bool rubberBandActive_ = false;
     bool watchRefreshPending_ = false;
+    // Whether a scan is between being requested and having published its
+    // listing. Watch deliveries are held for its duration.
+    bool scanInFlight_ = false;
 };

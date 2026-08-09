@@ -20,6 +20,8 @@
 #include <QThreadPool>
 
 #include <algorithm>
+#include <mutex>
+#include <vector>
 
 namespace fs = std::filesystem;
 using namespace odysea::apptest;
@@ -55,6 +57,11 @@ class DirectoryListModelTest : public QObject {
     void supersededScanDropsTheEntriesItHeldBack();
     void rowKeyIndexTracksEveryRowMutation();
     void duplicateResolvedKeysCompareAgainstTheFirstRow();
+    void aChangeMadeWhileTheDirectoryIsReadReachesTheListing();
+    void aDeliveryDuringAReadingIsAppliedOnTopOfIt();
+    void aSupersededReadingsEntriesDoNotJoinTheNextListing();
+    void theWatchReportsItselfArmedBeforeItReportsChanges();
+    void aStoppedWatchAnswersTheRequestItCannotServe();
 };
 QString DirectoryListModelTest::selectionRowsMismatch(const DirectoryListModel& model) {
     QSet<int> expected;
@@ -1126,6 +1133,250 @@ void DirectoryListModelTest::destructionDropsQueuedWorkerCallbacks() {
     QVERIFY(QThreadPool::globalInstance()->waitForDone(5000));
     QCoreApplication::processEvents();
     QVERIFY(true);
+}
+
+void DirectoryListModelTest::aChangeMadeWhileTheDirectoryIsReadReachesTheListing() {
+    // The interval between a directory being read and a watch over it
+    // existing belongs to neither. A change made in that interval is not in
+    // the reading, because the reading has already passed it, and no event
+    // describes it, because the watch did not exist yet. It is not late, it
+    // is absent, and it stays absent until something forces another reading.
+    //
+    // The entry removed here is one the model has already presented, so the
+    // reading demonstrably passed it and the listing the reading produces
+    // will contain it. Nothing but a watch that existed before the reading
+    // began can report its removal, so the row surviving is exactly the
+    // defect and the row leaving is exactly the fix.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    constexpr int entryCount = 400;
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+    QString removedName;
+    connect(&model, &QAbstractItemModel::rowsInserted, &model, [&model, &removedName, &root] {
+        if (!removedName.isEmpty() || !model.busy() || model.rowCount() == 0) {
+            return;
+        }
+        // Taken from a row that is already presented, and while the model
+        // still reports itself busy, so the removal is placed inside the
+        // reading with no dependence on how long the reading takes.
+        removedName = model.data(model.index(0), DirectoryListModel::NameRole).toString();
+        std::error_code error;
+        fs::remove(root / removedName.toStdString(), error);
+        QVERIFY(!error);
+    });
+
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, timingBudget(5000, 30000)));
+    QVERIFY2(!removedName.isEmpty(), "no row was presented while the reading was still running");
+    QCOMPARE(model.errorString(), QString{});
+    QCOMPARE(model.rowCount(), entryCount);
+
+    // Whether the report is applied on top of the completed listing or after
+    // it is a matter of how quickly the report travels; that it arrives at
+    // all is not. A watch established after the reading would never have seen
+    // this removal, so the row would stay for the life of the listing.
+    QTRY_VERIFY_WITH_TIMEOUT(rowForName(model, removedName) == -1, timingBudget(5000, 30000));
+    QCOMPARE(model.rowCount(), entryCount - 1);
+    QCOMPARE(model.scannedEntries_.size(), static_cast<std::size_t>(entryCount - 1));
+    QCOMPARE(ModelProbe::scannedNameIndexMismatch(model), QString{});
+    QCOMPARE(ModelProbe::rowKeyIndexMismatch(model), QString{});
+}
+void DirectoryListModelTest::aDeliveryDuringAReadingIsAppliedOnTopOfIt() {
+    // A reading replaces the presented rows outright when it completes, so a
+    // delivery applied to the rows it is still assembling would be undone by
+    // its own completion. Deliveries made during a reading are therefore held
+    // and applied on top of the listing it produces, before the model reports
+    // itself idle.
+    //
+    // The delivery is made directly rather than through the filesystem so the
+    // case turns on the ordering rather than on a report outrunning a
+    // reading. The entry it removes is one the reading has already presented
+    // and will present again at completion, which is what makes the ordering
+    // observable: applied too early, the completion brings the row back.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    constexpr int entryCount = 600;
+    for (int index = 0; index < entryCount; ++index) {
+        writeFile(root / ("entry-" + std::to_string(index)));
+    }
+
+    DirectoryListModel model;
+    QString removedName;
+    int heldAtDelivery = -1;
+    int rowsAtDelivery = -1;
+    bool presentAtDelivery = false;
+    connect(&model, &QAbstractItemModel::rowsInserted, &model,
+            [&model, &removedName, &heldAtDelivery, &rowsAtDelivery, &presentAtDelivery, &root] {
+                if (!removedName.isEmpty() || !model.busy() || model.rowCount() == 0) {
+                    return;
+                }
+                removedName = model.data(model.index(0), DirectoryListModel::NameRole).toString();
+                model.applyWatchUpdate(
+                    DirectoryWatchUpdate{.token = model.watchToken_,
+                                         .directory = root,
+                                         .removedNames = {removedName.toStdString()},
+                                         .updatedEntries = {},
+                                         .renamedEntries = {},
+                                         .error = {},
+                                         .rescanRequired = false});
+                heldAtDelivery = static_cast<int>(model.heldWatchUpdates_.size());
+                rowsAtDelivery = model.rowCount();
+                presentAtDelivery = rowForName(model, removedName) >= 0;
+            });
+
+    model.setPath(fixture.path());
+    QVERIFY(waitForIdleWithin(model, timingBudget(5000, 30000)));
+    QVERIFY2(!removedName.isEmpty(), "no row was presented while the reading was still running");
+    QCOMPARE(heldAtDelivery, 1);
+    // Held rather than applied: the rows the reading had published at that
+    // moment were left alone.
+    QVERIFY(presentAtDelivery);
+    QVERIFY(rowsAtDelivery > 0);
+
+    // Applied once, on top of the completed listing, and before idle.
+    QCOMPARE(model.heldWatchUpdatesApplied_, quint64{1});
+    QVERIFY(model.heldWatchUpdates_.empty());
+    QCOMPARE(rowForName(model, removedName), -1);
+    QCOMPARE(model.rowCount(), entryCount - 1);
+    QCOMPARE(ModelProbe::scannedNameIndexMismatch(model), QString{});
+    QCOMPARE(ModelProbe::rowKeyIndexMismatch(model), QString{});
+}
+void DirectoryListModelTest::aSupersededReadingsEntriesDoNotJoinTheNextListing() {
+    // Establishing the watch before reading puts a gap between a reading
+    // being asked for and its first entry being read. The reading it
+    // supersedes is still delivering across that gap, and its deliveries are
+    // told apart from the new one's only by which token is current, so the
+    // gap is exactly where a superseded delivery could be taken for the new
+    // reading's own and published under the new directory's name.
+    //
+    // The delivery is made directly and the gap is entered deliberately,
+    // because waiting for a superseded reading to deliver into it by itself
+    // would make the case a race rather than a check.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path abandoned = root / "abandoned";
+    const fs::path destination = root / "destination";
+    fs::create_directories(abandoned);
+    fs::create_directories(destination);
+    writeFile(abandoned / "stale.txt");
+    writeFile(destination / "winner.txt");
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(abandoned.string()));
+    QVERIFY(waitForIdleWithin(model, timingBudget(5000, 30000)));
+    const std::uint64_t supersededToken = model.activeScanToken_;
+    QVERIFY(supersededToken != 0);
+
+    // Asking for the next directory returns with the reading not yet started:
+    // the watch over it is still being established. That is the gap, entered
+    // by asking rather than by timing.
+    model.setPath(QString::fromStdString(destination.string()));
+    QVERIFY(model.busy());
+    QVERIFY(model.pendingScanArmToken_ != 0);
+    // Nothing is current, so a delivery quoting the superseded reading's
+    // token cannot be taken for the reading that has not started.
+    QCOMPARE(model.activeScanToken_, std::uint64_t{0});
+
+    std::vector<odysea::core::Entry> stale;
+    stale.push_back(odysea::core::make_entry(fs::directory_entry(abandoned / "stale.txt")));
+    model.receiveScanBatch(supersededToken, std::move(stale));
+
+    QVERIFY(waitForIdleWithin(model, timingBudget(5000, 30000)));
+    QCOMPARE(model.path(), QString::fromStdString(destination.string()));
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0), DirectoryListModel::NameRole).toString(),
+             QStringLiteral("winner.txt"));
+    QCOMPARE(model.scannedEntries_.size(), std::size_t{1});
+    QCOMPARE(ModelProbe::scannedNameIndexMismatch(model), QString{});
+}
+void DirectoryListModelTest::theWatchReportsItselfArmedBeforeItReportsChanges() {
+    // Requesting a watch only queues the request, so the request returning
+    // says nothing about whether the watch exists. The service reports that
+    // separately, and this is the contract the reading order rests on: after
+    // the armed report, every change is reported.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+
+    std::mutex mutex;
+    std::vector<DirectoryWatchUpdate> updates;
+    DirectoryWatchService service([&mutex, &updates](DirectoryWatchUpdate update) {
+        const std::scoped_lock guard(mutex);
+        updates.push_back(std::move(update));
+    });
+    const auto updateCount = [&mutex, &updates] {
+        const std::scoped_lock guard(mutex);
+        return updates.size();
+    };
+
+    constexpr std::uint64_t token = 7;
+    service.replace(root, token);
+    QTRY_VERIFY_WITH_TIMEOUT(updateCount() >= 1, 5000);
+    {
+        const std::scoped_lock guard(mutex);
+        // The first thing said about this watch is that it exists. Anything
+        // reported before it would describe changes the caller has no reason
+        // to believe it was watching for.
+        QVERIFY(updates.front().armed);
+        QCOMPARE(updates.front().token, token);
+        QCOMPARE(updates.front().directory, root);
+        QVERIFY2(!updates.front().error,
+                 qPrintable(QString::fromStdString(updates.front().error.message())));
+    }
+
+    // Made strictly after the armed report, which is the only ordering the
+    // caller is promised anything about.
+    writeFile(root / "made-after-arming.txt");
+    QTRY_VERIFY_WITH_TIMEOUT(updateCount() >= 2, 5000);
+
+    bool reported = false;
+    {
+        const std::scoped_lock guard(mutex);
+        for (std::size_t index = 1; index < updates.size(); ++index) {
+            for (const odysea::core::Entry& entry : updates.at(index).updatedEntries) {
+                reported = reported || entry.name == "made-after-arming.txt";
+            }
+        }
+    }
+    QVERIFY2(reported, "a change made after the armed report was not reported");
+    service.stop();
+}
+void DirectoryListModelTest::aStoppedWatchAnswersTheRequestItCannotServe() {
+    // A stopped service has no thread left to establish a watch. A caller
+    // that waits for the armed report before reading would otherwise wait for
+    // an answer that can never come, so the request is answered immediately
+    // and carries the reason: the watch will not exist, read anyway.
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+
+    std::mutex mutex;
+    std::vector<DirectoryWatchUpdate> updates;
+    DirectoryWatchService service([&mutex, &updates](DirectoryWatchUpdate update) {
+        const std::scoped_lock guard(mutex);
+        updates.push_back(std::move(update));
+    });
+    service.stop();
+    {
+        const std::scoped_lock guard(mutex);
+        updates.clear();
+    }
+
+    constexpr std::uint64_t token = 11;
+    service.replace(root, token);
+    const std::scoped_lock guard(mutex);
+    QCOMPARE(updates.size(), std::size_t{1});
+    QVERIFY(updates.front().armed);
+    QCOMPARE(updates.front().token, token);
+    QCOMPARE(updates.front().directory, root);
+    QVERIFY(static_cast<bool>(updates.front().error));
 }
 
 QTEST_GUILESS_MAIN(DirectoryListModelTest)

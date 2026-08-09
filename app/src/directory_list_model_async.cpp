@@ -63,6 +63,11 @@ void DirectoryListModel::startScan() {
     // Entries held back from a superseded scan describe a listing this scan is
     // about to replace, so they are dropped rather than merged into it.
     pendingScanEntries_.clear();
+    // Deliveries held for a superseded scan describe the listing this scan is
+    // about to replace, for the same reason its held entries do.
+    heldWatchUpdates_.clear();
+    scanInFlight_ = false;
+    pendingScanArmToken_ = 0;
     if (path_.isEmpty()) {
         scanner_.cancel();
         watchService_.replace({}, ++watchToken_);
@@ -85,6 +90,31 @@ void DirectoryListModel::startScan() {
     setBusy(true);
     setErrorString({});
     scanEntries_.clear();
+    scanInFlight_ = true;
+    // No reading is current until this one starts. A superseded reading is
+    // still delivering while the watch is being established, and the scanner
+    // issues no token of zero, so clearing the token here is what stops those
+    // deliveries landing in the listing this scan has just emptied.
+    activeScanToken_ = 0;
+
+    // The watch is established before the directory is read, not after.
+    //
+    // A watch reports what happens after it exists, and a reading reports what
+    // was there while it ran. Reading first and watching afterwards therefore
+    // leaves an interval belonging to neither: a change made in it is not in
+    // the listing that replaces the rows, and no event describes it, so it is
+    // not late but absent until something forces another reading. Establishing
+    // the watch first closes the interval from both sides, at the cost of one
+    // thread hop before the first entry is read.
+    //
+    // Requesting the watch only queues the request, so the reading waits for
+    // the service to report it armed rather than for the request to return.
+    // The model is already busy by then, so it cannot report itself idle
+    // during any part of this.
+    pendingScanArmToken_ = replaceWatch();
+}
+
+void DirectoryListModel::beginArmedScan() {
     scanClock_.start();
 
     odysea::core::DirectoryScanner::Request request;
@@ -286,17 +316,49 @@ void DirectoryListModel::receiveScanComplete(odysea::core::ScanSummary summary) 
     scanBaselineEntries_.clear();
     setErrorString(summary.error ? QString::fromStdString(summary.error.message()) : QString{});
     applyPresentationSettings(true);
-    setBusy(false);
+    // The listing has replaced the presented rows, so deliveries held for its
+    // duration no longer risk being discarded by it and stop being held.
+    scanInFlight_ = false;
 
     if (summary.error) {
+        // A reading that failed describes nothing to keep the watch over, and
+        // the held deliveries describe a listing that was never published.
+        heldWatchUpdates_.clear();
         watchService_.replace({}, ++watchToken_);
-    } else {
-        replaceWatch();
+        setBusy(false);
+        return;
     }
+
+    // Changes made while the directory was being read are applied on top of
+    // the completed listing before the model reports itself idle, so idle
+    // never means a delivered change is still waiting.
+    if (drainHeldWatchUpdates()) {
+        // A rescan supersedes the listing that was just published, and it
+        // reports busy for its own duration, so busy is not dropped between.
+        startScan();
+        return;
+    }
+    setBusy(false);
 }
 
-void DirectoryListModel::replaceWatch() {
+bool DirectoryListModel::drainHeldWatchUpdates() {
+    std::vector<DirectoryWatchUpdate> held;
+    held.swap(heldWatchUpdates_);
+    for (DirectoryWatchUpdate& update : held) {
+        if (update.rescanRequired) {
+            // A rescan reads the directory again, which subsumes this
+            // delivery and every one after it.
+            return true;
+        }
+        ++heldWatchUpdatesApplied_;
+        applyWatchUpdate(std::move(update));
+    }
+    return false;
+}
+
+std::uint64_t DirectoryListModel::replaceWatch() {
     watchService_.replace(path_.toStdString(), ++watchToken_);
+    return watchToken_;
 }
 
 void DirectoryListModel::postWatchUpdate(DirectoryWatchUpdate update) {
@@ -315,6 +377,25 @@ void DirectoryListModel::postWatchUpdate(DirectoryWatchUpdate update) {
 
 void DirectoryListModel::applyWatchUpdate(DirectoryWatchUpdate update) {
     if (update.token != watchToken_ || QString::fromStdString(update.directory.string()) != path_) {
+        return;
+    }
+    if (update.armed) {
+        // The watch now exists, so the directory can be read. This update
+        // carries no changes; it carries only the failure to establish the
+        // watch, when there was one, and the reading proceeds either way
+        // rather than waiting for a watch that will not arrive.
+        if (update.error) {
+            setStatusMessage(
+                tr("Folder watch error: %1").arg(QString::fromStdString(update.error.message())));
+        }
+        if (pendingScanArmToken_ == update.token) {
+            pendingScanArmToken_ = 0;
+            beginArmedScan();
+        }
+        return;
+    }
+    if (scanInFlight_) {
+        heldWatchUpdates_.push_back(std::move(update));
         return;
     }
     if (operationBusy_) {

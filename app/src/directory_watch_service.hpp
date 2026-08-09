@@ -27,6 +27,12 @@ struct DirectoryWatchUpdate {
     std::vector<DirectoryEntryRename> renamedEntries;
     std::error_code error;
     bool rescanRequired = false;
+    // Set on the update that reports a requested watch has been established,
+    // or has failed to be. It carries no changes: it exists so a caller can
+    // read the directory knowing that anything happening from now on will be
+    // reported to it. Requesting a watch only queues the request, so without
+    // this a caller has no moment it can point at and say the watch exists.
+    bool armed = false;
 };
 
 class DirectoryWatchService {
