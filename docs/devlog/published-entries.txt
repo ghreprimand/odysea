@@ -1,0 +1,90 @@
+# Every published devlog entry heading, in reading order: the live
+# record first, then each archive most recent first, each file top to
+# bottom. The archive gate requires this list and the files to agree
+# exactly, so an entry cannot be dropped, reworded, reordered, or
+# duplicated without the gate failing. Append a line here in the same
+# commit that publishes the entry.
+## 2026-08-09 -- The record is archived in parts before the month closes
+## 2026-08-09 -- Restate the columns gap to the one that remains
+## 2026-08-09 -- A directory is watched before it is read, not after
+## 2026-08-09 -- Harden columns ownership and focused-view actions
+## 2026-08-09 -- Unclaim the columns view pending action and location wiring
+## 2026-08-08 -- Frame-comparison correctness on fractional surfaces and a real-compositor gate
+## 2026-08-08 -- The directory-model suite splits off its cost bounds
+## 2026-08-08 -- Bound the cost of a directory load, not only its spelling
+## 2026-08-08 -- Scan publication states its held share and bounds it in time
+## 2026-08-08 -- Narrow the visual acceptance record to what the gates cover
+## 2026-08-08 -- Miller columns navigation
+## 2026-08-08 -- Interactive storage usage map and accessible list
+## 2026-08-08 -- GPU-gate settle hardening and reachable palette location commands
+## 2026-08-08 -- One place builds a row key
+## 2026-08-08 -- A scattered removal costs what a contiguous one costs
+## 2026-08-08 -- Density-aware action-bar compaction
+## 2026-08-08 -- Render-site contrast matrix, mask over-protection bound, and grab sentinels
+## 2026-08-08 -- Storage usage deduplicates an inode however it was reached
+## 2026-08-08 -- The scanned listing carries its own name index
+## 2026-08-08 -- Directory loads publish on a growing interval
+## 2026-08-07 -- Directory view accessibility and roadmap alignment
+## 2026-08-07 -- An honest palette list and alias-aware shortcut conflicts
+## 2026-08-07 -- Directory loads stop growing with the square of the listing
+## 2026-08-07 -- Cancellable recursive storage-usage accounting
+## 2026-08-07 -- One place reads an entry's own metadata
+## 2026-08-07 -- One cancellation contract for long walks
+## 2026-08-07 -- Dual-pane transfers
+## 2026-08-07 -- Visual foundation acceptance
+## 2026-08-07 -- Command palette
+## 2026-08-07 -- Entry identity survives recycled device and inode numbers
+## 2026-08-03 -- Shared context-aware action system
+## 2026-08-03 -- Split the development record by calendar month
+## 2026-08-03 -- Add calm path orientation and direct navigation
+## 2026-08-03 -- Close entry-interaction parity gaps
+## 2026-08-03 -- Reusable shell chrome components
+## 2026-08-03 -- Permit shell expansion syntax under the at-sign ban
+## 2026-08-02 -- Make a new static-analysis diagnostic visible
+## 2026-08-02 -- Give each QML test runner its own directory
+## 2026-08-02 -- Semantic typography and vector iconography
+## 2026-08-02 -- Record load-bearing invariants and deepen the lint scan
+## 2026-08-02 -- Resolve hooks from any working directory
+## 2026-08-02 -- Enforce owner-only commit attribution
+## 2026-08-01 -- Correct commit attribution metadata
+## 2026-08-01 -- Presentation hardening: viewport masking and the GPU gate
+## 2026-07-31 -- Storage Tube presentation pipeline
+## 2026-07-30 -- Appearance-state hardening: input safety, override semantics
+## 2026-07-30 -- Live appearance state, palettes, profiles, and settings
+## 2026-07-30 -- Report why the shell scene failed to load
+## 2026-07-29 -- Harden shell navigation and type-ahead coverage
+## 2026-07-28 -- Complete entry interaction and transfer parity
+## 2026-07-28 -- Add spatial navigation and bounded type-ahead
+## 2026-07-28 -- Cover the rendered thumbnail path end to end
+## 2026-07-28 -- Hold the QML module to the tracked scene corpus
+## 2026-07-28 -- Load the shell through a linkable QML module
+## 2026-07-28 -- Add a virtualized thumbnail grid
+## 2026-07-28 -- Decode and deliver thumbnails through the application adapter
+## 2026-07-28 -- Formatting covers every C and C++ extension
+## 2026-07-28 -- Bounded, cancellable thumbnail scheduling
+## 2026-07-28 -- Interoperable thumbnail cache policy
+## 2026-07-28 -- Directory entries carry a modification timestamp
+## 2026-07-28 -- Stabilize incremental presentation and geometric selection
+## 2026-07-28 -- Establish deterministic QML quality gates
+## 2026-07-28 -- Live core integration and recoverable operations
+## 2026-07-28 -- Number collisions within the name limit, and correct the working-entry contract
+## 2026-07-28 -- Bound the working names used to replace an entry
+## 2026-07-28 -- Replace destinations transactionally
+## 2026-07-28 -- Stage cross-filesystem moves before replacing anything
+## 2026-07-28 -- Enforced file-length ceiling
+## 2026-07-27 -- Report listing failures instead of throwing
+## 2026-07-28 -- Stable band gestures and complete parity controls
+## 2026-07-27 -- Complete list selection regression coverage
+## 2026-07-27 -- Pointer hit testing and scan watcher lifetime
+## 2026-07-27 -- Input-parity navigation shell
+## 2026-07-27 -- Asynchronous shell model and navigation state
+## 2026-07-27 -- Checkout-independent header analysis
+## 2026-07-27 -- Correct destructive overwrite in copy, move, and rename
+## 2026-07-27 -- Executable formatting, analysis, and publishing gates
+## 2026-07-27 -- Deterministic C++ formatting baseline
+## 2026-07-27 -- Cancellable off-thread directory scanning
+## 2026-07-27 -- Incremental directory watching
+## 2026-07-27 -- Delete to the freedesktop.org trash
+## 2026-07-27 -- Core copy, move, and rename primitives
+## 2026-07-27 -- Public development record and repository safeguards
+## 2026-07-27 -- Initial core and Qt Quick foundation

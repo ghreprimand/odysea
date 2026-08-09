@@ -204,21 +204,43 @@ as the code or documentation it records. Commit subjects and bodies stay
 factual and scoped.
 
 The record is split so that no single file approaches the 2,000-line ceiling.
-`DEVLOG.md` holds the entries for the current calendar month, and a new entry
-goes at the top of it. When a month closes, its entries move verbatim into
-`docs/devlog/YYYY-MM.md`, which is then linked from the live record, most
-recent first. Published entries are never edited, reordered, reworded, or
-removed; a correction is a new entry. Moving a month is a transcription rather
-than a rewrite, so prove byte identity mechanically instead of reading the
-result over. `devlog_archive_guard` enforces the structural half of this: every
-archive must be linked and every link must resolve to a tracked file, archive
-filenames must match the month of every entry they contain, the live record
-must hold no month that has already been archived, no entry may appear in two
-files, and the index must stay in reverse-chronological order.
-`devlog_archive_guard_self_test` holds the guard to that with throwaway
-repositories covering each of those failure modes plus an accepted layout,
-because a guard only ever observed passing cannot be told apart from one that
-never reaches its checks.
+`DEVLOG.md` holds the most recent entries, and a new entry goes at the top of
+it and never into an archive. Older entries move verbatim into `docs/devlog/`,
+which is linked from the live record, most recent first.
+
+There are two archive shapes. A month that has closed moves whole into
+`docs/devlog/YYYY-MM.md`. A month that reaches the line ceiling before it
+closes is archived in numbered `docs/devlog/YYYY-MM-partN.md` files, each
+holding a consecutive stretch of it, numbered from one without gaps and in
+increasing date order, with the newest entries staying in the live record. A
+month is archived one way or the other, never both, and parts are not merged
+back when the month closes: a published part is as settled as a closed month.
+
+Published entries are never edited, reordered, reworded, or removed; a
+correction is a new entry. Moving entries is a transcription rather than a
+rewrite, so prove byte identity mechanically instead of reading the result
+over.
+
+`docs/devlog/published-entries.txt` records every published entry heading in
+reading order — the live record first, then each archive most recent first.
+Append to it in the same change that publishes the entry. It exists because the
+failure mode of a split record is silent loss: a stretch that survives neither
+the move nor a later rebase leaves every remaining file structurally perfect,
+and no arrangement check can see the hole. Comparing the manifest against what
+the files actually hold bounds the record from below as well as above.
+
+`devlog_archive_guard` enforces all of it: every archive must be linked and
+every link must resolve to a tracked archive file, archive filenames must match
+the month of every entry they contain, the live record must hold nothing older
+than the newest archived entry and nothing newer may sit in an archive, part
+numbering and date ranges must be consecutive and disjoint, no entry may appear
+in two files, the index must stay most-recent-first, and the manifest and the
+files must agree exactly. It pins headings, not bodies: rewriting the text
+under an unchanged heading passes, because no check can see that without a copy
+of what was published, which a source tree extracted from a release archive
+does not carry. `devlog_archive_guard_self_test` holds the guard to each of
+those failure modes plus an accepted layout, because a guard only ever observed
+passing cannot be told apart from one that never reaches its checks.
 
 Commits carry no attribution trailers. `Co-Authored-By`, `Assisted-by`,
 `Generated-by`, `Created-by`, `Authored-by`, `Signed-off-by`, and
