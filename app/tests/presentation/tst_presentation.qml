@@ -240,6 +240,35 @@ Item {
             verify(layer.pipelineAvailable, "the pipeline must be available on the real GPU path so the frame comparisons run");
         }
 
+        // Records the coordinate-basis divergence the run actually reached, so
+        // a run that never met it cannot read as an equal pass to one that
+        // did. The defect this gate exists for only appears on a surface whose
+        // grabbed-frame ratio diverges from Screen.devicePixelRatio — Wayland
+        // fractional scaling, where the screen reports a rounded-up integer
+        // ratio while the buffer is composited at the fractional one. A run at
+        // frameRatio == Screen.devicePixelRatio (offscreen, xcb, a virtual or
+        // integer-scaled compositor) cannot exercise it: it prints the ratio
+        // it got and skips with the divergence named unexercised, which reads
+        // as a visibly weaker run in the totals rather than a green PASS. On a
+        // divergent surface it asserts what the fix guarantees — the
+        // frame-derived conversion of the far logical edge lands inside the
+        // grabbed frame, and the two coordinate bases genuinely disagree
+        // there, so the surface really is one where a Screen.devicePixelRatio
+        // probe would have missed.
+        function test_frameRatioDivergenceIsRecordedAndAsserted() {
+            ensureGpuPathOrSkip(layer.softwareBackend, "no frame is grabbed on the software path");
+            const frame = settleAndGrab();
+            const frameRatio = frame.width / harness.width;
+            const screenDpr = Screen.devicePixelRatio;
+            console.log("compositor-gate ratio: frame " + frame.width + "x" + frame.height + " for logical " + harness.width + "x" + harness.height + " => frameRatio " + frameRatio.toFixed(4) + ", Screen.devicePixelRatio " + screenDpr.toFixed(4));
+            if (Math.abs(frameRatio - screenDpr) < 0.001) {
+                skip("ran at frameRatio " + frameRatio.toFixed(4) + " == Screen.devicePixelRatio " + screenDpr.toFixed(4) + "; the fractional surface where the frame ratio diverges from the screen DPR was not reached on this run, so the coordinate-basis defect class this gate targets is unexercised here");
+            }
+            const edge = harness.width - 1;
+            verify(Grab.deviceX(frame, edge, harness.width) < frame.width, "the frame-derived conversion of the far edge must stay inside the grabbed frame");
+            verify(Grab.deviceX(frame, edge, harness.width) !== Math.round(edge * screenDpr), "on a divergent surface the frame-derived and screen-DPR conversions must address different pixels, or the divergence was not actually exercised");
+        }
+
         function settleAndGrab() {
             // Vacuity sentinel as the settle's termination condition: the
             // registered well's saturated patch is protected, so its bytes
@@ -529,13 +558,17 @@ Item {
 
             // Probe inside the registered well: the composite passes the
             // original pixels through, so the strongest profile leaves them
-            // exactly as the plain path drew them.
-            const cx = thumbWell.x + 30;
-            const cy = thumbWell.y + 30;
-            compare(strong.pixel(cx, cy), off.pixel(cx, cy));
-            const ex = thumbWell.x + 60;
-            const ey = thumbWell.y + 60;
-            compare(strong.pixel(ex, ey), off.pixel(ex, ey));
+            // exactly as the plain path drew them. Each probe is placed
+            // through its own grabbed frame's device ratio, not
+            // Screen.devicePixelRatio. Under Wayland fractional scaling a
+            // logical coordinate used directly as a device coordinate stays in
+            // bounds (logical < device) but lands up and left of the well,
+            // silently sampling chrome outside the protected region where the
+            // strongest profile legitimately differs — a harness defect that
+            // reads as a protection failure. The comparison itself stays
+            // byte-exact; only the coordinate basis is corrected.
+            compare(Grab.pixelAt(strong, thumbWell.x + 30, thumbWell.y + 30, harness.width, harness.height), Grab.pixelAt(off, thumbWell.x + 30, thumbWell.y + 30, harness.width, harness.height));
+            compare(Grab.pixelAt(strong, thumbWell.x + 60, thumbWell.y + 60, harness.width, harness.height), Grab.pixelAt(off, thumbWell.x + 60, thumbWell.y + 60, harness.width, harness.height));
 
             // And the frame outside the well did change.
             verify(!strong.equals(off));

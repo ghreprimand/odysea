@@ -41,6 +41,26 @@ Item {
     // sentinel and the extra iterations cost nothing.
     readonly property int grabSettleAttempts: 6
 
+    // True when the run demands the real GPU frame path: the real-compositor
+    // gate sets ODYSEA_REQUIRE_GPU_FRAMES, which the shared setup main
+    // publishes here. Under it the pixel tests fail instead of skipping when
+    // the scene graph is software, so a gate that ran on a fallback cannot
+    // report success while every device-resolution assertion was skipped.
+    // Unset everywhere else, so the offscreen software passes skip exactly as
+    // before. The context property is injected by the C++ setup main, so the
+    // linter cannot see it; the guard keeps the scene loadable under any
+    // runner that does not set it.
+    // qmllint disable unqualified
+    readonly property bool requireGpuFrames: (typeof presentationRequireGpuFrames !== "undefined") ? presentationRequireGpuFrames : false
+    // The device scale the run was launched at, published by the forced-2x
+    // validation gate (ODYSEA_EXPECTED_FRAME_SCALE=2 alongside
+    // QT_SCALE_FACTOR=2); 0 when no scale was declared. The device-resolution
+    // test asserts the grabbed frame carries at least this multiple of the
+    // logical size when it is set, so a run that came back at 1x cannot pass
+    // as if it were 2x.
+    readonly property real expectedFrameScale: (typeof presentationExpectedFrameScale !== "undefined") ? presentationExpectedFrameScale : 0
+    // qmllint enable unqualified
+
     ShellTheme {
         id: theme
     }
@@ -172,6 +192,22 @@ Item {
             theme.resetToDefaults();
         }
 
+        // Frame comparisons need a real GPU path. On the software scene graph
+        // they normally skip, since the pipeline is disengaged there by
+        // design. Under the real-compositor gate a software backend is not a
+        // reason to skip — it is the gate failing to exercise what it exists
+        // for — so this fails loudly instead. It never relaxes an assertion:
+        // when the GPU path is present it returns and the test runs in full.
+        function ensureGpuPathOrSkip(reason) {
+            if (!layer.softwareBackend) {
+                return;
+            }
+            if (harness.requireGpuFrames) {
+                verify(false, "the real-compositor gate requires the OpenGL RHI frame path, but the scene graph fell back to software: " + reason);
+            }
+            skip("software scene graph: " + reason);
+        }
+
         // The completeness signal for a DPR grab: thumbWell's protected red
         // patch is byte-true on every profile and backend, so its presence
         // means the frame carries the rendered scene. It gates the settle
@@ -221,9 +257,7 @@ Item {
         }
 
         function test_frameRendersAtDeviceResolution() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the software rasterizer grabs at logical resolution");
-            }
+            ensureGpuPathOrSkip("the software rasterizer grabs at logical resolution");
             const frame = settleAndGrab();
             // The grabbed frame carries the scene at the compositor's real
             // device resolution, which is the frame's own ratio. Under Wayland
@@ -237,12 +271,30 @@ Item {
             verify(frame.width >= harness.width, "frame width " + frame.width + " is below logical width " + harness.width);
             verify(frame.height >= harness.height, "frame height " + frame.height + " is below logical height " + harness.height);
             compare(frame.width * harness.height, frame.height * harness.width);
+            // When the gate declares the scale it launched at — the forced-2x
+            // validation entry sets it to 2 alongside QT_SCALE_FACTOR=2 — the
+            // grabbed frame must carry at least that density. This is the
+            // assertion that makes 2x device-resolution coverage non-vacuous:
+            // a run that fell back to 1x, or a pipeline that reported a high
+            // ratio while rasterizing low, grabs a frame below the declared
+            // multiple and fails here instead of passing as if it had rendered
+            // at full density. The bound is "at least", not "exactly", because
+            // QT_SCALE_FACTOR composes with the screen's own scale: on a
+            // fractional output the effective ratio exceeds the forced factor,
+            // so the frame is legitimately larger than logical times the
+            // declared scale. Combined with the uniform-scaling check above,
+            // this proves the pipeline rendered at no less than the forced
+            // density and scaled width and height together. It is inert (0) on
+            // every entry that does not declare a scale.
+            if (harness.expectedFrameScale > 0) {
+                console.log("device-resolution gate: frame " + frame.width + "x" + frame.height + " for logical " + harness.width + "x" + harness.height + " at declared scale " + harness.expectedFrameScale + " (Screen.devicePixelRatio " + Screen.devicePixelRatio.toFixed(4) + ")");
+                verify(frame.width >= Math.round(harness.width * harness.expectedFrameScale), "frame width " + frame.width + " is below the declared " + harness.expectedFrameScale + "x of logical width " + harness.width);
+                verify(frame.height >= Math.round(harness.height * harness.expectedFrameScale), "frame height " + frame.height + " is below the declared " + harness.expectedFrameScale + "x of logical height " + harness.height);
+            }
         }
 
         function test_wellBorderStaysByteTrueAtDeviceResolution() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the pipeline is disengaged by design");
-            }
+            ensureGpuPathOrSkip("the pipeline is disengaged by design");
             // Both states pin the same deep-field level, so the two frames
             // may differ only through the pipeline itself: the engagement
             // check below cannot be satisfied by the still material.
@@ -292,9 +344,7 @@ Item {
         }
 
         function test_ringOutsideWellStaysProcessed() {
-            if (layer.softwareBackend) {
-                skip("software scene graph: the pipeline is disengaged by design");
-            }
+            ensureGpuPathOrSkip("the pipeline is disengaged by design");
             // The inner sweep above catches a mask that is too small; this
             // sweep catches one that is too large. Nothing else in the gate
             // requires a pixel just outside a well to be processed, so

@@ -52,6 +52,29 @@ Support.ShellTestCase {
         waitForRendering(content);
     }
 
+    // Keyboard-focus audits need the shell window to hold input activation:
+    // an inactive window is delivered no key events and lands no active-focus
+    // item, so a traversal or palette-key assertion would measure a window
+    // that never received the keystrokes, not a product defect. A compositor
+    // may withhold activation from a surface it is not presenting — a
+    // background or non-visible window — which the client cannot override.
+    // This requests activation and, if the signal never arrives, skips with
+    // the constraint named rather than failing or, worse, passing over a
+    // window that was never focused; the skip is written against the
+    // activation signal itself, not a reproduction of the downstream keyboard
+    // symptom. Every platform that activates the window — offscreen, xcb, and
+    // any compositor that focuses the test surface — passes straight through
+    // and runs the audit in full.
+    function requireWindowActivation() {
+        testCase.shellWindow.requestActivate();
+        for (let attempt = 0; attempt < 50 && !testCase.shellWindow.active; ++attempt) {
+            wait(20);
+        }
+        if (!testCase.shellWindow.active) {
+            skip("this platform did not grant the shell window input activation; the keyboard-focus audit cannot run here");
+        }
+    }
+
     /// Runs after every test function: whatever a test changed — window
     /// size, profile, overrides — is restored even when it failed midway,
     /// so one failure never cascades into the tests behind it.
@@ -233,6 +256,7 @@ Support.ShellTestCase {
     }
 
     function test_focusTraversalHasNoDeadEnd() {
+        requireWindowActivation();
         const field = child("filterField");
         field.forceActiveFocus();
         tryVerify(function () {
@@ -293,6 +317,7 @@ Support.ShellTestCase {
     }
 
     function test_effectsOffShellStaysUsable() {
+        requireWindowActivation();
         theme().profile = ShellTheme.Off;
         const layer = child("presentationLayer");
         tryVerify(function () {
