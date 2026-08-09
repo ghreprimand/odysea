@@ -16,10 +16,18 @@ cmake --build build/release
 ctest --preset release
 ./build/release/app/odysea ~        # run on a directory
 
+# Full battery with coverage reconciliation (preferred before submitting):
+./tools/run_verification_battery.sh build/release
+# Runs the battery, then accounts for every registered entry against the live
+# `ctest -N` roster. A silently skipped, missing, or unexpected entry fails it;
+# a skip that names its cause is an allowed, listed opt-out. Plain `ctest` still
+# works for quick iteration but does not reconcile coverage.
+
 # Development build with sanitizers:
 cmake --preset asan
 cmake --build build/asan
 ctest --preset asan                # core tests run under ASan/UBSan
+./tools/run_verification_battery.sh build/asan    # with coverage reconciliation
 
 # Public tracked/staged-content safety guard:
 ./tools/check_public_repo.sh
@@ -190,6 +198,36 @@ These are not optional; they are how the project stays safe in C++:
   sibling scopes, a nested scope, a deeply nested scope, two runners sharing a
   directory, an empty scope, an absent scope, a sibling whose name is a prefix
   of another, and a build file declaring no runner at all.
+- A skipped battery entry must never read as a pass. `battery_coverage_self_test`
+  and `run_verification_battery.sh` reconcile every registered entry against the
+  live `ctest -N` roster and classify each one: it ran, it declared a refusal,
+  it skipped without declaring one, it skipped silently, it is missing from the
+  results, or it is in the results without being registered. Only a declared
+  refusal is tolerated — a line of the exact form
+  `<gate-name>: DECL -- declined: <reason>`, which the compositor gates print
+  when no isolated compositor was declared for the run. Every other shortfall
+  fails, including a capability skip that explained itself: an entry that could
+  not run is a hole in the battery's coverage, and tolerating any skip that
+  printed something would let one `echo` reopen the failure class the
+  reconciler exists to close. A run where nothing executed fails too, so
+  declaring a refusal buys tolerance for one entry and never for a battery.
+  The practical consequence is deliberate: the battery is green only where the
+  offscreen GPU gates can obtain a context, so a headless machine needs a
+  virtual display rather than a looser gate.
+  `ODYSEA_REQUIRE_OFFSCREEN_GL` (offscreen GL) and `ODYSEA_REQUIRE_COMPOSITOR`
+  (real compositor) turn the corresponding skips into failures inside the gate
+  itself, where the capability is expected. The offscreen GPU launchers name
+  "no display server reachable" versus "a display is reachable but the OpenGL
+  context is unusable", because the two are different facts about a machine.
+- `application_smoke` is the honest smoke: it forces `QT_FORCE_STDERR_LOGGING=1`
+  and the offscreen software backend (`QT_QUICK_BACKEND=software`, the real
+  software key — `QSG_RHI_BACKEND=software` is not a valid key and falls back to
+  the default), requires the process to be alive at the timeout with no
+  platform, RHI, scene-graph, or sanitizer fault on stderr, and names an early
+  exit or an abort. Zero bytes is not evidence of a healthy launch on its own —
+  it is also what a journal-routed core dump leaves. `application_smoke_self_test`
+  holds the gate to that with a core dump, an early exit, and a live-but-faulting
+  stub.
 - Warnings are errors (`-Werror`); keep the build clean.
 - No tracked source or text file may exceed 2,000 physical lines. Split files
   along clear ownership or responsibility boundaries before reaching the

@@ -120,11 +120,26 @@ add_test(
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/isolated_compositor_gate_selftest.sh)
 set_tests_properties(compositor_gate_harness_self_test PROPERTIES TIMEOUT 180)
 
+# The smoke gate and the coverage reconciler each ship with a self-test, so a
+# gate that stopped biting shows up as its own red entry. The smoke self-test
+# needs nothing beyond coreutils and never declines.
+add_test(
+    NAME application_smoke_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_smoke_selftest.sh)
+add_test(
+    NAME battery_coverage_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_battery_coverage_selftest.sh)
+
 # No guard declares a skip return code. Each one either resolves its corpus and
 # runs, or states a precondition and fails; none of them decline quietly. A
 # skipped test is reported outside every summary line CTest prints, so a gate
 # that skips is a gate whose absence has to be noticed by hand, and the whole
-# set of them was skipping in any tree without Git metadata.
+# set of them was skipping in any tree without Git metadata. The sole exception
+# is the coverage reconciler's self-test: it parses JUnit with python3, so when
+# python3 is absent it declines by name rather than measuring nothing. That is a
+# genuine toolchain precondition, not a corpus it could have resolved, so it
+# alone carries a skip return code.
+set_tests_properties(battery_coverage_self_test PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)
     set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)
 endif()

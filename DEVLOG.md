@@ -24,6 +24,88 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- Make a skipped battery entry impossible to read as a pass
+
+The verification battery could report every entry green while a third of them
+never ran. A skipped entry keeps the headline at "100% tests passed" and is
+named only in a trailing block below it, so the executed count could fall from
+the full set to a subset without changing a number any check watched. Two
+shapes of this were live: the two offscreen GPU launchers exited with the skip
+code and zero bytes on both streams, leaving no cause anywhere; and the
+smoke-launch criterion, "zero bytes on both streams", is exactly what a core
+dump also produces once Qt routes its diagnostics to the journal rather than a
+terminal.
+
+A coverage reconciler now accounts for every registered entry. It captures the
+roster live from `ctest -N`, so it can never lag the real suite, runs the
+battery capturing per-entry results, and matches the two: an entry that ran, an
+entry that declared a refusal, a skip that declared none, a silent skip, a
+registered entry missing from the results, and a result not on the roster are
+each classified and printed.
+
+Exactly one shortfall is tolerated, along the distinction the compositor gates
+already draw. A gate that cannot run is missing a capability, and that is a
+hole in the battery's coverage. A gate that will not run is enforcing a
+policy — refusing to render an activating window into a session it was not
+given to own — and turning that red would pressure the next reader into
+deleting the refusal rather than respecting it. So a skip is accepted only when
+the entry printed a declared refusal, a line of the exact form
+`<gate-name>: DECL -- declined: <reason>`; every other skip fails, including
+one that explained itself at length. Tolerating any skip that printed something
+would let a single `echo` reopen the whole failure class this is built to
+close. The bound stays two-sided by construction — an empty roster, an empty
+results file, and results that merely do not exceed the roster all fail — and a
+run where nothing executed fails even when every entry declared a refusal, so a
+declaration covers one entry and never a battery. It runs from
+`tools/run_verification_battery.sh`, after ctest returns rather than as one
+more entry inside it, because an in-battery reconciler would run mid-run under
+`-j` and could not see the entries scheduled after itself.
+
+The price of that standard is stated rather than discovered later: a machine
+where the offscreen GPU launchers cannot obtain a context no longer produces a
+green battery. Measured both ways here — without a display server the run is
+red and names the two launchers as skips that declared no refusal; with one it
+is green. The answer on a headless machine is a virtual display, not a wider
+tolerance.
+
+The two offscreen GPU launchers now name their skip and distinguish its cause:
+"no display server reachable", where the offscreen platform has no display to
+obtain a context from, is a different fact from "a display is reachable but the
+OpenGL context is unusable", and the two no longer read the same. Where an
+offscreen context is expected, `ODYSEA_REQUIRE_OFFSCREEN_GL` turns the skip
+into a failure instead.
+
+The smoke criterion is replaced. `application_smoke` launches the application
+with `QT_FORCE_STDERR_LOGGING=1` so a fault names itself, and requires the
+process to be alive when the timeout closes it — exit status exactly the
+timeout signal — with no platform-plugin, RHI, scene-graph, or sanitizer fault
+on stderr. An early exit and an abort are each reported by name rather than
+read as quiet. Zero bytes is no longer sufficient evidence; the evidence is the
+timeout status together with clean diagnostics. The launch is forced onto the
+offscreen software scene graph, which renders at device pixel ratio 1 and runs
+with or without a display; a real-GPU launch is the real-compositor gate's
+stronger and separate job, not a second offscreen smoke run twice. Its backend
+is selected with `QT_QUICK_BACKEND=software`, the real software key —
+`QSG_RHI_BACKEND=software` is not a valid key and silently falls back to the
+default, and no tracked file spells the software path that way.
+
+The smoke gate and the reconciler each ship a self-test registered in the
+battery, so a gate that stopped biting shows up as its own red entry. The
+reconciler's self-test holds it to thirteen scenarios, and the load-bearing
+ones are the tight half: an explained capability skip, a mention of the token
+in prose rather than as the line's own declaration, and a declaration with no
+reason after it each have to fail, separately and by name, alongside the silent
+skip, the missing entry, the unexpected entry, the empty roster, and the floor
+where nothing ran.
+
+Verified: through the runner on a display, 66 registered, 64 run, and 2
+declared refusals — the real-compositor gates, which decline because no
+isolated compositor was declared for the run — with all 66 accounted for;
+without a display the same tree is red and names the two offscreen launchers.
+The real-compositor path itself is not measured here and is not claimed to be.
+Warning-clean release build, static analysis at the unchanged baseline,
+formatting, privacy, file-length, and QML gates all pass.
+
 ## 2026-08-11 -- The record's promised order is checked from a fixed point up
 
 This file's header has always said the record reads in reverse-chronological

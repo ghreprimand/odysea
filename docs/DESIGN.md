@@ -597,7 +597,14 @@ axes, each of which either exercises the comparisons or reports a visible skip
   configure/commit, or frame-callback pacing, and it cannot allocate a genuine
   high-density framebuffer — under a forced scale factor it reports a doubled
   ratio while rasterizing at 1x — so its device-resolution assertions run at
-  1x.
+  1x. When no context is usable the launcher skips (77) with a printed cause
+  that distinguishes "no display server reachable" — the offscreen platform
+  draws its context from a display server, and none is advertised — from "a
+  display is reachable but the OpenGL context is unusable", a driver problem on
+  a machine that ought to have had one. `ODYSEA_REQUIRE_OFFSCREEN_GL` turns that
+  skip into a failure where an offscreen context is expected; it is deliberately
+  distinct from `ODYSEA_REQUIRE_COMPOSITOR`, so a pure-Wayland verifier with no
+  X display can require the compositor gate while honestly skipping this one.
 - **Real compositor** (`shell_presentation_compositor`). A launcher runs the
   full presentation suite on the ambient real compositor — Wayland preferred,
   X11 as the fallback display server — with OpenGL RHI forced. This is the only
@@ -667,6 +674,66 @@ the launcher exports `ODYSEA_REQUIRE_GPU_FRAMES`, and the suite turns its own
 "software scene graph" skips into hard failures when it is set, so a run that
 reached the suite on a software fallback cannot report success while every GPU
 assertion was skipped.
+
+### Battery coverage and the smoke criterion
+
+A gate that is honest about skipping is only half the guarantee. The other half
+is that a skip cannot pass unnoticed: `ctest` reports "100% tests passed"
+whether it ran every entry or a third of them, naming skips in a trailing block
+below the headline, so the executed count can fall without changing any number a
+check watches. A git-less tree skips the corpus guards; a display-less tree
+skips the GPU gates; both still read as a clean pass.
+
+The coverage reconciler closes that. `tools/run_verification_battery.sh`
+captures the registered roster live from `ctest -N`, runs the battery capturing
+per-entry results as JUnit, and accounts for every registered entry: an entry
+that ran, an entry that declared a refusal, a skip that declared none, a silent
+skip, a registered entry missing from the results, and a result absent from the
+roster.
+
+Exactly one shortfall is tolerated, and the distinction it rests on is the one
+the compositor gates already draw. A gate that *cannot* run is missing a
+capability, and that is a hole in the battery's coverage. A gate that *will
+not* run is enforcing a policy — the compositor gates refuse to render an
+activating window into a session they were not given to own — and turning that
+red would pressure the next reader into deleting the refusal rather than
+respecting it. So the reconciler accepts a skip only when the entry printed a
+declared refusal, a line of the exact form
+`<gate-name>: DECL -- declined: <reason>`, and fails on every other skip,
+including one that explained itself. Accepting any skip that printed something
+would let a single `echo` reopen the failure class the reconciler exists to
+close. Declared refusals are listed with their reasons on every run, and a run
+where nothing executed fails regardless, so a declaration covers one entry and
+never a battery.
+
+That standard has a price, and it is paid deliberately: a machine where the
+offscreen GPU launchers cannot obtain a context does not produce a green
+battery. The answer there is a virtual display, not a wider tolerance.
+
+The bound is two-sided — an empty roster, an empty results file, and results
+that merely do not exceed the roster all fail — so a stopped counter cannot
+satisfy it. The reconciliation runs after `ctest` returns rather than as one
+more entry inside the battery, because an in-battery reconciler would run
+mid-run under `-j` and could not see the entries scheduled after itself. What
+it cannot do is judge whether a declared refusal was warranted; that stays with
+the gate, where the refusal and the inability are separate exit paths with
+different text, and only the inability is turned red by
+`ODYSEA_REQUIRE_COMPOSITOR`.
+
+The application smoke is subject to the same standard of evidence. "Zero bytes
+on both streams" was accepted as a clean launch for the life of the project,
+but under redirection Qt routes its diagnostics to the journal, so a healthy
+launch, a silently non-functional one, and a core dump are byte-identical. The
+`application_smoke` gate forces `QT_FORCE_STDERR_LOGGING=1` so a fault names
+itself, requires the process to be alive when the timeout closes it — exit
+status exactly the timeout signal — with no platform-plugin, RHI, scene-graph,
+or sanitizer fault on stderr, and reports an early exit or an abort by name
+rather than reading either as quiet. It runs on the offscreen software scene
+graph, selected with `QT_QUICK_BACKEND=software` — the real software key, where
+`QSG_RHI_BACKEND=software` is not a valid key and silently falls back to the
+default — which renders at device pixel ratio 1 and runs with or without a
+display. A launch on a real GPU path is the compositor gate's stronger and
+separate job, not a second offscreen smoke run twice.
 
 ## Rendering
 
