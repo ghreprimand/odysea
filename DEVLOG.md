@@ -71,6 +71,39 @@ The view itself is unchanged and remains reachable. Its own navigation,
 accessibility declarations, virtualization, and retained-state bounds hold as
 recorded.
 
+## 2026-08-08 -- The directory-model suite splits off its cost bounds
+
+The suite covering how the directory model acquires a listing had reached
+1,831 lines against a tracked-file ceiling of 2,000, having grown by roughly
+two hundred lines in each of the last three changes. It is split now rather
+than when the next change fails the gate, because a split made under a failing
+gate is a split chosen by arithmetic instead of by responsibility.
+
+The boundary is what a case asserts. Cases that assert a behavior — scanning,
+publication, watch deliveries, entry identity, and the invariants over the
+derived indexes — stay. Cases that assert a bound on what that work may cost
+move to a suite of their own, together with the load measurement helpers only
+they use. The two are different kinds of claim, they fail for different
+reasons, and the cost cases are also the slow ones: they build directories of
+thousands of entries and load each several times, so separating them lets the
+invariants run at a speed that suits being run often. The suites are now 1,133
+and 645 lines beside the existing 532-line interaction suite.
+
+Probes that read the model's derived state directly moved into the shared test
+support header and are befriended once, rather than being duplicated into each
+suite that needs them; a probe copied per suite is a probe that drifts between
+them. No case changed, and both suites report the same case names and counts
+they did before: 21 and 5 cases against 26 in the single suite.
+
+The warning-clean release build passed all 53 checks, including scoped static
+analysis, 18 guards, and both GPU-path gates. The ASan/UBSan build passed all
+52 enabled checks; static analysis is disabled in that preset. The advisory
+clang-tidy baseline moves the cognitive-complexity reports that describe the
+relocated cases from one file's entry to the new file's, with no report added
+or removed. Release and sanitizer binaries completed silent eight-second
+offscreen smoke launches on the OpenGL and software paths with no shared-memory
+residue.
+
 ## 2026-08-08 -- Bound the cost of a directory load, not only its spelling
 
 The directory model counts how many row keys an update builds, and a

@@ -151,6 +151,19 @@ target_link_libraries(odysea_app_tests
 
 add_test(NAME app_directory_list_model COMMAND odysea_app_tests)
 
+qt_add_executable(odysea_app_cost_tests
+    tests/tst_directory_list_model_cost.cpp)
+
+target_include_directories(odysea_app_cost_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/core/src)
+
+target_link_libraries(odysea_app_cost_tests
+    PRIVATE
+        odysea_app_adapter Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_directory_list_model_cost COMMAND odysea_app_cost_tests)
+
 qt_add_executable(odysea_app_interaction_tests
     tests/tst_directory_list_model_interaction.cpp)
 

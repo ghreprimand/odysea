@@ -32,6 +32,12 @@
 class ThumbnailImageProvider;
 class EntryLauncher;
 
+namespace odysea::apptest {
+// Declared here so the model can befriend the shared test probes once,
+// instead of befriending each suite that needs to read its derived state.
+struct ModelProbe;
+} // namespace odysea::apptest
+
 class DirectoryListModel : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QString path READ path WRITE setPath NOTIFY pathChanged)
@@ -182,11 +188,15 @@ class DirectoryListModel : public QAbstractListModel {
 
   private:
     // The model's cases are split by responsibility: how a listing is
-    // acquired and kept consistent, and what a person does with the rows once
-    // it is. Both halves reach internal state that has no public spelling.
+    // acquired and kept consistent, what that acquisition is allowed to cost,
+    // and what a person does with the rows once it is there. All three reach
+    // internal state that has no public spelling, as do the probes they
+    // share.
     friend class DirectoryListModelTest;
+    friend class DirectoryListModelCostTest;
     friend class DirectoryListModelInteractionTest;
     friend class MillerColumnsModelTest;
+    friend struct odysea::apptest::ModelProbe;
 
     struct TabState {
         QString path;

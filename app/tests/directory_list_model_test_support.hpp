@@ -215,4 +215,102 @@ class FakeEntryLauncher final : public EntryLauncher {
     bool fail = false;
 };
 
+// Probes that read the model's derived state directly. They live here, and
+// are befriended once, because every suite over this model needs them and a
+// probe duplicated per suite is a probe that drifts between them.
+struct ModelProbe {
+    // Empty when the row keys and the key index agree with the entries they
+    // are derived from; otherwise the first disagreement, so a failure names
+    // the row rather than only the count.
+    static QString rowKeyIndexMismatch(const DirectoryListModel& model);
+    // How many contiguous runs of rows the given needle would remove from the
+    // rows currently presented. A scattered removal's cost depends on the run
+    // count, not the removed-row count, so a case that measures one has to
+    // establish that its filter really is scattered.
+    static int removalRunCount(const DirectoryListModel& model, const QString& needle);
+    // Empty when the name index over the scanned listing holds the first row
+    // of each name, and when every scanned entry's key is its name under the
+    // scanned directory — the equality the one index rests on.
+    static QString scannedNameIndexMismatch(const DirectoryListModel& model);
+};
+
+inline QString ModelProbe::rowKeyIndexMismatch(const DirectoryListModel& model) {
+    if (model.entryKeys_.size() != model.entries_.size()) {
+        return QStringLiteral("key count %1 does not match row count %2")
+            .arg(model.entryKeys_.size())
+            .arg(model.entries_.size());
+    }
+
+    QHash<QString, int> expectedRows;
+    for (std::size_t row = 0; row < model.entryKeys_.size(); ++row) {
+        const QString expected = model.entryKey(model.entries_.at(row));
+        if (model.entryKeys_.at(row) != expected) {
+            return QStringLiteral("row %1 key %2 does not match entry key %3")
+                .arg(row)
+                .arg(model.entryKeys_.at(row), expected);
+        }
+        if (!expectedRows.contains(expected)) {
+            expectedRows.insert(expected, static_cast<int>(row));
+        }
+    }
+    if (model.entryRowsByKey_ != expectedRows) {
+        return QStringLiteral("key index does not hold the first row of each key");
+    }
+    for (auto element = expectedRows.constBegin(); element != expectedRows.constEnd(); ++element) {
+        if (model.rowForEntryKey(element.key()) != element.value()) {
+            return QStringLiteral("lookup of %1 did not return its first row %2")
+                .arg(element.key())
+                .arg(element.value());
+        }
+    }
+    if (model.rowForEntryKey(QStringLiteral("/absent")) != -1 ||
+        model.rowForEntryKey(QString{}) != -1) {
+        return QStringLiteral("lookup of an absent key did not report no row");
+    }
+    return {};
+}
+inline int ModelProbe::removalRunCount(const DirectoryListModel& model, const QString& needle) {
+    int runs = 0;
+    bool departing = false;
+    for (const odysea::core::Entry& entry : model.entries_) {
+        const bool survives =
+            QString::fromStdString(entry.name).contains(needle, Qt::CaseInsensitive);
+        if (!survives && !departing) {
+            ++runs;
+        }
+        departing = !survives;
+    }
+    return runs;
+}
+inline QString ModelProbe::scannedNameIndexMismatch(const DirectoryListModel& model) {
+    QHash<QString, std::size_t> expected;
+    expected.reserve(static_cast<qsizetype>(model.scannedEntries_.size()));
+    for (std::size_t row = 0; row < model.scannedEntries_.size(); ++row) {
+        const odysea::core::Entry& entry = model.scannedEntries_.at(row);
+        const QString name = QString::fromStdString(entry.name);
+        // The rule the index rests on. Every entry in a listing has the
+        // scanned directory as its parent, so its key is its name under that
+        // directory. Matching on the key and matching on the name therefore
+        // cannot select different entries, which is what makes one name index
+        // able to answer both.
+        const QString keyUnderScannedDirectory = QString::fromStdString(
+            (fs::path(model.scannedPath_.toStdString()) / entry.name).lexically_normal().string());
+        if (model.entryKey(entry) != keyUnderScannedDirectory) {
+            return QStringLiteral("scanned entry %1 has key %2 rather than %3")
+                .arg(name, model.entryKey(entry), keyUnderScannedDirectory);
+        }
+        if (!expected.contains(name)) {
+            expected.insert(name, row);
+        }
+    }
+    if (expected.size() != static_cast<qsizetype>(model.scannedEntries_.size())) {
+        return QStringLiteral("scanned listing holds %1 entries under %2 names")
+            .arg(model.scannedEntries_.size())
+            .arg(expected.size());
+    }
+    if (model.scannedRowsByName_ != expected) {
+        return QStringLiteral("name index does not hold the first row of each scanned name");
+    }
+    return {};
+}
 } // namespace odysea::apptest
