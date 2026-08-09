@@ -38,11 +38,10 @@ if [[ "$#" -eq 2 ]]; then
     update_baseline=1
 fi
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'static_analysis: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init static_analysis
+readonly repository_root="$guard_corpus_root"
 
 build_directory="$1"
 if [[ "$build_directory" != /* ]]; then
@@ -61,8 +60,12 @@ if [[ -z "$tidy_binary" ]]; then
     tidy_binary="$(command -v clang-tidy || true)"
 fi
 if [[ -z "$tidy_binary" ]]; then
-    common_git_directory="$(git rev-parse --path-format=absolute --git-common-dir)"
-    shared_repository_root="$(dirname "$common_git_directory")"
+    if guard_corpus_is_git; then
+        common_git_directory="$(git rev-parse --path-format=absolute --git-common-dir)"
+        shared_repository_root="$(dirname "$common_git_directory")"
+    else
+        shared_repository_root="$repository_root"
+    fi
     local_tidy="$shared_repository_root/.archon/tools/clang-tidy-22/bin/clang-tidy"
     if [[ -x "$local_tidy" ]]; then
         tidy_binary="$local_tidy"
@@ -110,7 +113,7 @@ while IFS= read -r -d '' source_file; do
         failed_units+=("$source_file")
     fi
     checked=$((checked + 1))
-done < <(git ls-files -z -- '*.cpp')
+done < <(guard_corpus_list '*.cpp')
 
 # A floor under the count. Analysing nothing produces no diagnostics, which
 # matches an empty baseline exactly and reports as a clean gate. The corpus is
@@ -118,7 +121,7 @@ done < <(git ls-files -z -- '*.cpp')
 # emptied, so both halves of that coincidence are reachable without anyone
 # intending it.
 if ((checked == 0)); then
-    printf 'static_analysis: no tracked translation unit was found, so nothing was analysed\n' >&2
+    printf 'static_analysis: no translation unit was found, so nothing was analysed\n' >&2
     exit 1
 fi
 
@@ -231,5 +234,5 @@ fi
 
 readonly recorded_total="$(awk -F'\t' '{ total += $1 } END { printf "%d", total }' \
     "$current_file")"
-printf 'static_analysis: %d tracked translation units passed, %d advisory diagnostics held at the baseline\n' \
+printf 'static_analysis: %d translation units passed, %d advisory diagnostics held at the baseline\n' \
     "$checked" "$recorded_total"

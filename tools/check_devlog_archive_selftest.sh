@@ -18,9 +18,12 @@ if [[ ! -x "$guard" && ! -f "$guard" ]]; then
     exit 1
 fi
 
+# Stated as a precondition rather than skipped. The scenarios below need a
+# real repository to build, and a self-test that declined to run would report
+# nothing while reading as a pass in the summary.
 if ! command -v git >/dev/null 2>&1; then
-    echo "devlog_archive_guard_self_test: skipped because git is unavailable"
-    exit 77
+    echo "devlog_archive_guard_self_test: git is required to build the scenario repositories and is not installed" >&2
+    exit 1
 fi
 
 readonly sandbox_root="$(mktemp -d)"
@@ -385,17 +388,30 @@ track_everything "$root"
 expect_rejected "a live record holding no entry at all" "$root" \
     "holds no entry, so nothing here was compared against it"
 
-# --- Outside a repository the guard must skip, not pass --------------------
-outside="$sandbox_root/outside"
-mkdir -p "$outside"
-skip_status=0
-skip_output="$(cd "$outside" && HOME="$outside" GIT_CEILING_DIRECTORIES="$sandbox_root" \
-    bash "$guard" 2>&1)" || skip_status=$?
-if ((skip_status == 77)) && [[ "$skip_output" == *"Git metadata is unavailable"* ]]; then
-    report PASS "skips with status 77 when Git metadata is unavailable"
+# --- Without repository metadata the guard runs rather than declining -------
+# A copy of the guard is installed in a source tree that has a live record and
+# archives but no repository, and it has to reach the same result there. A gate
+# that declined here would be reporting success over a build made from a
+# release archive, which is exactly what a package build compiles.
+without_metadata="$(build_repository without_metadata)"
+track_everything "$without_metadata"
+rm -rf -- "$without_metadata/.git"
+mkdir -p "$without_metadata/tools"
+cp "$guard" "$without_metadata/tools/check_devlog_archive.sh"
+cp "$script_directory/guard_corpus.sh" "$without_metadata/tools/guard_corpus.sh"
+printf 'project(without_metadata)\n' >"$without_metadata/CMakeLists.txt"
+
+metadata_free_status=0
+metadata_free_output="$(cd "$without_metadata" &&
+    HOME="$without_metadata" GIT_CEILING_DIRECTORIES="$sandbox_root" \
+    bash tools/check_devlog_archive.sh 2>&1)" || metadata_free_status=$?
+if ((metadata_free_status == 0)) &&
+    [[ "$metadata_free_output" == *"no Git metadata is available"* ]] &&
+    [[ "$metadata_free_output" == *"matching the manifest"* ]]; then
+    report PASS "runs against the source tree when there is no repository"
 else
-    report FAIL "expected a status 77 skip outside a repository, got $skip_status"
-    printf '  %s\n' "$skip_output" >&2
+    report FAIL "expected a completed run without repository metadata, got $metadata_free_status"
+    printf '  %s\n' "$metadata_free_output" >&2
 fi
 
 if ((failures == 0)); then

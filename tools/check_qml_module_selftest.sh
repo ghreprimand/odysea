@@ -10,12 +10,8 @@
 
 set -euo pipefail
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'qml_module_guard_self_test: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-
-readonly guard="$repository_root/tools/check_qml_module.sh"
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly guard="$tools_directory/check_qml_module.sh"
 if [[ ! -f "$guard" ]]; then
     printf 'qml_module_guard_self_test: the gate is missing\n' >&2
     exit 1

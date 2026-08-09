@@ -35,6 +35,25 @@ ctest --preset asan                # core tests run under ASan/UBSan
 ./tools/check_file_length.sh
 ```
 
+### Gates in a source tree without repository metadata
+
+The gates run in a build made from a release archive, which carries no `.git`.
+Where a clone is available they read the tracked set and the index, so a gate
+run before a commit judges what that commit would publish. Where it is not,
+they read the source tree itself, excluding version-control metadata and any
+CMake build tree beneath the root; a build tree is recognised by the
+`CMakeCache.txt` inside it, not by its name.
+
+Two things are unavailable without a repository and are reported as such rather
+than passed over: the index, and the commit history the attribution checks
+read. An archive has neither to check.
+
+No gate declares a skip return code. Each one either resolves a corpus and
+runs, or states a precondition and fails. The prerequisites above are therefore
+requirements of a checked build and not merely of a developer checkout: `git`
+is needed by the gate self-tests, which build throwaway repositories to
+exercise the behaviour they pin.
+
 ## Project layout
 
 - `core/` — toolkit-agnostic C++20 filesystem model. **No Qt or GUI types here.**

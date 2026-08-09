@@ -134,7 +134,7 @@ expect_verdict "an oversized indexed file is rejected while the working tree is 
 # --- Floors: a gate that measured nothing has established nothing ------------
 sandbox="$(new_repository empty-corpus)"
 expect_verdict "an empty corpus is refused rather than passed" \
-    reject "the tracked corpus is empty" "$sandbox"
+    reject "the corpus is empty" "$sandbox"
 
 sandbox="$(new_repository binary-corpus)"
 printf '\000\001\002\003' >"$sandbox/asset.bin"

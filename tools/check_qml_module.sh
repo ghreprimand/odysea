@@ -20,11 +20,9 @@ if [[ -z "$module_directory" ]]; then
     exit 2
 fi
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'qml_module_guard: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init qml_module_guard
 
 readonly manifest="$module_directory/qmldir"
 if [[ ! -f "$manifest" ]]; then
@@ -58,7 +56,7 @@ while IFS= read -r scene_path; do
     esac
     printf '%s %s\n' "$scene_stem" "$scene_file" >>"$tracked_expectations"
     tracked_count=$((tracked_count + 1))
-done < <(git ls-files -- 'app/qml/*.qml')
+done < <(guard_corpus_list 'app/qml/*.qml' | tr '\0' '\n')
 
 if ((tracked_count == 0)); then
     printf 'qml_module_guard: no tracked scenes found under app/qml\n' >&2
@@ -105,5 +103,5 @@ if ((status != 0)); then
     exit 1
 fi
 
-printf 'qml_module_guard: %d tracked scenes are exported by the module\n' \
+printf 'qml_module_guard: %d scenes are exported by the module\n' \
     "$tracked_count"

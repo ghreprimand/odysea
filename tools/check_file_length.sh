@@ -3,13 +3,9 @@ set -euo pipefail
 
 readonly max_lines=2000
 
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "file_length_guard: skipped because Git metadata is unavailable"
-    exit 77
-fi
-
-readonly repository_root="$(git rev-parse --show-toplevel)"
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init file_length_guard
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
@@ -53,12 +49,12 @@ while IFS= read -r -d '' path; do
         fi
     fi
 
-    if git show ":$path" >"$index_copy" 2>/dev/null; then
+    if guard_corpus_is_git && git show ":$path" >"$index_copy" 2>/dev/null; then
         if check_file "$index_copy" "indexed file" "$path"; then
             indexed_measurements=$((indexed_measurements + 1))
         fi
     fi
-done < <(git ls-files -z)
+done < <(guard_corpus_list)
 
 # Two floors. A ceiling alone is satisfied by a run that measured nothing: over
 # an empty corpus every file is under the limit, and so is every file in a
@@ -66,12 +62,12 @@ done < <(git ls-files -z)
 # mistakes - a corpus enumerated from the wrong root, a checkout with nothing
 # staged - and both would otherwise print the same success line as a full run.
 if ((tracked_paths == 0)); then
-    printf 'file_length_guard: the tracked corpus is empty, so no file was measured against the %d-line ceiling\n' \
+    printf 'file_length_guard: the corpus is empty, so no file was measured against the %d-line ceiling\n' \
         "$max_lines" >&2
     exit 1
 fi
 if ((working_tree_measurements + indexed_measurements == 0)); then
-    printf 'file_length_guard: %d tracked paths held no text file, so no file was measured against the %d-line ceiling\n' \
+    printf 'file_length_guard: %d corpus paths held no text file, so no file was measured against the %d-line ceiling\n' \
         "$tracked_paths" "$max_lines" >&2
     exit 1
 fi
@@ -83,6 +79,6 @@ fi
 # The size of what was measured is part of the result. A success line that
 # reads the same over a full corpus and over none cannot be checked by reading
 # it.
-printf 'file_length_guard: %d working-tree and %d indexed text files across %d tracked paths passed the %d-line ceiling\n' \
+printf 'file_length_guard: %d working-tree and %d indexed text files across %d corpus paths passed the %d-line ceiling\n' \
     "$working_tree_measurements" "$indexed_measurements" "$tracked_paths" \
     "$max_lines"

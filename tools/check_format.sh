@@ -25,11 +25,9 @@ inl
 ipp
 tpp'
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'formatting_guard: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init formatting_guard
 
 if ! format_version="$(clang-format --version 2>/dev/null)"; then
     printf 'formatting_guard: clang-format 22 is required\n' >&2
@@ -51,7 +49,7 @@ while IFS= read -r extension; do
     while IFS= read -r -d '' source_file; do
         clang-format --dry-run --Werror "$source_file"
         checked=$((checked + 1))
-    done < <(git ls-files -z -- "*.${extension}")
+    done < <(guard_corpus_list "*.${extension}")
 done <<<"$covered_extensions"
 
 # A floor under the count. Every file in an empty corpus is correctly
@@ -60,10 +58,10 @@ done <<<"$covered_extensions"
 # enumerated from a repository root, which is exactly the kind of thing that
 # can silently resolve somewhere else.
 if ((checked == 0)); then
-    printf 'formatting_guard: no tracked file matched any of the %d covered extensions, so nothing was checked\n' \
+    printf 'formatting_guard: no corpus file matched any of the %d covered extensions, so nothing was checked\n' \
         "$extension_count" >&2
     exit 1
 fi
 
-printf 'formatting_guard: %d tracked C and C++ files passed across %d extensions\n' \
+printf 'formatting_guard: %d C and C++ files passed across %d extensions\n' \
     "$checked" "$extension_count"

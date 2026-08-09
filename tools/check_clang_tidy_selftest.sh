@@ -174,7 +174,7 @@ readonly empty_baseline='# no advisory diagnostics recorded
 readonly advisory_baseline="$(printf '1\tadvisory.cpp\t%s\n' "$advisory_check")"
 
 expect_verdict "a clean translation unit passes" \
-    accept "1 tracked translation units passed" \
+    accept "1 translation units passed" \
     "$empty_baseline" "clean=clean"
 
 expect_verdict "a fatal diagnostic is rejected" \
@@ -205,7 +205,7 @@ expect_verdict "a missing baseline is rejected" \
 # The floor. With nothing analysed there are no diagnostics to compare, and an
 # empty comparison is the same shape as a passing one.
 expect_verdict "a corpus holding no translation unit is refused rather than passed" \
-    reject "no tracked translation unit" \
+    reject "no translation unit" \
     "$empty_baseline"
 
 if ((status != 0)); then

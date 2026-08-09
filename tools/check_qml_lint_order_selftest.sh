@@ -10,19 +10,18 @@
 # silently scanned nothing would be indistinguishable from a passing one.
 #
 # Each scenario builds a throwaway import root and requires a specific outcome.
-# The scenarios run from a directory outside any repository, so a root the check
-# accepts stops at the gate's own Git-metadata skip: reaching that skip proves
-# the scan ran to completion and passed the root rather than exiting early.
+# The gate runs from a copy installed in a throwaway source root holding no
+# scenes, so a root the ordering check accepts carries the scan through to the
+# gate's refusal of an empty corpus. Reaching that refusal is what proves the
+# scan ran to completion and passed the root rather than exiting early, and it
+# is a stated result rather than a skip.
 
 set -euo pipefail
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'qml_lint_order_self_test: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-
-readonly guard="$repository_root/tools/check_qml.sh"
-if [[ ! -f "$guard" ]]; then
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly guard_source="$tools_directory/check_qml.sh"
+readonly library_source="$tools_directory/guard_corpus.sh"
+if [[ ! -f "$guard_source" || ! -f "$library_source" ]]; then
     printf 'qml_lint_order_self_test: the gate is missing\n' >&2
     exit 1
 fi
@@ -35,7 +34,16 @@ if git -C "$workspace" rev-parse --show-toplevel >/dev/null 2>&1; then
     exit 1
 fi
 
+# A source root with no scenes in it, so the gate's own corpus stage is the
+# marker for a completed ordering scan.
+readonly scene_free_root="$workspace/source-root"
+mkdir -p "$scene_free_root/tools"
+cp "$guard_source" "$library_source" "$scene_free_root/tools/"
+printf 'project(scene_free)\n' >"$scene_free_root/CMakeLists.txt"
+readonly guard="$scene_free_root/tools/check_qml.sh"
+
 readonly ordering_message='declares missing type descriptions'
+readonly scan_completed_message='no tracked QML files found'
 status=0
 checked=0
 
@@ -58,7 +66,7 @@ expect_verdict() {
                 printf 'qml_lint_order_self_test: %s should be accepted\n' \
                     "$scenario" >&2
                 status=1
-            elif ((exit_status != 77)); then
+            elif [[ "$output" != *"$scan_completed_message"* ]]; then
                 printf 'qml_lint_order_self_test: %s did not reach the end of the scan\n' \
                     "$scenario" >&2
                 status=1

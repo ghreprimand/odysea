@@ -44,14 +44,9 @@ readonly include_glob='app/src/*'
 readonly model_header='directory_list_model.hpp'
 readonly -a permitted_functions=(entryKey normalizedFilesystemPath)
 
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "key_construction_guard: skipped because Git metadata is unavailable"
-    exit 77
-fi
-
-repository_root="$(git rev-parse --show-toplevel)"
-readonly repository_root
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init key_construction_guard
 
 covered_paths="$(mktemp)"
 readonly covered_paths
@@ -91,13 +86,13 @@ enclosing_function() {
 }
 
 > "$covered_paths"
-git ls-files -z -- "$source_glob" | tr '\0' '\n' >> "$covered_paths"
+guard_corpus_list "$source_glob" | tr '\0' '\n' >> "$covered_paths"
 while IFS= read -r candidate; do
     [[ -n "$candidate" ]] || continue
     if grep -q "$model_header" "$candidate"; then
         printf '%s\n' "$candidate" >> "$covered_paths"
     fi
-done < <(git ls-files -- "$include_glob")
+done < <(guard_corpus_list "$include_glob" | tr '\0' '\n')
 sort -u -o "$covered_paths" "$covered_paths"
 
 while IFS= read -r path; do

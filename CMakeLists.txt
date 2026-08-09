@@ -104,24 +104,18 @@ add_test(
 add_test(
     NAME static_analysis
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})
-# The three self-tests added beside their gates are deliberately absent from
-# the skip list below. They build their own sandboxes and have no precondition
-# they can decline on, so a 77 from one of them would be a defect, not a skip.
 add_test(
     NAME static_analysis_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy_selftest.sh)
+add_test(
+    NAME guard_corpus_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_guard_corpus_selftest.sh)
 
-set_tests_properties(
-    public_repository_guard public_repository_guard_self_test
-    attribution_hooks_self_test formatting_guard
-    formatting_guard_self_test qml_formatting_guard qml_lint_guard
-    qml_lint_order_self_test qml_module_guard qml_module_guard_self_test
-    qml_test_scopes qml_test_scopes_self_test
-    file_length_guard
-    devlog_archive_guard devlog_archive_guard_self_test
-    key_construction_guard key_construction_guard_self_test
-    static_analysis
-    PROPERTIES SKIP_RETURN_CODE 77)
+# No guard declares a skip return code. Each one either resolves its corpus and
+# runs, or states a precondition and fails; none of them decline quietly. A
+# skipped test is reported outside every summary line CTest prints, so a gate
+# that skips is a gate whose absence has to be noticed by hand, and the whole
+# set of them was skipping in any tree without Git metadata.
 if(ODYSEA_ASAN)
     set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)
 endif()

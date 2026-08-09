@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+
 # The brace and dollar characters are written as bracket expressions because a
 # backslash-escaped brace opens an interval in a basic regular expression.
 readonly scope_pattern='QUICK_TEST_SOURCE_DIR="[$][{]CMAKE_CURRENT_SOURCE_DIR[}]/'
@@ -22,11 +25,8 @@ readonly scope_pattern='QUICK_TEST_SOURCE_DIR="[$][{]CMAKE_CURRENT_SOURCE_DIR[}]
 if [[ $# -ge 1 ]]; then
     readonly build_file="$1"
 else
-    if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-        printf 'qml_test_scopes: SKIP (Git metadata unavailable)\n'
-        exit 77
-    fi
-    readonly build_file="$repository_root/app/CMakeLists.txt"
+    guard_corpus_init qml_test_scopes
+    readonly build_file="$guard_corpus_root/app/CMakeLists.txt"
 fi
 
 if [[ ! -f "$build_file" ]]; then

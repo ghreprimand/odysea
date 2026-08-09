@@ -124,7 +124,7 @@ expect_verdict() {
 }
 
 expect_verdict "a scene qmllint accepts passes the gate" \
-    accept "1 tracked QML files passed linting" \
+    accept "1 QML files passed linting" \
     "app/qml/Clean.qml=clean"
 
 expect_verdict "a scene with an unqualified access is rejected" \
@@ -137,7 +137,7 @@ expect_verdict "one faulty scene beside a clean one is still rejected" \
 
 # The count in the success line is the corpus, not a constant.
 expect_verdict "the success line counts the scenes it linted" \
-    accept "2 tracked QML files passed linting" \
+    accept "2 QML files passed linting" \
     "app/qml/First.qml=clean" "app/qml/Second.qml=clean"
 
 # The floor. Every scene in an empty corpus lints cleanly.

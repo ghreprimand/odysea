@@ -24,6 +24,48 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-09 -- Guards a build from a release archive would not have run
+
+Fourteen of eighteen gates declined to run in a source tree without repository
+metadata, and the summary still read as a complete pass: a skipped test is
+reported outside every line that counts, so a battery that ran a third of
+itself prints what one that ran all of it prints. The condition was single -
+every guard derived its corpus from Git, and every one was gated on the same
+predicate. That is the environment a source archive is compiled in, and
+packaging is on the roadmap, so the first packaged build would have reported a
+green battery having run neither the privacy guard, nor the attribution
+checks, nor the file-length ceiling, nor static analysis.
+
+The corpus is now resolved in one place behind one interface. Where a
+repository is present it is the tracked set read through the index, which is
+the stricter reading and is what a commit would publish. Where it is not, it is
+the source tree, less version-control metadata, the ignored workflow directory,
+and every CMake build tree beneath the root - recognised by the cache file
+inside it rather than by its name, so a build directory called anything at all
+is still excluded. Matching is shared and only enumeration differs, and the
+accompanying self-test requires the two enumerations to answer identically over
+the same tree rather than checking each against a description of what it ought
+to return.
+
+Two things are genuinely unavailable without a repository: the index, and the
+history the attribution checks read. Those checks now state that they did not
+run and why, rather than the whole guard disappearing. Everything else runs.
+
+No gate declares a skip return code any more. Each one resolves a corpus and
+runs, or states a precondition and fails. The two self-tests that declined when
+Git was absent now report that as a failure, because a self-test that ran
+nothing has established nothing, and their prerequisites are recorded as
+requirements of a checked build rather than of a developer checkout.
+
+Verified: every gate executed in a tree extracted from an archive carrying no
+repository metadata, the privacy guard among them, and it found an address
+planted there. 11 planted mutations of the enumeration, the build-tree
+exclusion, the index read, the root inference, the restored skip and the
+floors; 10 caught. The eleventh removes a conditional whose effect is not
+observable - the checks behind it read an empty history either way - and it is
+recorded as such rather than counted as a catch. Release 59/59 and ASan/UBSan
+58/58 with a display attached, warning-clean.
+
 ## 2026-08-09 -- Gates that measured nothing reported success
 
 Two gates passed over an empty corpus. The formatting gate printed that zero

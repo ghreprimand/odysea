@@ -29,12 +29,9 @@
 # disappears, changes place, or changes name.
 set -euo pipefail
 
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "devlog_archive_guard: skipped because Git metadata is unavailable"
-    exit 77
-fi
-
-cd "$(git rev-parse --show-toplevel)"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init devlog_archive_guard
 
 readonly live_record="DEVLOG.md"
 readonly archive_directory="docs/devlog"
@@ -88,9 +85,10 @@ archive_part() {
 archive_files=()
 while IFS= read -r path; do
     [[ -n "$path" ]] || continue
+    # The manifest lives beside the archives but is not one of them.
     [[ "${path##*/}" == "${manifest##*/}" ]] && continue
     archive_files+=("$path")
-done < <(git ls-files -- "$archive_directory")
+done < <(guard_corpus_list "$archive_directory/*" | tr '\0' '\n')
 
 declare -A month_has_whole_file=()
 declare -A month_part_numbers=()

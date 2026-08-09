@@ -76,11 +76,10 @@ while (($# > 0)); do
     import_flags="$import_flags -I $import_root"
 done
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'qml_quality_guard: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-cd "$repository_root"
+# shellcheck source=tools/guard_corpus.sh
+source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
+guard_corpus_init qml_quality_guard
+readonly repository_root="$guard_corpus_root"
 
 require_qt_tool() {
     local tool_name="$1"
@@ -119,7 +118,7 @@ if [[ "$mode" == "all" || "$mode" == "format" ]]; then
             format_failed=1
         fi
         formatted_count=$((formatted_count + 1))
-    done < <(git ls-files -z -- '*.qml')
+    done < <(guard_corpus_list '*.qml')
 
     if ((format_failed != 0)); then
         printf 'qml_quality_guard: run qmlformat -i with .qmlformat.ini\n' >&2
@@ -131,7 +130,7 @@ if [[ "$mode" == "all" || "$mode" == "format" ]]; then
         exit 1
     fi
 
-    printf 'qml_quality_guard: %d tracked QML files are formatted\n' \
+    printf 'qml_quality_guard: %d QML files are formatted\n' \
         "$formatted_count"
 fi
 
@@ -144,13 +143,13 @@ if [[ "$mode" == "all" || "$mode" == "lint" ]]; then
         qmllint --ignore-settings --max-warnings 0 \
             $import_flags "$source_file"
         linted_count=$((linted_count + 1))
-    done < <(git ls-files -z -- '*.qml')
+    done < <(guard_corpus_list '*.qml')
 
     if ((linted_count == 0)); then
         printf 'qml_quality_guard: no tracked QML files found\n' >&2
         exit 1
     fi
 
-    printf 'qml_quality_guard: %d tracked QML files passed linting\n' \
+    printf 'qml_quality_guard: %d QML files passed linting\n' \
         "$linted_count"
 fi

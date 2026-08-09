@@ -8,11 +8,16 @@ set -euo pipefail
 # look correct while the check under test is dead, which is exactly how an
 # earlier gate in this repository passed with one of its checks unreachable.
 
-readonly guard_source="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check_key_construction.sh"
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly guard_source="$tools_directory/check_key_construction.sh"
+readonly library_source="$tools_directory/guard_corpus.sh"
 
+# Stated as a precondition rather than skipped. The scenarios below need a
+# real repository to build, and a self-test that declined to run would report
+# nothing while reading as a pass in the summary.
 if ! command -v git >/dev/null 2>&1; then
-    echo "key_construction_guard_self_test: skipped because Git is unavailable"
-    exit 77
+    echo "key_construction_guard_self_test: git is required to build the scenario repositories and is not installed" >&2
+    exit 1
 fi
 
 workspace="$(mktemp -d)"
@@ -34,6 +39,7 @@ build_repository() {
     rm -rf -- "$root"
     mkdir -p "$root/app/src" "$root/tools"
     cp "$guard_source" "$root/tools/check_key_construction.sh"
+    cp "$library_source" "$root/tools/guard_corpus.sh"
     # The scenarios stage rather than commit, so no identity configuration is
     # required and no scenario can be affected by repository hooks.
     git -C "$root" init --quiet

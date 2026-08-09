@@ -18,12 +18,8 @@
 
 set -euo pipefail
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'public_repository_guard_self_test: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-
-readonly guard="$repository_root/tools/check_public_repo.sh"
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly guard="$tools_directory/check_public_repo.sh"
 if [[ ! -f "$guard" ]]; then
     printf 'public_repository_guard_self_test: the gate is missing\n' >&2
     exit 1
@@ -37,7 +33,7 @@ readonly owner_identity="1+owner${at}users.noreply.github.com"
 readonly planted_address="admin${at}host.example"
 
 readonly address_message='email-like or user-at-host text is tracked in a shell file'
-readonly success_message='tracked content passed'
+readonly success_message='corpus paths'
 
 status=0
 checked=0
@@ -160,9 +156,87 @@ if ((non_shell_status == 0)) ||
     status=1
 fi
 
+# --- Without repository metadata the corpus is still scanned ----------------
+# A build made from a release archive has no repository, and this is the guard
+# whose absence costs the most there. A copy is installed in a source tree with
+# the metadata removed, and it has to find the same planted address.
+metadata_free_root="$workspace/metadata-free"
+mkdir -p "$metadata_free_root/tools"
+printf 'contact %s\n' "$planted_address" >"$metadata_free_root/NOTES.md"
+cp "$guard" "$metadata_free_root/tools/check_public_repo.sh"
+cp "$tools_directory/guard_corpus.sh" "$metadata_free_root/tools/guard_corpus.sh"
+printf 'project(metadata_free)\n' >"$metadata_free_root/CMakeLists.txt"
+
+metadata_free_output=""
+metadata_free_status=0
+metadata_free_output="$(cd "$metadata_free_root" &&
+    bash tools/check_public_repo.sh 2>&1)" || metadata_free_status=$?
+checked=$((checked + 1))
+if ((metadata_free_status == 0)) ||
+    [[ "$metadata_free_output" != *"email-like or user-at-host text is tracked"* ]]; then
+    printf 'public_repository_guard_self_test: an address should be rejected in a tree without repository metadata: %s\n' \
+        "$metadata_free_output" >&2
+    status=1
+fi
+
+# The same tree with nothing planted has to pass, and has to say that
+# attribution went unchecked rather than leaving it to be assumed.
+rm -f "$metadata_free_root/NOTES.md"
+clean_metadata_free_output=""
+clean_metadata_free_status=0
+clean_metadata_free_output="$(cd "$metadata_free_root" &&
+    bash tools/check_public_repo.sh 2>&1)" || clean_metadata_free_status=$?
+checked=$((checked + 1))
+if ((clean_metadata_free_status != 0)) ||
+    [[ "$clean_metadata_free_output" != *"carries no history"* ]]; then
+    printf 'public_repository_guard_self_test: a clean tree without metadata should pass and say attribution was unchecked: %s\n' \
+        "$clean_metadata_free_output" >&2
+    status=1
+fi
+
+# --- A repository with no commits examined none -----------------------------
+# The attribution loops read history. Over an empty history they read nothing
+# and report success, which is the shape of a check that has stopped running.
+no_commits_root="$workspace/no-commits"
+mkdir -p "$no_commits_root"
+git init -q "$no_commits_root"
+printf 'notes\n' >"$no_commits_root/NOTES.md"
+git -C "$no_commits_root" add NOTES.md
+
+no_commits_output=""
+no_commits_status=0
+no_commits_output="$(cd "$no_commits_root" && bash "$guard" 2>&1)" ||
+    no_commits_status=$?
+checked=$((checked + 1))
+if ((no_commits_status == 0)) ||
+    [[ "$no_commits_output" != *"no commit was examined"* ]]; then
+    printf 'public_repository_guard_self_test: a repository with no commits should be refused: %s\n' \
+        "$no_commits_output" >&2
+    status=1
+fi
+
+# --- An empty corpus scans nothing -----------------------------------------
+# Every pattern this guard looks for is absent from a corpus with no files in
+# it, so the scan reaches its success line without reading a byte.
+empty_corpus_root="$workspace/empty-corpus"
+mkdir -p "$empty_corpus_root"
+git init -q "$empty_corpus_root"
+
+empty_corpus_output=""
+empty_corpus_status=0
+empty_corpus_output="$(cd "$empty_corpus_root" && bash "$guard" 2>&1)" ||
+    empty_corpus_status=$?
+checked=$((checked + 1))
+if ((empty_corpus_status == 0)) ||
+    [[ "$empty_corpus_output" != *"the corpus is empty"* ]]; then
+    printf 'public_repository_guard_self_test: an empty corpus should be refused: %s\n' \
+        "$empty_corpus_output" >&2
+    status=1
+fi
+
 if ((status != 0)); then
     exit "$status"
 fi
 
-printf 'public_repository_guard_self_test: %d at-sign scenarios are enforced\n' \
+printf 'public_repository_guard_self_test: %d scenarios are enforced\n' \
     "$checked"

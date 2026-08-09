@@ -33,22 +33,21 @@ inl
 ipp
 tpp'
 
-if ! repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-    printf 'formatting_guard_self_test: SKIP (Git metadata unavailable)\n'
-    exit 77
-fi
-
-readonly guard="$repository_root/tools/check_format.sh"
-readonly style="$repository_root/.clang-format"
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly guard="$tools_directory/check_format.sh"
+readonly style="$tools_directory/../.clang-format"
 
 if [[ ! -f "$guard" || ! -f "$style" ]]; then
     printf 'formatting_guard_self_test: the gate or its style file is missing\n' >&2
     exit 1
 fi
 
+# No skip when clang-format is absent. The gate this exercises fails in that
+# case rather than skipping, so a self-test that skipped would report a
+# healthier tree than the battery it belongs to.
 if ! clang-format --version >/dev/null 2>&1; then
-    printf 'formatting_guard_self_test: SKIP (clang-format unavailable)\n'
-    exit 77
+    printf 'formatting_guard_self_test: clang-format is required, as it is by the gate\n' >&2
+    exit 1
 fi
 
 workspace="$(mktemp -d)"
@@ -106,7 +105,7 @@ empty_corpus_output="$( (cd "$empty_corpus" && bash "$guard") 2>&1 )" ||
 if ((empty_corpus_status == 0)); then
     printf 'formatting_guard_self_test: a corpus with no covered file is passed\n' >&2
     status=1
-elif [[ "$empty_corpus_output" != *"no tracked file matched"* ]]; then
+elif [[ "$empty_corpus_output" != *"no corpus file matched"* ]]; then
     printf 'formatting_guard_self_test: a corpus with no covered file is refused for the wrong reason: %s\n' \
         "$empty_corpus_output" >&2
     status=1

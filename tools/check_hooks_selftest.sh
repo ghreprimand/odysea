@@ -7,8 +7,20 @@
 # using the tracked hooks, so the check measures behaviour rather than text.
 set -euo pipefail
 
-repository_root="$(git rev-parse --show-toplevel)"
-hooks_directory="${repository_root}/tools/hooks"
+# Located from this file rather than from Git, so the hooks are exercised in a
+# source tree that carries no repository metadata as well as in a clone. The
+# sandbox below is a real repository either way.
+tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+hooks_directory="${tools_directory}/hooks"
+
+# Stated as a precondition rather than left to surface as a raw Git error. The
+# hooks are commit-time enforcement, so without Git there is nothing to
+# exercise them with, and attribution is not a rule to report as satisfied
+# because it could not be examined.
+if ! command -v git >/dev/null 2>&1; then
+    printf 'hooks_selftest: git is required to exercise the commit hooks and is not installed\n' >&2
+    exit 1
+fi
 
 owner_identity="1+owner@users.noreply.github.com"
 other_identity="2+other@users.noreply.github.com"
@@ -81,41 +93,52 @@ else
     report fail "a trailer inside a comment line is ignored"
 fi
 
-# The configured hook path must resolve from a linked worktree and from a
-# subdirectory, not only from the repository root. Git resolves a relative
-# core.hooksPath against the current working directory, so a relative value
-# leaves every worktree unprotected while still looking configured.
-configured_hooks_path="$(git config --get core.hooksPath || true)"
-if [[ -z "$configured_hooks_path" ]]; then
-    report fail "core.hooksPath is configured (run tools/install_hooks.sh)"
-elif [[ "$configured_hooks_path" != /* ]]; then
-    report fail "core.hooksPath is absolute so it resolves from any directory"
-else
-    report pass "core.hooksPath is absolute so it resolves from any directory"
-
-    for required in pre-commit commit-msg pre-push; do
-        if [[ -x "${configured_hooks_path}/${required}" ]]; then
-            report pass "the configured ${required} hook is present and executable"
-        else
-            report fail "the configured ${required} hook is present and executable"
-        fi
-    done
-
-    # Prove enforcement actually reaches a linked worktree.
-    worktree="${scratch}-worktree"
-    if git -C "$scratch" worktree add -q -b selftest-probe "$worktree" >/dev/null 2>&1; then
-        echo probe >"${worktree}/probe.txt"
-        git -C "$worktree" add -A
-        if git -C "$worktree" -c user.email="$unscoped_identity" \
-            commit -qm "unscoped identity in a worktree" 2>/dev/null; then
-            report fail "an unscoped identity is rejected inside a linked worktree"
-        else
-            report pass "an unscoped identity is rejected inside a linked worktree"
-        fi
-        git -C "$scratch" worktree remove --force "$worktree" >/dev/null 2>&1 || true
-        git -C "$scratch" branch -D selftest-probe >/dev/null 2>&1 || true
+# Enforcement must reach a linked worktree, not only the directory the hooks
+# were configured from. This runs against the sandbox repository, so it holds
+# wherever this file is executed.
+worktree="${scratch}-worktree"
+if git -C "$scratch" worktree add -q -b selftest-probe "$worktree" >/dev/null 2>&1; then
+    echo probe >"${worktree}/probe.txt"
+    git -C "$worktree" add -A
+    if git -C "$worktree" -c user.email="$unscoped_identity" \
+        commit -qm "unscoped identity in a worktree" 2>/dev/null; then
+        report fail "an unscoped identity is rejected inside a linked worktree"
     else
-        report fail "a linked worktree can be created for the enforcement probe"
+        report pass "an unscoped identity is rejected inside a linked worktree"
+    fi
+    git -C "$scratch" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+    git -C "$scratch" branch -D selftest-probe >/dev/null 2>&1 || true
+else
+    report fail "a linked worktree can be created for the enforcement probe"
+fi
+
+# The cases above exercise the hooks themselves. The ones below inspect this
+# checkout's own configuration, which exists only in a clone: a source tree
+# extracted from an archive has no hook configuration to be wrong. That is a
+# different state from a clone whose hooks were never installed, and saying so
+# is the point - a check that quietly disappears reads exactly like one that
+# passed.
+if ! git -C "$tools_directory" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '  n/a     this source tree is not a clone, so it has no hook configuration to inspect\n'
+else
+    # Git resolves a relative core.hooksPath against the current working
+    # directory, so a relative value leaves every worktree unprotected while
+    # still looking configured.
+    configured_hooks_path="$(git -C "$tools_directory" config --get core.hooksPath || true)"
+    if [[ -z "$configured_hooks_path" ]]; then
+        report fail "core.hooksPath is configured (run tools/install_hooks.sh)"
+    elif [[ "$configured_hooks_path" != /* ]]; then
+        report fail "core.hooksPath is absolute so it resolves from any directory"
+    else
+        report pass "core.hooksPath is absolute so it resolves from any directory"
+
+        for required in pre-commit commit-msg pre-push; do
+            if [[ -x "${configured_hooks_path}/${required}" ]]; then
+                report pass "the configured ${required} hook is present and executable"
+            else
+                report fail "the configured ${required} hook is present and executable"
+            fi
+        done
     fi
 fi
 
