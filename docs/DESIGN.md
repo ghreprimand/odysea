@@ -117,9 +117,12 @@ terminal file manager. Achieving both at once is a deliberate design target.
   remain rooted in the directory from which the columns chain opened, while
   entry operations follow the focused view: copy, move, rename, trash,
   selection status, dialogs, and cross-pane transfers resolve against the
-  active column listing. The active column path is shown in the pane header.
-  This split preserves an exploratory path chain without allowing a shortcut
-  to act on an invisible selection retained by another view.
+  active column listing. A transfer destination follows the opposite pane's
+  visible listing by the same rule, rather than the workspace location from
+  which its chain opened. The active column path is shown in the pane header.
+  Column rows publish the same URI drag payload and accept the same directory
+  drops as list and grid rows. This split preserves an exploratory path chain
+  without allowing an operation to act on an invisible source or destination.
 - **Geometric selection.** Each view computes the explicit set of model rows
   intersected by its rubber-band rectangle. The shared selection model applies
   that set by stable entry key, so list and grid geometry do not leak into

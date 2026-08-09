@@ -12,6 +12,10 @@ TestCase {
     when: windowShown
 
     property var shellWindow: null
+    readonly property string sourceRoot: {
+        const url = Qt.resolvedUrl("../../qml").toString();
+        return url.startsWith("file://") ? decodeURIComponent(url.slice(7)) : "";
+    }
 
     component PaneModel: ListModel {
         property string path: "/synthetic"
@@ -209,6 +213,7 @@ TestCase {
     }
 
     function init() {
+        shellWindow.switchView(false);
         leftModel.path = "/synthetic/left";
         rightModel.path = "/synthetic/right";
         leftModel.sortMode = 0;
@@ -374,5 +379,52 @@ TestCase {
         keySequence("Ctrl+Shift+M");
         tryCompare(rightModel, "dropCalls", 4);
         compare(rightModel.dropMove, true);
+    }
+
+    function test_columnsTransferDestinationFollowsTheOppositeVisibleListing() {
+        verify(testCase.sourceRoot.length > 0);
+        leftModel.path = testCase.sourceRoot;
+        rightModel.path = testCase.sourceRoot;
+        leftModel.filterText = "";
+        rightModel.filterText = "";
+        shellWindow.switchColumnsView();
+
+        const leftLoader = findChild(child("directoryPane-0"), "millerColumnsLoader");
+        const rightLoader = findChild(child("directoryPane-1"), "millerColumnsLoader");
+        tryVerify(function () {
+            return leftLoader.item !== null && rightLoader.item !== null;
+        });
+        const leftColumns = leftLoader.item.columnsModel;
+        const rightColumns = rightLoader.item.columnsModel;
+        tryVerify(function () {
+            return leftColumns.columnModel(0) !== null && rightColumns.columnModel(0) !== null && !leftColumns.columnBusy(0) && !rightColumns.columnBusy(0) && leftColumns.entryCount(0) > 0 && rightColumns.entryCount(0) > 0;
+        });
+
+        let sourceRow = -1;
+        let destinationRow = -1;
+        for (let row = 0; row < leftColumns.entryCount(0); ++row) {
+            if (!leftColumns.entryIsDirectory(0, row) && sourceRow < 0) {
+                sourceRow = row;
+            }
+            if (rightColumns.entryIsDirectory(0, row) && destinationRow < 0) {
+                destinationRow = row;
+            }
+        }
+        verify(sourceRow >= 0);
+        verify(destinationRow >= 0);
+        leftColumns.moveToRow(sourceRow);
+        rightColumns.activate(0, destinationRow);
+        tryVerify(function () {
+            return rightColumns.columnCount === 2 && rightColumns.columnModel(1) !== null && !rightColumns.columnBusy(1);
+        });
+        rightColumns.setActiveColumn(1);
+
+        tryCompare(shellWindow, "activePaneIndex", 0);
+        compare(shellWindow.activeEntryModel, leftColumns.activeListing);
+        compare(shellWindow.oppositeEntryModel, rightColumns.activeListing);
+        compare(shellWindow.oppositeTransferPath(), child("secondPane").entryModel.path);
+        compare(shellWindow.oppositeTransferPath(), rightColumns.currentPath);
+        verify(shellWindow.oppositeTransferPath() !== rightModel.path);
+        verify(shellWindow.canTransferToOppositePane(false));
     }
 }

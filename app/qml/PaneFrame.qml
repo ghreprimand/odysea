@@ -21,6 +21,7 @@ FocusScope {
     property int persistenceDurationMs: 0
     property var wellLayer: null
     readonly property var entryModel: directoryPane.entryModel
+    readonly property bool entryModelReady: directoryPane.entryModelReady
 
     signal activationRequested(int paneIndex)
 

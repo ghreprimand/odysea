@@ -248,6 +248,12 @@ FocusScope {
                         required property string entryPath
 
                         readonly property string kindLabel: isSymlink ? qsTr("Symbolic link") : (isDir ? qsTr("Folder") : qsTr("File"))
+                        readonly property var dragMimeData: ({
+                                "text/uri-list": column.listingModel.selectedFileUrls.length > 0 ? column.listingModel.selectedFileUrls.join("\r\n") + "\r\n" : ""
+                            })
+                        readonly property int dragProposedAction: Drag.proposedAction
+                        readonly property bool dragActive: Drag.active
+                        signal transferDragStarted(int action)
 
                         objectName: "millerRow-" + column.index + "-" + index
                         width: entryList.width
@@ -264,6 +270,26 @@ FocusScope {
                         Accessible.focused: columns.activeFocus && column.active && column.listingModel.currentIndex === index
                         Accessible.selectable: true
                         Accessible.selected: selected
+
+                        function dragActionForModifiers(modifiers) {
+                            if ((modifiers & Qt.ShiftModifier) !== 0) {
+                                return Qt.MoveAction;
+                            }
+                            return (modifiers & Qt.ControlModifier) !== 0 ? Qt.CopyAction : Qt.MoveAction;
+                        }
+
+                        function dropSelectedEntries(action) {
+                            return column.listingModel.dropSelection(entryPath, action === Qt.MoveAction, 0);
+                        }
+
+                        Drag.active: rowPointer.fileDragging
+                        Drag.dragType: Drag.Automatic
+                        Drag.keys: ["odysea-entry"]
+                        Drag.mimeData: dragMimeData
+                        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+                        Drag.proposedAction: dragActionForModifiers(rowPointer.pressModifiers)
+                        Drag.hotSpot.x: width / 2
+                        Drag.hotSpot.y: height / 2
 
                         RowLayout {
                             anchors.fill: parent
@@ -304,16 +330,70 @@ FocusScope {
                         MouseArea {
                             id: rowPointer
 
+                            property point pressPosition
+                            property int pressModifiers: Qt.NoModifier
+                            property bool fileDragging: false
+                            property bool suppressClick: false
+
                             anchors.fill: parent
                             acceptedButtons: Qt.LeftButton
                             hoverEnabled: true
+                            onPressed: mouse => {
+                                pressPosition = Qt.point(mouse.x, mouse.y);
+                                pressModifiers = mouse.modifiers;
+                                suppressClick = false;
+                            }
+                            onPositionChanged: mouse => {
+                                if (!pressed || fileDragging) {
+                                    return;
+                                }
+                                const dx = mouse.x - pressPosition.x;
+                                const dy = mouse.y - pressPosition.y;
+                                if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy)) {
+                                    if (!row.selected) {
+                                        columns.columnsModel.select(column.index, row.index);
+                                    }
+                                    fileDragging = true;
+                                    row.transferDragStarted(row.dragProposedAction);
+                                    suppressClick = true;
+                                    preventStealing = true;
+                                }
+                            }
+                            onReleased: {
+                                if (fileDragging) {
+                                    row.Drag.drop();
+                                }
+                                fileDragging = false;
+                                preventStealing = false;
+                            }
+                            onCanceled: {
+                                fileDragging = false;
+                                suppressClick = false;
+                                preventStealing = false;
+                            }
                             onClicked: {
+                                if (suppressClick) {
+                                    suppressClick = false;
+                                    return;
+                                }
                                 columns.columnsModel.select(column.index, row.index);
                                 columns.focusView();
                             }
                             onDoubleClicked: {
                                 columns.columnsModel.activate(column.index, row.index);
                                 columns.focusView();
+                            }
+                        }
+
+                        DropArea {
+                            objectName: "millerDropTarget-" + column.index + "-" + row.index
+                            anchors.fill: parent
+                            enabled: row.isDir
+                            keys: ["odysea-entry"]
+                            onDropped: drop => {
+                                if (row.dropSelectedEntries(drop.proposedAction)) {
+                                    drop.acceptProposedAction();
+                                }
                             }
                         }
                     }

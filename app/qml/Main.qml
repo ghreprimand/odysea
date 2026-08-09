@@ -59,6 +59,9 @@ ApplicationWindow {
     readonly property var activeShellModel: activePaneIndex === 0 ? shellModel : secondaryShellModel
     readonly property var oppositeShellModel: activePaneIndex === 0 ? secondaryShellModel : shellModel
     readonly property var activeEntryModel: paneLayout.activeEntryModel !== null ? paneLayout.activeEntryModel : activeShellModel
+    readonly property var oppositeEntryModel: paneLayout.oppositeEntryModel
+    readonly property bool activeEntryModelReady: paneLayout.activeEntryModelReady
+    readonly property bool oppositeEntryModelReady: paneLayout.oppositeEntryModelReady
 
     onDualPaneEnabledChanged: {
         if (!dualPaneEnabled && activePaneIndex !== 0) {
@@ -139,14 +142,18 @@ ApplicationWindow {
     }
 
     function canTransferToOppositePane(move) {
-        return root.paneCount === 2 && root.activeEntryModel !== root.oppositeShellModel && root.activeEntryModel.selectedCount > 0 && !root.activeEntryModel.operationBusy && !root.oppositeShellModel.operationBusy && root.oppositeShellModel.path.length > 0 && root.activeEntryModel.path !== root.oppositeShellModel.path;
+        return root.paneCount === 2 && root.activeEntryModelReady && root.oppositeEntryModelReady && root.oppositeEntryModel !== null && root.activeEntryModel !== root.oppositeEntryModel && root.activeEntryModel.selectedCount > 0 && !root.activeEntryModel.operationBusy && !root.oppositeEntryModel.operationBusy && root.oppositeEntryModel.path.length > 0 && root.activeEntryModel.path !== root.oppositeEntryModel.path;
+    }
+
+    function oppositeTransferPath() {
+        return root.oppositeEntryModel !== null ? root.oppositeEntryModel.path : "";
     }
 
     function transferToOppositePane(move) {
         if (!root.canTransferToOppositePane(move)) {
             return false;
         }
-        return root.activeEntryModel.dropSelection(root.oppositeShellModel.path, move, 0);
+        return root.activeEntryModel.dropSelection(root.oppositeTransferPath(), move, 0);
     }
 
     function clearTypeAhead() {

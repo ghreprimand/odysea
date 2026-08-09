@@ -24,6 +24,23 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-09 -- Keep cross-pane transfers on visible listings
+
+Transfers now resolve both ends through the listings each pane displays. When
+columns mode exposes a deeper directory in the opposite pane, copy and move
+use that directory instead of the workspace location from which its chain
+opened. An explicit readiness condition disables the action while either
+columns listing is unavailable. Miller rows also publish URI drag payloads and
+accept directory drops, matching the pointer path already present in list and
+grid views.
+
+Two planted regressions were rejected: restoring the hidden workspace
+destination failed the two-pane depth case, and removing the URI payload failed
+the pointer-drag case. All 55 release checks and 54 enabled ASan/UBSan checks
+passed; four hardware capability probes skipped in each offscreen run. Static
+analysis completed in 216.39 seconds, and both eight-second software smoke
+launches stayed silent and sanitizer-clean.
+
 ## 2026-08-10 -- The watch-burst cost bound had no floor under it
 
 The gate that holds a folder-watch burst to a linear cost checked only that the
@@ -581,4 +598,3 @@ of the shell stay where they were while the chain moves.
 The view itself is unchanged and remains reachable. Its own navigation,
 accessibility declarations, virtualization, and retained-state bounds hold as
 recorded.
-

@@ -30,6 +30,12 @@ Item {
         theme: theme
     }
 
+    SignalSpy {
+        id: dragStartedSpy
+
+        signalName: "transferDragStarted"
+    }
+
     TestCase {
         name: "MillerColumnsNavigation"
         when: windowShown
@@ -138,6 +144,41 @@ Item {
             const finalRow = columnsModel.entryCount(0) - 1;
             verify(finalRow > 10);
             verify(findChild(view, "millerRow-0-" + finalRow) === null, "a viewport-sized column must not instantiate its final row");
+        }
+
+        function test_pointerDragPublishesUrlsAndDirectoriesAcceptDrops() {
+            let fileRow = -1;
+            let directoryRow = -1;
+            for (let row = 0; row < columnsModel.entryCount(0); ++row) {
+                if (columnsModel.entryIsDirectory(0, row) && directoryRow < 0) {
+                    directoryRow = row;
+                } else if (!columnsModel.entryIsDirectory(0, row) && fileRow < 0) {
+                    fileRow = row;
+                }
+            }
+            verify(fileRow >= 0);
+            verify(directoryRow >= 0);
+
+            const file = showRow(0, fileRow);
+            verify(file.dragMimeData["text/uri-list"].startsWith("file:"));
+            verify(file.dragMimeData["text/uri-list"].endsWith("\r\n"));
+            compare(findChild(view, "millerDropTarget-0-" + fileRow).enabled, false);
+
+            const directory = showRow(0, directoryRow);
+            compare(findChild(view, "millerDropTarget-0-" + directoryRow).enabled, true);
+
+            const centerX = file.width / 2;
+            const centerY = file.height / 2;
+            dragStartedSpy.target = file;
+            dragStartedSpy.clear();
+            mousePress(file, centerX, centerY, Qt.LeftButton, Qt.ControlModifier);
+            compare(file.dragProposedAction, Qt.CopyAction);
+            mouseMove(file, centerX + 20, centerY, 10, Qt.LeftButton, Qt.ControlModifier);
+            compare(dragStartedSpy.count, 1);
+            compare(dragStartedSpy.signalArguments[0][0], Qt.CopyAction);
+            mouseRelease(file, centerX + 20, centerY, Qt.LeftButton, Qt.ControlModifier);
+            tryCompare(file, "dragActive", false);
+            dragStartedSpy.target = null;
         }
     }
 }
