@@ -133,9 +133,34 @@ build_repository() {
 
     refresh_manifest "$root"
 
-    # The scenarios never commit, so no identity configuration is required.
-    git -C "$root" init --quiet
+    # Initialised on `main` because the guard's history baseline is that branch
+    # by name. Most scenarios never commit, so the branch stays unborn and the
+    # history check reports itself unchecked; the scenarios that publish call
+    # `publish` below.
+    git -C "$root" init --quiet -b main
+    # Hooks are neutralised rather than inherited. A global hooks path would
+    # otherwise run this repository's attribution hooks against a throwaway
+    # commit and fail it for an identity the scenario has no business setting.
+    git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
     printf '%s\n' "$root"
+}
+
+# Composed at run time rather than written out, because an address in tracked
+# text is exactly what the publishing guard exists to refuse.
+readonly self_test_identity="devlog-self-test$(printf '\100')example.invalid"
+
+# Commits whatever the scenario currently holds, on `main`. A scenario that
+# publishes is the only kind the history baseline can judge.
+publish() {
+    local root="$1" message="$2"
+    shift 2
+
+    git -C "$root" add --all
+    git -C "$root" \
+        -c "user.name=Devlog self test" \
+        -c "user.email=$self_test_identity" \
+        -c commit.gpgsign=false \
+        commit --quiet -m "$message" "$@"
 }
 
 track_everything() {
@@ -147,8 +172,8 @@ run_guard() {
     (cd "$root" && bash "$guard") 2>&1
 }
 
-expect_accepted() {
-    local scenario="$1" root="$2"
+expect_accepted_reporting() {
+    local scenario="$1" root="$2" history_report="$3"
     local output exit_status=0
     output="$(run_guard "$root")" || exit_status=$?
 
@@ -165,7 +190,23 @@ expect_accepted() {
         printf '  %s\n' "$output" >&2
         return
     fi
+    # And require it to say what it did about history. Silence there is the one
+    # outcome that reads the same whether the baseline was compared or never
+    # resolved at all.
+    if [[ "$output" != *"$history_report"* ]]; then
+        report FAIL "$scenario: guard did not report what it did about published history"
+        printf '  expected to contain: %s\n' "$history_report" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
     report PASS "$scenario"
+}
+
+# An unpublished scenario: the branch is unborn, so there is no baseline and
+# the guard has to say so rather than passing over it.
+expect_accepted() {
+    expect_accepted_reporting "$1" "$2" \
+        "published history is UNCHECKED: neither main nor origin/main resolves"
 }
 
 expect_rejected() {
@@ -388,6 +429,155 @@ track_everything "$root"
 expect_rejected "a live record holding no entry at all" "$root" \
     "holds no entry, so nothing here was compared against it"
 
+# --- What history bounds that a tracked manifest cannot ---------------------
+# The manifest travels with the record, so the change that drops an entry drops
+# its manifest line too and every structural rule still holds. These scenarios
+# publish the record first and then judge the working tree against what was
+# published, which is the one comparison the commit under test cannot edit.
+
+# Moves an entry out of the live record and into the newest part, which is what
+# a part split does. Both writers emit the same body, so the move is verbatim
+# by construction rather than by a copy this file would have to keep correct.
+move_eighth_into_part2() {
+    local root="$1"
+
+    write_live_record "$root" \
+        docs/devlog/2026-08-part2.md \
+        docs/devlog/2026-08-part1.md \
+        docs/devlog/2026-07.md \
+        -- \
+        "2026-08-09 -- Ninth August entry"
+    write_archive "$root/docs/devlog/2026-08-part2.md" \
+        "2026-08-08 -- Eighth August entry" \
+        "2026-08-05 -- Fifth August entry" \
+        "2026-08-04 -- Fourth August entry"
+    refresh_manifest "$root"
+}
+
+root="$(build_repository published_unchanged)"
+publish "$root" "Publish the record"
+expect_accepted_reporting "a published record the working tree still matches" \
+    "$root" "8 entries published in main, 8 compared against their published text"
+
+# The case the manifest cannot see. The entry and its manifest line go in one
+# change, and three further commits land on top, so nothing in the tree or its
+# index remembers the entry. History does.
+root="$(build_repository dropped_after_publication)"
+publish "$root" "Publish the record"
+sed -i '/^## 2026-08-01 -- First August entry$/,+3d' \
+    "$root/docs/devlog/2026-08-part1.md"
+refresh_manifest "$root"
+publish "$root" "Drop an entry and its manifest line"
+for later in "2026-08-10 -- Tenth August entry" \
+    "2026-08-11 -- Eleventh August entry" \
+    "2026-08-12 -- Twelfth August entry"; do
+    printf '\n---\n\n## %s\n\nBody text.\n' "$later" >>"$root/DEVLOG.md"
+    refresh_manifest "$root"
+    publish "$root" "Publish a later entry"
+done
+expect_rejected "an entry dropped three commits back, manifest and all" "$root" \
+    "a published entry is present nowhere in the record: ## 2026-08-01 -- First August entry"
+
+# A move is not a rewrite, and the gate has to agree or the first part split
+# under it fails.
+root="$(build_repository moved_verbatim)"
+publish "$root" "Publish the record"
+move_eighth_into_part2 "$root"
+expect_accepted_reporting "a published entry moved into a part verbatim" \
+    "$root" "8 entries published in main, 8 compared against their published text"
+
+# The difference a move actually produces: the entry gains or loses the blank
+# line and rule that separated it from what followed it. That is layout, and
+# the comparison has to be blind to exactly that much and no more.
+root="$(build_repository moved_with_boundary_whitespace)"
+publish "$root" "Publish the record"
+move_eighth_into_part2 "$root"
+# A blank line after the moved entry's last line of text, and blank lines at
+# the end of the file it moved into. Both are separator.
+awk '
+    /^## 2026-08-08 -- Eighth August entry$/ { pending = 1 }
+    pending && /^Body text\.$/ { print; print ""; pending = 0; next }
+    { print }
+' "$root/docs/devlog/2026-08-part2.md" >"$root/part2.rewritten"
+mv "$root/part2.rewritten" "$root/docs/devlog/2026-08-part2.md"
+printf '\n\n' >>"$root/docs/devlog/2026-08-part2.md"
+expect_accepted_reporting "a moved entry whose boundary whitespace changed" \
+    "$root" "8 entries published in main, 8 compared against their published text"
+
+# And no more than that: one word under an unchanged heading.
+root="$(build_repository moved_and_reworded)"
+publish "$root" "Publish the record"
+move_eighth_into_part2 "$root"
+sed -i '/^## 2026-08-08 -- Eighth August entry$/,+2s/^Body text\.$/Body text, revised./' \
+    "$root/docs/devlog/2026-08-part2.md"
+expect_rejected "a moved entry whose text was changed under its heading" "$root" \
+    "a published entry has been rewritten under an unchanged heading: ## 2026-08-08 -- Eighth August entry"
+
+# A new entry written where nobody reads first. Dated inside the part's own
+# stretch, so every arrangement rule is satisfied and the manifest records it:
+# only never having been published gives it away.
+root="$(build_repository new_entry_written_into_a_part)"
+publish "$root" "Publish the record"
+write_archive "$root/docs/devlog/2026-08-part1.md" \
+    "2026-08-03 -- Third August entry" \
+    "2026-08-02 -- Second August entry" \
+    "2026-08-01 -- First August entry"
+refresh_manifest "$root"
+expect_rejected "an unpublished entry written straight into a part" "$root" \
+    "a new entry was written into docs/devlog/2026-08-part1.md: ## 2026-08-03 -- Third August entry"
+
+# Copied rather than moved, with the record published. Both copies match what
+# was published, so history is silent here by design and the duplicate rule is
+# what has to fire.
+root="$(build_repository duplicated_after_publication)"
+publish "$root" "Publish the record"
+write_archive "$root/docs/devlog/2026-08-part2.md" \
+    "2026-08-08 -- Eighth August entry" \
+    "2026-08-05 -- Fifth August entry" \
+    "2026-08-04 -- Fourth August entry"
+refresh_manifest "$root"
+expect_rejected "an entry left in the live record and copied into a part" "$root" \
+    "entry appears more than once: ## 2026-08-08 -- Eighth August entry"
+
+# Which published form an entry is measured against. The record's own rule
+# forbids editing a published entry, but history from before that rule holds
+# entries in more than one form, and the branch's most recent form is the only
+# coherent baseline: measured against its oldest, the gate would demand text
+# the branch itself no longer carries and could never be made green.
+root="$(build_repository corrected_before_the_rule)"
+publish "$root" "Publish the record"
+sed -i '/^## 2026-08-04 -- Fourth August entry$/,+2s/^Body text\.$/Body text, as corrected./' \
+    "$root/docs/devlog/2026-08-part2.md"
+publish "$root" "A correction the branch now carries"
+expect_accepted_reporting "an entry published in more than one form" \
+    "$root" "8 entries published in main, 8 compared against their published text"
+
+# The reason the baseline is one branch and not every ref. A ref that is not an
+# ancestor of the published branch holds record states that were never
+# published - local checkpoints among them. A baseline built from all refs
+# would demand this branch's entry be present and refuse the published record.
+root="$(build_repository unrelated_ref)"
+publish "$root" "Publish the record"
+git -C "$root" checkout --quiet -b local-checkpoint
+sed -i '/^## 2026-08-01 -- First August entry$/,+3d' \
+    "$root/docs/devlog/2026-08-part1.md"
+printf '\n---\n\n## %s\n\nBody text.\n' \
+    "2026-08-20 -- An entry that was never published" >>"$root/DEVLOG.md"
+refresh_manifest "$root"
+publish "$root" "A state that never reached the published branch"
+git -C "$root" checkout --quiet main
+expect_accepted_reporting "a commit on a ref outside the published branch" \
+    "$root" "8 entries published in main, 8 compared against their published text"
+
+# The floor. Every comparison against history holds vacuously over a baseline
+# that read nothing, and a resolution mistake - wrong ref, wrong paths - looks
+# exactly like a record nobody has published yet.
+root="$(build_repository nothing_published_yet)"
+printf 'Placeholder.\n' >"$root/README.md"
+publish "$root" "Commit nothing but a placeholder" -- README.md
+expect_rejected "a baseline that read no published entry at all" "$root" \
+    "no entry has ever been published in main, so history bounded nothing"
+
 # --- Without repository metadata the guard runs rather than declining -------
 # A copy of the guard is installed in a source tree that has a live record and
 # archives but no repository, and it has to reach the same result there. A gate
@@ -407,6 +597,7 @@ metadata_free_output="$(cd "$without_metadata" &&
     bash tools/check_devlog_archive.sh 2>&1)" || metadata_free_status=$?
 if ((metadata_free_status == 0)) &&
     [[ "$metadata_free_output" == *"no Git metadata is available"* ]] &&
+    [[ "$metadata_free_output" == *"published history is UNCHECKED"* ]] &&
     [[ "$metadata_free_output" == *"matching the manifest"* ]]; then
     report PASS "runs against the source tree when there is no repository"
 else

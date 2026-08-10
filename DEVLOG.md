@@ -24,6 +24,78 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- The record is bounded by history, not by a file it ships with
+
+The manifest introduced with the part split was described as bounding the
+record from below. It does not, and the claim was wrong in the tracked text as
+well as in the guard. `docs/devlog/published-entries.txt` is a tracked file, so
+the change that drops a published entry drops its manifest line in the same
+change, and every remaining rule then holds over a record with a hole in it:
+nothing duplicated, nothing misordered, no month misfiled, manifest and files
+in exact agreement. Removing one entry and its line took one edit and the gate
+reported success by name over the result. A record cannot be bounded by a file
+whoever removes the entry also writes.
+
+The baseline is now the published branch's own history, which the change under
+test cannot edit. The guard walks every commit that touched the record, reads
+every state the record has ever been published in, and requires each published
+entry to be present and to still carry the text it was last published with.
+The comparison is non-forgetting: an entry deleted several commits ago is still
+demanded today, which a comparison against the previous commit alone would not
+do. An entry history has never seen is new, and a new entry that sits in an
+archive rather than the live record is refused - that is how an entry ends up
+published where nobody reads first.
+
+Three constraints shape it. Bodies are compared with boundary blank lines and
+the horizontal rule between entries normalised away, because moving an entry
+changes exactly those and nothing that was written; a byte-exact comparison
+would call every part split a rewrite and could not have landed. The baseline
+is one branch and never every ref, because refs that are not ancestors of it
+hold record states that were never published, and a baseline drawn from those
+would import unpublished material into the standard the public record is judged
+by and then demand entries nobody ever published. And an entry that history
+holds in more than one form is measured against the most recent one, because
+against its oldest the gate would demand text the branch itself no longer
+carries.
+
+What is checkable divides by environment, and the guard now states which side
+it is on. In a repository, loss and rewriting are both caught mechanically,
+because history is the copy of what was published that the comparison needs. A
+source tree extracted from a release archive carries no history, so the run
+says the published record is unchecked there by name and checks the internal
+agreement that remains. The earlier claim that no check could see a rewrite was
+true of an archive and false of a repository.
+
+The first version of the comparison carried the defect it was written to
+prevent. It read two streams as two files and told them apart by record count,
+which silently reads the second file as the first when the first is empty: with
+nothing ever published, every entry present was treated as published and every
+published entry as missing. The scenario that publishes nothing found it, and
+the streams are now tagged and read as one. The same defect is recorded as
+still living in the static-analysis drift comparison, where an empty recorded
+baseline makes a new diagnostic report as one that no longer occurs.
+
+Verified: 31 self-test scenarios, including an entry dropped three commits back
+with its manifest line, a verbatim move, a move whose boundary whitespace
+changed, a move whose text changed under an unchanged heading, an unpublished
+entry written straight into a part, an entry published in more than one form, a
+commit on a ref outside the published branch, and a baseline that read nothing.
+12 planted mutations of the baseline, the comparisons, the normalisation and
+the floor, 12 caught. One survivor is not counted as coverage: excluding the
+manifest from the historical read is defence in depth rather than behaviour,
+because a tree whose manifest names an entry no file holds is already refused,
+and within a commit the record files are read before it. ASan/UBSan 58/58 and
+release 58 of 59 with a display attached, warning-clean. The one failure is
+`shell_visual_validation_compositor_2x`, which is unstable on this display
+independently of this change: it fails two runs in five on the unmodified
+parent commit, and in three different checks across runs - a device-resolution
+comparison, a well-border colour, and an over-protected device pixel - while
+reporting that the window manager did not apply the size the layout audit
+requested. Nothing outside `tools/`, `CMakeLists.txt`, and the record itself
+differs from that parent.
+
+---
+
 ## 2026-08-09 -- Guards a build from a release archive would not have run
 
 Fourteen of eighteen gates declined to run in a source tree without repository

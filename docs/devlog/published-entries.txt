@@ -2,8 +2,12 @@
 # record first, then each archive most recent first, each file top to
 # bottom. The archive gate requires this list and the files to agree
 # exactly, so an entry cannot be dropped, reworded, reordered, or
-# duplicated without the gate failing. Append a line here in the same
-# commit that publishes the entry.
+# duplicated without the gate failing within one tree. What bounds the
+# record against an entry being dropped from the files and from this
+# list in one change is the published branch's history, which that
+# change cannot edit. Append a line here in the same commit that
+# publishes the entry.
+## 2026-08-10 -- The record is bounded by history, not by a file it ships with
 ## 2026-08-09 -- Guards a build from a release archive would not have run
 ## 2026-08-09 -- Gates that measured nothing reported success
 ## 2026-08-09 -- The record is archived in parts before the month closes

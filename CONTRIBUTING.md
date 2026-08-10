@@ -245,21 +245,40 @@ reading order — the live record first, then each archive most recent first.
 Append to it in the same change that publishes the entry. It exists because the
 failure mode of a split record is silent loss: a stretch that survives neither
 the move nor a later rebase leaves every remaining file structurally perfect,
-and no arrangement check can see the hole. Comparing the manifest against what
-the files actually hold bounds the record from below as well as above.
+and no arrangement check can see the hole. Within one tree it pins the record
+against rewording, reordering, and duplication.
+
+The manifest does not bound the record from below. It is a tracked file, so the
+change that drops an entry drops its manifest line in the same commit, and
+every arrangement rule then holds over a record with a hole in it. What bounds
+the record is history, which no commit under test can edit: the guard walks the
+published branch, collects every entry ever published and the text it carried
+when it was last published, and requires each to be present and unchanged. The
+comparison is non-forgetting, so an entry deleted several commits ago still
+fails today, and an entry history has never seen must be in the live record
+rather than written straight into an archive. Bodies are compared with boundary
+blank lines and the horizontal rule between entries normalised away, because a
+move changes those and nothing that was written.
+
+The baseline is the published branch alone and never every ref. Refs that are
+not ancestors of it hold record states that were never published, and a
+baseline drawn from those would import unpublished material into the standard
+the public record is judged by.
 
 `devlog_archive_guard` enforces all of it: every archive must be linked and
 every link must resolve to a tracked archive file, archive filenames must match
 the month of every entry they contain, the live record must hold nothing older
 than the newest archived entry and nothing newer may sit in an archive, part
 numbering and date ranges must be consecutive and disjoint, no entry may appear
-in two files, the index must stay most-recent-first, and the manifest and the
-files must agree exactly. It pins headings, not bodies: rewriting the text
-under an unchanged heading passes, because no check can see that without a copy
-of what was published, which a source tree extracted from a release archive
-does not carry. `devlog_archive_guard_self_test` holds the guard to each of
-those failure modes plus an accepted layout, because a guard only ever observed
-passing cannot be told apart from one that never reaches its checks.
+in two files, the index must stay most-recent-first, the manifest and the files
+must agree exactly, and every entry the published branch has ever carried must
+still be present in them, unchanged. In a repository, loss and rewriting are
+both caught mechanically. A source tree extracted from a release archive has no
+history to compare against, so the run says by name that the published record
+is unchecked there and checks the internal agreement that remains.
+`devlog_archive_guard_self_test` holds the guard to each of those failure modes
+plus an accepted layout, because a guard only ever observed passing cannot be
+told apart from one that never reaches its checks.
 
 Commits carry no attribution trailers. `Co-Authored-By`, `Assisted-by`,
 `Generated-by`, `Created-by`, `Authored-by`, `Signed-off-by`, and
