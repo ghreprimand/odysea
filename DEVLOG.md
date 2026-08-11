@@ -24,6 +24,38 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- A declaration is a claim, not evidence
+
+The session interlock accepted a declaration that named a Wayland socket
+matching `WAYLAND_DISPLAY` without checking that anything was listening on it.
+A harness whose compositor died, or never bound, presents exactly the
+environment of one that succeeded, so the gate treated the failed case as an
+authorised session and went on to probe for a context.
+
+The reported symptom was a wrong state: an absent socket produced an inability
+to run rather than a refusal. The message that came with it was worse than the
+state, because it said a compositor was advertised when nothing was listening.
+Keeping those two readings apart is the entire purpose of the separate refusal.
+
+Underneath was a second and larger problem in the suite runner. That runner is
+reached with no platform pinned, so a Wayland socket that cannot be connected
+to does not end the run: Qt falls back to xcb and renders on the ambient X
+display. Accepting an unbound socket there would have handed a window to the
+session the check exists to protect, by way of a declaration that looked
+correct. The socket must therefore exist, and `DISPLAY` is removed once a
+declaration is accepted so no fallback can reach a session no harness created.
+
+Verified by discrimination on both binaries. A declared socket that is absent,
+and a declared name that resolves to a regular file rather than a socket, are
+both refused; the absent case stays a refusal under the required-mode override
+rather than turning red. Against a real listening socket both binaries accept
+the declaration and proceed, failing afterwards on their own terms because a
+bare socket is not a compositor -- which is the correct boundary for a check
+that answers whether a session was prepared, not whether it works. Release
+62/62 with the two compositor entries declining.
+
+---
+
 ## 2026-08-09 -- Cancellable fuzzy find across the current tree
 
 The shell now exposes current-tree fuzzy find through a toolbar button, the

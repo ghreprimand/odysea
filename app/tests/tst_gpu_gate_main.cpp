@@ -38,6 +38,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <sys/stat.h>
+
 class GpuGateTestSetup : public QObject {
     Q_OBJECT
 
@@ -59,9 +61,20 @@ namespace {
 /// compositor a harness declared it started for this run. Anything else is an
 /// ambient session, and this suite activates its window.
 ///
-/// The declaration must name the Wayland socket and WAYLAND_DISPLAY must equal
-/// it, matching the compositor launcher, so an empty marker or a harness that
-/// failed to export its socket cannot authorise a run against a session in use.
+/// The declaration must name the Wayland socket, WAYLAND_DISPLAY must equal it,
+/// and that socket must exist — the same three conditions the compositor
+/// launcher applies, for the same reason: a declaration is a claim that a
+/// compositor was started, and a harness whose compositor never bound presents
+/// exactly the environment of one that succeeded.
+///
+/// The socket check matters more here than it does in the launcher. This
+/// runner is reached with QT_QPA_PLATFORM unset, so a Wayland socket that
+/// cannot be connected to does not end the run: Qt falls back to xcb and
+/// renders on the ambient X display instead. Accepting an absent socket would
+/// therefore hand a window to the very session the check exists to protect.
+/// DISPLAY is removed once a declaration is accepted, so no fallback can reach
+/// a session the harness did not create.
+///
 /// Exits 77 so a direct run reads as a skip rather than a failure, and prints
 /// the two permitted forms so the reader's next step is the safe one.
 void refuseAmbientSession() {
@@ -70,8 +83,17 @@ void refuseAmbientSession() {
         return;
     }
     const QByteArray declaredSocket = qgetenv("ODYSEA_ISOLATED_COMPOSITOR");
-    if (!declaredSocket.isEmpty() && qgetenv("WAYLAND_DISPLAY") == declaredSocket) {
-        return;
+    const QByteArray runtimeDirectory = qgetenv("XDG_RUNTIME_DIR");
+    if (!declaredSocket.isEmpty() && qgetenv("WAYLAND_DISPLAY") == declaredSocket &&
+        !runtimeDirectory.isEmpty()) {
+        const QByteArray socketPath = declaredSocket.startsWith('/')
+                                          ? declaredSocket
+                                          : runtimeDirectory + '/' + declaredSocket;
+        struct stat socketStatus = {};
+        if (::stat(socketPath.constData(), &socketStatus) == 0 && S_ISSOCK(socketStatus.st_mode)) {
+            ::unsetenv("DISPLAY");
+            return;
+        }
     }
     std::fputs(
         "gpu-gate-suite: DECL -- declined: this suite activates its window, and neither a "
@@ -80,7 +102,9 @@ void refuseAmbientSession() {
         "surface and leave it there.\n"
         "Run it with QT_QPA_PLATFORM=offscreen, or through the isolated-compositor harness, "
         "which sets ODYSEA_ISOLATED_COMPOSITOR to the Wayland socket it created and points "
-        "WAYLAND_DISPLAY at the same socket.\n",
+        "WAYLAND_DISPLAY at the same socket. That socket must exist: a declaration naming a "
+        "socket nothing is listening on is a harness whose compositor never bound, and with "
+        "no platform pinned Qt would fall back to the ambient X display.\n",
         stderr);
     std::_Exit(77);
 }

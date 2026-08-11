@@ -98,6 +98,8 @@
 #include <cstdlib>
 #include <string>
 
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -125,11 +127,28 @@ struct Compositor {
 /// DISPLAY is a gate that may activate a window on a session in use, and the
 /// declaration cannot name an X display, so an X11 fallback could only ever
 /// reach a session the harness did not create.
+///
+/// The named socket must also exist as a socket. A declaration is a claim that
+/// a compositor was started, and a claim is not evidence: a harness whose
+/// compositor died, or never bound, presents exactly the same environment as
+/// one that succeeded. Without this check that case reached the OpenGL probe
+/// and reported an inability to run "on an advertised compositor" — a sentence
+/// that is false, since nothing was listening — which is the reading the DECL
+/// state exists to keep separate.
 Compositor resolveDeclaredCompositor(const QByteArray& declaredSocket) {
     if (qgetenv("WAYLAND_DISPLAY") != declaredSocket) {
         return {};
     }
-    if (!qEnvironmentVariableIsSet("XDG_RUNTIME_DIR")) {
+    const QByteArray runtimeDirectory = qgetenv("XDG_RUNTIME_DIR");
+    if (runtimeDirectory.isEmpty()) {
+        return {};
+    }
+    // An absolute WAYLAND_DISPLAY is a full path by the Wayland convention;
+    // otherwise it names an entry inside XDG_RUNTIME_DIR.
+    const QByteArray socketPath =
+        declaredSocket.startsWith('/') ? declaredSocket : runtimeDirectory + '/' + declaredSocket;
+    struct stat socketStatus = {};
+    if (::stat(socketPath.constData(), &socketStatus) != 0 || !S_ISSOCK(socketStatus.st_mode)) {
         return {};
     }
     return {.platform = QByteArrayLiteral("wayland"), .label = QByteArrayLiteral("Wayland")};
@@ -239,9 +258,11 @@ int main(int /*argc*/, char** argv) {
     }
     const Compositor compositor = resolveDeclaredCompositor(declaredSocket);
     if (!compositor.isValid()) {
-        declineSession("WAYLAND_DISPLAY does not equal the socket named by "
-                       "ODYSEA_ISOLATED_COMPOSITOR (or XDG_RUNTIME_DIR is unset), so the "
-                       "session in the environment is not the one that was declared");
+        declineSession("the declared session is not present: WAYLAND_DISPLAY must equal the "
+                       "socket named by ODYSEA_ISOLATED_COMPOSITOR, XDG_RUNTIME_DIR must be "
+                       "set, and that socket must exist. A declaration is a claim that a "
+                       "compositor was started, and a harness whose compositor never bound "
+                       "presents the same environment as one that succeeded");
     }
     // Nothing downstream may reach an inherited X display. The declaration
     // cannot name one, so an X11 fallback could only ever be a session the
