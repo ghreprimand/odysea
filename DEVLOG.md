@@ -24,6 +24,39 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- The watch-burst cost bound had no floor under it
+
+The gate that holds a folder-watch burst to a linear cost checked only that the
+number of keys constructed stayed below a ceiling. A ceiling alone is satisfied
+by an instrument that has stopped reporting: zero is below every ceiling. That
+is not a hypothetical failure in this repository - a counter guarded by a
+conditional that stopped applying has already read as a pass here once, and the
+same instrument is bounded on both sides everywhere else it is used.
+
+The bound now has a floor, and the floor is derived from behaviour rather than
+picked to sit under the observed number. A burst ends by reconciling the
+listing against the presented rows, and that reconciliation identifies a row by
+its key, so the work cannot cost fewer than one key per presented row. The
+fixture presents every entry it creates, holding no hidden or filtered names,
+so the floor is the entry count. The measurement sits exactly on it: 800 keys
+for 800 presented rows, unchanged across repeated runs. Sitting on the floor is
+the point - a later change that made the reconciliation cheaper would have to
+restate the claim rather than pass quietly under it.
+
+Both bounds are now shown to discriminate, each separately. Removing the
+increment that feeds the counter leaves the burst reading zero keys and fails
+the floor, where it previously passed the ceiling. Restoring a per-name linear
+scan over the listing takes the same burst to 241,000 keys and fails the
+ceiling. Both failures name the quantity, the population it was measured
+against, and the bound it crossed, so neither reports only that a comparison
+was false.
+
+No behaviour changed. This is the cost claim being made falsifiable in the
+direction it was not.
+
+Verified: release 59/59 and ASan/UBSan 58/58 with a display attached,
+warning-clean.
+
 ## 2026-08-10 -- Static-analysis drift reported new diagnostics as departed ones
 
 The static-analysis gate compares the current advisory diagnostic set against a

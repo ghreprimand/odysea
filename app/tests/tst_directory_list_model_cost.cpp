@@ -458,10 +458,34 @@ void DirectoryListModelCostTest::watchDeliveryCostsOneLookupPerDeliveredName() {
     // leaves room for the reconciliation the update ends with and still sits
     // two orders of magnitude below a search per delivered name.
     const quint64 ceiling = 4 * static_cast<quint64>(entryCount + deliveredCount);
-    qInfo("watch burst of %d names against %d entries built %llu keys, ceiling %llu",
+
+    // And a floor, because a ceiling on a counter is also satisfied by a
+    // counter that stopped counting. Reading zero here would mean the burst
+    // was applied without a single key being constructed, which no correct
+    // path can do: the update ends by reconciling the listing against the
+    // presented rows, and that reconciliation identifies a row by its key. So
+    // the cost cannot fall below one key per presented row, and every entry in
+    // this fixture is presented - the fixture holds no hidden or filtered
+    // names. This instrument has read as a pass while dead before, on a
+    // ceiling that had no floor under it.
+    const quint64 floor = entryCount;
+
+    qInfo("watch burst of %d names against %d entries built %llu keys, floor %llu, ceiling %llu",
           deliveredCount, entryCount, static_cast<unsigned long long>(spent),
-          static_cast<unsigned long long>(ceiling));
-    QVERIFY(spent < ceiling);
+          static_cast<unsigned long long>(floor), static_cast<unsigned long long>(ceiling));
+    QVERIFY2(spent >= floor,
+             qPrintable(QStringLiteral("a burst over %1 presented rows built only %2 keys; the "
+                                       "reconciliation alone cannot cost fewer than %3")
+                            .arg(entryCount)
+                            .arg(spent)
+                            .arg(floor)));
+    QVERIFY2(spent < ceiling,
+             qPrintable(QStringLiteral("a burst of %1 names over %2 entries built %3 keys, at or "
+                                       "above the %4 a per-name search would cost")
+                            .arg(deliveredCount)
+                            .arg(entryCount)
+                            .arg(spent)
+                            .arg(ceiling)));
 
     QCOMPARE(model.rowCount(), entryCount);
     QCOMPARE(ModelProbe::scannedNameIndexMismatch(model), QString{});
