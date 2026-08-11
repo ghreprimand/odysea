@@ -303,6 +303,68 @@ if [[ -n "$duplicates" ]]; then
     done <<<"$duplicates"
 fi
 
+# --- Reading order runs newest first, from the baseline entry upward --------
+# The record's own header promises reverse-chronological order and nothing
+# checked it, so the promise drifted from the file. It drifted through
+# integration rather than through authorship: a branch appends its entry at the
+# top, every rebase onto an advanced main collides there, and the resolution
+# puts the replayed entry back on top - so a branch written days before it lands
+# is published above entries dated after it. Each date is honest about its own
+# commit; landing order and date order are what disagree. The fix at authoring
+# time is to date an entry the day it lands, which is the day it is published.
+#
+# WHY THE CHECK IS BOUNDED. Published entries are never edited, reordered, or
+# removed, and the record already contains this disorder, so a gate demanding
+# order over the whole record would demand that published text move. It would
+# fail on the day it landed and be deleted the day after. The order is
+# therefore enforced from a fixed baseline entry upward: everything published
+# after the rule existed, and nothing published before it.
+#
+# WHAT IT CANNOT CATCH, exactly:
+#   * Any disorder below the baseline. That is the point, not an oversight: the
+#     existing disorder stays visible in the record rather than being rewritten
+#     out of it, and whether it is corrected at all is not this gate's call.
+#   * A wrong date. Order is checked against the dates the record carries, so
+#     an entry dated a day late reads as ordered. Nothing here compares an
+#     entry's date against its commit's date.
+#   * The order of entries sharing one date, which is unconstrained by design -
+#     several entries land on one day and their relative order carries no
+#     claim.
+#   * Its own baseline moving. The baseline is a constant in this file, so
+#     advancing it would exempt new entries; that is a visible edit to a gate,
+#     the same exposure every gate here has, and the constant carries the rule
+#     against it rather than relying on the reader to infer it.
+#
+# The baseline is the newest entry published when this check landed. It must
+# never be advanced: moving it forward retires the rule for every entry between
+# the old and new positions. It changes only if the entry it names is somehow
+# unpublishable, and no published entry is ever removed, so it does not change.
+readonly ordering_baseline='## 2026-08-11 -- The prohibition is published, not only the mechanism'
+
+if ! all_headings | grep -Fxq -- "$ordering_baseline"; then
+    # A baseline that names nothing checks nothing, so this is a failure rather
+    # than an empty pass: without it the section below would silently compare
+    # the whole record and report success on any input at all.
+    fail "the ordering baseline entry is not published, so reading order is unchecked: ${ordering_baseline}"
+else
+    # Both sides of a violating pair are named. The entry a comparison trips on
+    # is usually the older one's neighbour rather than the entry that was
+    # misplaced, so reporting one heading alone would point at the wrong text.
+    while IFS= read -r message; do
+        [[ -n "$message" ]] && fail "$message"
+    done < <(all_headings | awk -v baseline="$ordering_baseline" '
+        {
+            date = substr($0, 4, 10)
+            if (previous_date != "" && date > previous_date) {
+                printf "reading order is not newest-first: %s is published below %s; a new entry belongs at the top of the record carrying the date it lands\n", $0, previous_heading
+            }
+            previous_date = date
+            previous_heading = $0
+        }
+        $0 == baseline { exit }
+    ')
+fi
+
 # --- The manifest and the files agree exactly -------------------------------
 # This is the check that bounds the record from below. Every other check here
 # is satisfied by a record with entries missing from it.

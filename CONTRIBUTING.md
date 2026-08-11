@@ -274,6 +274,23 @@ correction is a new entry. Moving entries is a transcription rather than a
 rewrite, so prove byte identity mechanically instead of reading the result
 over.
 
+Date an entry the day it lands, not the day the branch was written. The record
+reads newest first, and the two orders disagree whenever a branch waits: every
+branch appends at the top, every rebase onto an advanced `main` collides there,
+and the resolution puts the replayed entry back on top — so a branch authored
+days before it lands is published above entries dated after it. Re-dating an
+unpublished entry during integration is ordinary; a published entry never
+moves, so this is fixed before the commit lands and never after.
+
+Reading order is enforced from a fixed baseline entry upward: from the newest
+entry down to and including the baseline named in
+`tools/check_devlog_archive.sh`, which is the newest entry that existed when
+the rule landed. Below it the record holds entries that are genuinely out of
+order, and a rule reaching them would demand that published text be rewritten,
+so it stops there. The limits are stated in the guard rather than implied: it
+cannot see disorder below the baseline, it cannot tell whether a date is
+truthful, and it constrains nothing between entries sharing one date.
+
 `docs/devlog/published-entries.txt` records every published entry heading in
 reading order — the live record first, then each archive most recent first.
 Append to it in the same change that publishes the entry. It exists because the
@@ -321,8 +338,9 @@ the month of every entry they contain, the live record must hold nothing older
 than the newest archived entry and nothing newer may sit in an archive, part
 numbering and date ranges must be consecutive and disjoint, no entry may appear
 in two files, the index must stay most-recent-first, the manifest and the files
-must agree exactly, and every entry the published branch has ever carried must
-still be present in them, unchanged. In a repository, loss and rewriting are
+must agree exactly, entries published from the baseline upward must read newest
+first, and every entry the published branch has ever carried must still be
+present in them, unchanged. In a repository, loss and rewriting are
 both caught mechanically. A source tree extracted from a release archive has no
 history to compare against, so the run says by name that the published record
 is unchecked there and checks the internal agreement that remains.

@@ -24,6 +24,53 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- The record's promised order is checked from a fixed point up
+
+This file's header has always said the record reads in reverse-chronological
+order, and nothing checked it. It is not true today: three entries dated
+2026-08-09 sit above six dated 2026-08-10. Every date is honest about its own
+commit, so what disagrees is landing order and date order, not the record and
+reality.
+
+The cause is integration rather than authorship. A branch appends its entry at
+the top of this file, so every rebase onto an advanced record collides in
+exactly that place, and the resolution puts the replayed entry back on top. A
+branch written days before it lands therefore publishes an entry dated before
+the entries already above it. The remedy at authoring time is small — an
+unpublished entry is dated the day it lands — but nothing enforced it, and the
+archive guard could not see it: it compares the manifest against the files and
+compares published text against history, and neither of those reads a date.
+
+The guard now enforces reading order from a fixed baseline entry upward. Order
+is checked from the newest entry down to and including the baseline, which is
+the newest entry that existed when the rule landed. The bound is not a
+convenience. Published entries are never edited, reordered, or removed, so a
+rule demanding order over the whole record would demand that published text
+move; it would fail on the day it landed and be deleted the day after. Bounded,
+it prevents every recurrence without touching a single published entry, and the
+disorder already in the record stays visible rather than being quietly
+rewritten.
+
+What it cannot catch is recorded with it, in the guard and in `CONTRIBUTING.md`:
+disorder below the baseline, by construction; an untruthful date, since order
+is checked against the dates the record carries and nothing compares an entry's
+date against its commit's; and the order of entries sharing one date, which is
+unconstrained by design. Its own baseline is a constant in the guard, and
+advancing it would retire the rule for everything in between — so the constant
+carries that prohibition next to it rather than leaving it to be inferred.
+
+Six scenarios hold the guard to both halves: disorder below the baseline is
+accepted in the live record and inside an archive, an entry published above a
+newer one after the baseline is refused by name with both headings, an entry
+landing directly above the baseline out of order is refused — a check stopping
+one entry short would accept exactly that, and it is the commonest shape of the
+defect — two entries sharing a date are accepted in either order, and a
+baseline naming an entry the record does not hold fails rather than checking
+nothing. Every existing scenario's fixture record now carries the baseline
+entry, so the whole suite runs with the check live: 42 scenarios, all passing.
+
+---
+
 ## 2026-08-11 -- The prohibition is published, not only the mechanism
 
 The rule that verification must not act on a session in use existed only as

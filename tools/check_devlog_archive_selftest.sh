@@ -13,6 +13,13 @@ set -euo pipefail
 readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly guard="$script_directory/check_devlog_archive.sh"
 
+# The entry the guard's reading-order rule is anchored to. Every fixture record
+# below carries it, because the shipped record does: a fixture without it would
+# exercise the guard against a record shape that cannot occur, and the
+# scenarios at the end of this file need the shipped boundary rather than a
+# fixture-local stand-in.
+readonly ordering_baseline_heading='2026-08-11 -- The prohibition is published, not only the mechanism'
+
 if [[ ! -x "$guard" && ! -f "$guard" ]]; then
     echo "devlog_archive_guard_self_test: guard script is missing" >&2
     exit 1
@@ -116,6 +123,7 @@ build_repository() {
         docs/devlog/2026-08-part1.md \
         docs/devlog/2026-07.md \
         -- \
+        "$ordering_baseline_heading" \
         "2026-08-09 -- Ninth August entry" \
         "2026-08-08 -- Eighth August entry"
 
@@ -185,7 +193,7 @@ expect_accepted_reporting() {
     # A guard that exits early - before Git metadata, before enumeration -
     # would also exit zero. Require the success line that only the end of the
     # script can print, including the counts it had to compute.
-    if [[ "$output" != *"3 archive file(s) hold 8 entries matching the manifest"* ]]; then
+    if [[ "$output" != *"3 archive file(s) hold 9 entries matching the manifest"* ]]; then
         report FAIL "$scenario: guard exited zero without reaching its final report"
         printf '  %s\n' "$output" >&2
         return
@@ -265,13 +273,13 @@ expect_rejected "two published entries reordered within a part" "$root" \
 # --- A new entry written into an archive rather than the live record ---------
 root="$(build_repository new_entry_in_archive)"
 write_archive "$root/docs/devlog/2026-08-part2.md" \
-    "2026-08-10 -- An entry written straight into the archive" \
+    "2026-08-12 -- An entry written straight into the archive" \
     "2026-08-05 -- Fifth August entry" \
     "2026-08-04 -- Fourth August entry"
 refresh_manifest "$root"
 track_everything "$root"
 expect_rejected "a new entry written into a part instead of the live record" "$root" \
-    "an archived 2026-08-10 entry is newer than every entry in DEVLOG.md"
+    "an archived 2026-08-12 entry is newer than every entry in DEVLOG.md"
 
 # --- An entry copied instead of moved ---------------------------------------
 root="$(build_repository duplicated_entry)"
@@ -375,6 +383,7 @@ write_live_record "$root" \
     docs/devlog/2026-08-part1.md \
     docs/devlog/2026-08-part2.md \
     -- \
+    "$ordering_baseline_heading" \
     "2026-08-09 -- Ninth August entry" \
     "2026-08-08 -- Eighth August entry"
 track_everything "$root"
@@ -446,6 +455,7 @@ move_eighth_into_part2() {
         docs/devlog/2026-08-part1.md \
         docs/devlog/2026-07.md \
         -- \
+        "$ordering_baseline_heading" \
         "2026-08-09 -- Ninth August entry"
     write_archive "$root/docs/devlog/2026-08-part2.md" \
         "2026-08-08 -- Eighth August entry" \
@@ -457,7 +467,7 @@ move_eighth_into_part2() {
 root="$(build_repository published_unchanged)"
 publish "$root" "Publish the record"
 expect_accepted_reporting "a published record the working tree still matches" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # The case the manifest cannot see. The entry and its manifest line go in one
 # change, and three further commits land on top, so nothing in the tree or its
@@ -484,7 +494,7 @@ root="$(build_repository moved_verbatim)"
 publish "$root" "Publish the record"
 move_eighth_into_part2 "$root"
 expect_accepted_reporting "a published entry moved into a part verbatim" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # The difference a move actually produces: the entry gains or loses the blank
 # line and rule that separated it from what followed it. That is layout, and
@@ -502,7 +512,7 @@ awk '
 mv "$root/part2.rewritten" "$root/docs/devlog/2026-08-part2.md"
 printf '\n\n' >>"$root/docs/devlog/2026-08-part2.md"
 expect_accepted_reporting "a moved entry whose boundary whitespace changed" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # And no more than that: one word under an unchanged heading.
 root="$(build_repository moved_and_reworded)"
@@ -550,7 +560,7 @@ sed -i '/^## 2026-08-04 -- Fourth August entry$/,+2s/^Body text\.$/Body text, as
     "$root/docs/devlog/2026-08-part2.md"
 publish "$root" "A correction the branch now carries"
 expect_accepted_reporting "an entry published in more than one form" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # The reason the baseline is one branch and not every ref. A ref that is not an
 # ancestor of the published branch holds record states that were never
@@ -567,7 +577,7 @@ refresh_manifest "$root"
 publish "$root" "A state that never reached the published branch"
 git -C "$root" checkout --quiet main
 expect_accepted_reporting "a commit on a ref outside the published branch" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # The floor. Every comparison against history holds vacuously over a baseline
 # that read nothing, and a resolution mistake - wrong ref, wrong paths - looks
@@ -630,7 +640,7 @@ root="$(build_repository baseline_falls_back_to_head)"
 publish "$root" "Publish the record"
 git -C "$root" branch -m main trunk
 expect_accepted_reporting "a renamed branch is still judged against its history" \
-    "$root" "8 entries published in HEAD, 8 compared against their published text"
+    "$root" "9 entries published in HEAD, 9 compared against their published text"
 
 root="$(build_repository dropped_under_a_renamed_branch)"
 publish "$root" "Publish the record"
@@ -662,6 +672,7 @@ write_live_record "$root" \
     docs/devlog/2026-08-part1.md \
     docs/devlog/2026-07.md \
     -- \
+    "$ordering_baseline_heading" \
     "2026-08-09 -- Ninth August entry"
 # Deliberately not refreshed: the manifest keeps the heading the record files
 # just lost, which is the state this scenario needs in history.
@@ -671,11 +682,12 @@ write_live_record "$root" \
     docs/devlog/2026-08-part1.md \
     docs/devlog/2026-07.md \
     -- \
+    "$ordering_baseline_heading" \
     "2026-08-09 -- Ninth August entry" \
     "2026-08-08 -- Eighth August entry"
 refresh_manifest "$root"
 expect_accepted_reporting "the manifest is not read as a published record file" \
-    "$root" "8 entries published in main, 8 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text"
 
 # --- Without repository metadata the guard runs rather than declining -------
 # A copy of the guard is installed in a source tree that has a live record and
@@ -703,6 +715,132 @@ else
     report FAIL "expected a completed run without repository metadata, got $metadata_free_status"
     printf '  %s\n' "$metadata_free_output" >&2
 fi
+
+# --- Reading order, from the baseline entry upward ---------------------------
+# The record promises reverse-chronological order. These scenarios hold the
+# guard to that promise where it applies and, just as importantly, hold it to
+# NOT applying where it does not: the record already contains entries published
+# out of order, published entries never move, and a check that failed on them
+# would be deleted rather than obeyed.
+#
+# The sandbox records below carry the real baseline heading, so the boundary
+# under test is the shipped one rather than a fixture-local stand-in. Nothing
+# here reads the constant out of the guard: a self-test that took its boundary
+# from the code under test would agree with a wrong boundary.
+
+# A record shaped like the real one: a live file whose entries are given as
+# arguments, one archived part, and a closed month. The two entries below the
+# baseline in the default set are deliberately out of order with each other,
+# because that is the state the real record is in.
+build_ordering_repository() {
+    local name="$1"
+    shift
+    local root="$sandbox_root/$name"
+
+    mkdir -p "$root/docs/devlog"
+    write_live_record "$root" \
+        docs/devlog/2026-08-part1.md \
+        docs/devlog/2026-07.md \
+        -- \
+        "$@"
+    write_archive "$root/docs/devlog/2026-08-part1.md" \
+        "2026-08-02 -- Second August entry" \
+        "2026-08-01 -- First August entry"
+    write_archive "$root/docs/devlog/2026-07.md" \
+        "2026-07-31 -- Last July entry"
+    refresh_manifest "$root"
+
+    git -C "$root" init --quiet -b main
+    git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+    track_everything "$root"
+    printf '%s\n' "$root"
+}
+
+# The live entries every ordering scenario starts from, newest first: two
+# entries above the baseline, the baseline itself, and below it a pair in the
+# wrong order that predates the rule.
+ordering_live_entries=(
+    "2026-08-13 -- A later entry"
+    "2026-08-12 -- A newer entry"
+    "$ordering_baseline_heading"
+    "2026-08-09 -- An entry published before the rule existed"
+    "2026-08-10 -- An entry published above a newer one, before the rule existed"
+)
+
+expect_accepted_ordering() {
+    local scenario="$1" root="$2"
+    local output exit_status=0
+    output="$(run_guard "$root")" || exit_status=$?
+
+    if ((exit_status != 0)); then
+        report FAIL "$scenario: guard rejected a record it must accept"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    # The final report line, so an early exit cannot be mistaken for acceptance.
+    if [[ "$output" != *"matching the manifest"* ]]; then
+        report FAIL "$scenario: guard exited zero without reaching its final report"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    report PASS "$scenario"
+}
+
+# Ordered above the baseline, disordered below it: accepted. This is the bound
+# the rule is built on, and it is a scenario rather than a comment because a
+# check that quietly widened to the whole record would fail here.
+root="$(build_ordering_repository ordering_grandfathered "${ordering_live_entries[@]}")"
+expect_accepted_ordering "disorder published before the baseline is left alone" "$root"
+
+# The same tolerance reaches into the archives, where the older half of the
+# record lives.
+root="$(build_ordering_repository ordering_archive_disorder "${ordering_live_entries[@]}")"
+write_archive "$root/docs/devlog/2026-08-part1.md" \
+    "2026-08-01 -- First August entry" \
+    "2026-08-02 -- Second August entry"
+refresh_manifest "$root"
+track_everything "$root"
+expect_accepted_ordering "disorder inside an archive below the baseline is left alone" "$root"
+
+# The recurrence itself: a branch written days before it landed, published at
+# the top with the date it was written.
+root="$(build_ordering_repository ordering_stale_top \
+    "2026-08-10 -- A branch entry carrying the date it was written" \
+    "${ordering_live_entries[@]}")"
+expect_rejected "an entry published above a newer one after the baseline" "$root" \
+    "reading order is not newest-first: ## 2026-08-13 -- A later entry is published below ## 2026-08-10 -- A branch entry carrying the date it was written"
+
+# The boundary itself is compared, not merely everything above it. A check that
+# stopped one entry short — exiting at the baseline before comparing it — would
+# accept this, and it is the commonest shape of the defect: one branch landing
+# on top of the entry that was newest when it was written.
+root="$(build_ordering_repository ordering_at_boundary \
+    "2026-08-09 -- A branch entry landing directly above the baseline" \
+    "$ordering_baseline_heading" \
+    "2026-08-09 -- An entry published before the rule existed" \
+    "2026-08-10 -- An entry published above a newer one, before the rule existed")"
+expect_rejected "an entry published directly above the baseline out of order" "$root" \
+    "reading order is not newest-first: ## $ordering_baseline_heading is published below ## 2026-08-09 -- A branch entry landing directly above the baseline"
+
+# Entries sharing a date are unconstrained relative to each other, and that is
+# a decision rather than an accident: several entries land on one day and their
+# relative order carries no claim.
+root="$(build_ordering_repository ordering_same_date \
+    "2026-08-13 -- A later entry" \
+    "2026-08-13 -- Another entry the same day" \
+    "$ordering_baseline_heading" \
+    "2026-08-09 -- An entry published before the rule existed")"
+expect_accepted_ordering "two entries sharing one date are accepted in either order" "$root"
+
+# A baseline naming an entry the record does not hold checks nothing, so it
+# fails by name instead of passing over an unchecked record. Without this the
+# section would report success on any input once its boundary went stale.
+root="$(build_ordering_repository ordering_baseline_absent \
+    "2026-08-13 -- A later entry" \
+    "2026-08-12 -- A newer entry" \
+    "2026-08-09 -- An entry published before the rule existed")"
+expect_rejected "a baseline entry that is not published fails rather than checking nothing" \
+    "$root" "the ordering baseline entry is not published, so reading order is unchecked"
 
 if ((failures == 0)); then
     echo "devlog_archive_guard_self_test: all scenarios passed"
