@@ -270,7 +270,24 @@ Item {
             // upscaled non-uniformly fails here, on any platform.
             verify(frame.width >= harness.width, "frame width " + frame.width + " is below logical width " + harness.width);
             verify(frame.height >= harness.height, "frame height " + frame.height + " is below logical height " + harness.height);
-            compare(frame.width * harness.height, frame.height * harness.width);
+            // The two axes carry one real scale, so the width and height
+            // ratios must agree — but a fractional buffer scale forces the
+            // compositor to round each axis to an integer independently, and
+            // the two ratios then differ by that rounding and no more. With a
+            // true uniform scale s, frame.width = round(s*logicalW) and
+            // frame.height = round(s*logicalH), each off the ideal by under a
+            // pixel, so the cross product
+            //   frame.width*logicalH - frame.height*logicalW = ew*logicalH - eh*logicalW
+            // is bounded in magnitude by logicalW + logicalH: one pixel of
+            // rounding on each axis. A genuinely non-uniform upscale — a
+            // different scale per axis — exceeds that envelope and still
+            // fails. The bound is the rounding a compositor can physically
+            // introduce, not a tolerance chosen to admit this run: at an
+            // integer scale the envelope still admits only an exact match,
+            // and at any scale a wrong aspect ratio is rejected.
+            const crossDelta = Math.abs(frame.width * harness.height - frame.height * harness.width);
+            const roundingEnvelope = harness.width + harness.height;
+            verify(crossDelta <= roundingEnvelope, "frame " + frame.width + "x" + frame.height + " for logical " + harness.width + "x" + harness.height + " scales the axes non-uniformly: cross delta " + crossDelta + " exceeds the " + roundingEnvelope + "-pixel one-per-axis rounding envelope");
             // When the gate declares the scale it launched at — the forced-2x
             // validation entry sets it to 2 alongside QT_SCALE_FACTOR=2 — the
             // grabbed frame must carry at least that density. This is the
