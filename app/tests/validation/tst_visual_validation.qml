@@ -318,6 +318,15 @@ Support.ShellTestCase {
 
     function test_effectsOffShellStaysUsable() {
         requireWindowActivation();
+        // Pin a known usable geometry before interacting. This audit clicks a
+        // specific row, which lands on the intended item only when the window
+        // carries the size it asked for; a compositor that seats the window at
+        // a size the client never requested — a tiling layout does — would put
+        // the click on empty space and read an empty selection as a product
+        // failure. resizeShell skips with the constraint named when the
+        // platform will not apply the size, so a surface the gate could not
+        // obtain is a named non-green here rather than a false failure.
+        resizeShell(1100, 720);
         theme().profile = ShellTheme.Off;
         const layer = child("presentationLayer");
         tryVerify(function () {

@@ -310,6 +310,34 @@ Item {
             }
         }
 
+        // Records the surface the run actually reached against the surface the
+        // gate declared, so a run that never met the per-axis rounding cannot
+        // read as an equal pass to one that did. The device-resolution bound
+        // above is only non-trivial when the two axes round to integers
+        // independently: an integer scale, or an exactly proportional
+        // fractional scale — offscreen, xcb, or a compositor that upscales
+        // 320x240 to 800x600 at 2.5 — gives cross delta zero and clears the
+        // bound over nothing. This prints the geometry, the cross delta, and
+        // the declared scale, and skips with the per-axis-rounding case named
+        // unexercised on such a surface, which reads as a visibly weaker run in
+        // the totals rather than a green pass. On a surface that did round the
+        // axes independently it asserts what the bound guarantees: the cross
+        // delta is non-zero, so the old exact-equality compare could not have
+        // held here, and it stays within one device pixel of rounding per axis.
+        function test_perAxisRoundingReachedIsRecordedAndBounded() {
+            ensureGpuPathOrSkip("no frame is grabbed on the software path");
+            const frame = settleAndGrab();
+            const crossDelta = Math.abs(frame.width * harness.height - frame.height * harness.width);
+            const roundingEnvelope = harness.width + harness.height;
+            const declared = harness.expectedFrameScale > 0 ? harness.expectedFrameScale : "none";
+            console.log("device-resolution surface: frame " + frame.width + "x" + frame.height + " for logical " + harness.width + "x" + harness.height + " => crossDelta " + crossDelta + ", envelope " + roundingEnvelope + ", declared scale " + declared + " (Screen.devicePixelRatio " + Screen.devicePixelRatio.toFixed(4) + ")");
+            if (crossDelta === 0) {
+                skip("frame " + frame.width + "x" + frame.height + " scales " + harness.width + "x" + harness.height + " exactly proportionally (crossDelta 0); the independent per-axis rounding the device-resolution bound exists for was not reached on this run, so that defect class is unexercised here");
+            }
+            verify(frame.width * harness.height !== frame.height * harness.width, "the per-axis rounding must be genuine here: the exact cross-product equality the old assertion demanded must not hold on a surface this test credits");
+            verify(crossDelta <= roundingEnvelope, "frame " + frame.width + "x" + frame.height + " for logical " + harness.width + "x" + harness.height + " rounds the axes beyond one device pixel each: cross delta " + crossDelta + " exceeds the " + roundingEnvelope + "-pixel one-per-axis rounding envelope");
+        }
+
         function test_wellBorderStaysByteTrueAtDeviceResolution() {
             ensureGpuPathOrSkip("the pipeline is disengaged by design");
             // Both states pin the same deep-field level, so the two frames
