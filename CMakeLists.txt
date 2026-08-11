@@ -110,6 +110,15 @@ add_test(
 add_test(
     NAME guard_corpus_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_guard_corpus_selftest.sh)
+# Proves the isolated-compositor harness (tools/isolated_compositor_gate.sh)
+# that legitimately sets ODYSEA_ISOLATED_COMPOSITOR: the cross-run lock, the
+# teardown trap over success, failure, SIGINT and SIGTERM, and the reaper that
+# bounds what an untrappable SIGKILL leaves behind. It stands a stub in for the
+# compositor and starts none, so it needs no display and touches no session.
+add_test(
+    NAME compositor_gate_harness_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/isolated_compositor_gate_selftest.sh)
+set_tests_properties(compositor_gate_harness_self_test PROPERTIES TIMEOUT 180)
 
 # No guard declares a skip return code. Each one either resolves its corpus and
 # runs, or states a precondition and fails; none of them decline quietly. A
