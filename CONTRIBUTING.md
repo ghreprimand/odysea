@@ -251,19 +251,35 @@ against rewording, reordering, and duplication.
 The manifest does not bound the record from below. It is a tracked file, so the
 change that drops an entry drops its manifest line in the same commit, and
 every arrangement rule then holds over a record with a hole in it. What bounds
-the record is history, which no commit under test can edit: the guard walks the
-published branch, collects every entry ever published and the text it carried
-when it was last published, and requires each to be present and unchanged. The
-comparison is non-forgetting, so an entry deleted several commits ago still
-fails today, and an entry history has never seen must be in the live record
-rather than written straight into an archive. Bodies are compared with boundary
-blank lines and the horizontal rule between entries normalised away, because a
-move changes those and nothing that was written.
+the record is history: the guard walks the published branch, collects every
+entry ever published and the text it carried when it was last published, and
+requires each to be present and unchanged. The comparison is non-forgetting, so
+an entry deleted several commits ago still fails today, and an entry history has
+never seen must be in the live record rather than written straight into an
+archive. Bodies are compared with boundary blank lines and the horizontal rule
+between entries normalised away, because a move changes those and nothing that
+was written.
+
+The walk asks for full history. Default simplification follows a single parent
+through a merge that is TREESAME to it for the record paths and discards the
+other side, so a branch that touches nothing in the record, merged with the
+record files resolved to its version, can retire an entry that no file and no
+manifest mentions any more. That is an ordinary conflict resolution, not an
+attack, and this branch already carries merge commits whose record-touching
+parents simplification drops.
 
 The baseline is the published branch alone and never every ref. Refs that are
 not ancestors of it hold record states that were never published, and a
 baseline drawn from those would import unpublished material into the standard
-the public record is judged by.
+the public record is judged by. It is `origin/main` in preference to local
+`main`, because the guard runs after the commit exists and a local branch
+contains the change being judged — a rewrite committed there would be compared
+against itself. `HEAD` is the last resort, so that a clone whose branch or
+remote has been renamed is still measured against the history it is carrying
+rather than reported as unchecked. The residue is stated rather than implied:
+a rewrite committed on an integration branch already fast-forwarded past it, in
+a clone with no `origin/main`, is judged against itself. Pushing closes it, and
+nothing in the repository narrows it further.
 
 `devlog_archive_guard` enforces all of it: every archive must be linked and
 every link must resolve to a tracked archive file, archive filenames must match

@@ -24,6 +24,74 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- What the history baseline could still be talked out of
+
+The record's lower bound is the published branch's history, and three ways
+around it were found and closed. Each was reproduced end to end before anything
+changed, and each fix is pinned by a scenario that fails when only that fix is
+reverted.
+
+A merge could retire a published entry. `git rev-list <ref> -- <paths>` applies
+default history simplification: where a merge is TREESAME to one parent for
+those paths, the walk follows that parent and discards the other side entirely.
+A branch that touches nothing in the record, merged back with the record files
+resolved to its version — an ordinary take-theirs resolution — is TREESAME to
+it, so an entry published on the other parent is never walked and never
+demanded. The entry is then in no file, in no manifest, and in nothing the
+guard reads, and the run reports a clean record. This was not hypothetical: on
+this branch simplification was already discarding four record-touching commits
+behind its eight merges, 99 walked against 103. The walk now asks for full
+history. Reproduced by publishing an entry, branching from before it, changing
+one unrelated file, and merging back: 89 published, 88 compared, refused by
+name, where the previous guard reported 88 of 88 and exited zero.
+
+The baseline ref was not itself out of reach. The commits history holds cannot
+be edited by the change being judged, but the choice of ref could be, and the
+guard's own header claimed otherwise. The gate runs after the commit exists, so
+with local `main` as the baseline a rewrite committed there was compared
+against itself: the same one-word edit failed in a working tree and passed once
+committed. The baseline is now `origin/main` in preference to `main`. The
+residue is recorded rather than implied — a rewrite committed on an integration
+branch already fast-forwarded past it, in a clone with no `origin/main`, is
+still judged against itself, and pushing is what closes it.
+
+Resolving only two ref names left the unchecked path reachable in a repository
+carrying the whole of history. Renaming the branch and the remote produced a
+clean exit and an unchecked notice while a published entry was missing, and
+that notice goes to standard output where a passing run hides it. `HEAD` is now
+the last candidate, and it resolves in any repository that has commits: the
+same tree is refused at 88 published, 87 compared.
+
+An overclaim is corrected rather than carried. The manifest is excluded from
+the blobs history is read from, and the reason recorded for that exclusion
+being unreachable was the order the blobs arrive in. That is wrong. Removing
+the exclusion alone changes no behaviour, but not because `DEVLOG.md` wins a
+race: the blob filter admits only `.md` files, so a `.txt` manifest is rejected
+before the name is ever compared. The exclusion is the principled check and the
+extension is the accident, so it stays, and the self-test pins the pair —
+exclusion removed and filter widened, which is what renaming the manifest to a
+`.md` file would amount to — because no mutation of the exclusion by itself can
+be observed while the manifest keeps a name the filter rejects.
+
+Verified: 36 self-test scenarios, up from 30. Eight mutations planted, six
+caught, each failing precisely the scenarios it should and no others; the two
+survivors are the manifest exclusion taken alone, equivalent for the reason
+above, and no scenario was invented to make them look load-bearing. The guard
+reads 88 published and 88 compared against the working tree in 0.62 s. Release
+59 of 59 and sanitizer 58 of 58 from wiped build directories, warning-clean,
+with the advisory static-analysis baseline unchanged. The two real-compositor
+entries report themselves skipped and are recorded as not measured rather than
+counted as green.
+
+One measurement correction belongs here rather than in a later entry. A smoke
+launch on the offscreen platform with no display server available loads the
+software scene-graph backend even when the OpenGL backend is requested, and it
+says so only when Qt diagnostics are forced to standard error. Two smoke
+configurations were therefore measured here, not four: the pair that differed
+only by requesting OpenGL were the same software run twice. Both completed
+silently, stayed alive for the full launch window, ended on termination, and
+left the shared-memory directory as they found it.
+
 ## 2026-08-10 -- The session interlock names the compositor it authorises
 
 The interlock added with the compositor gate's refusal was a presence check on

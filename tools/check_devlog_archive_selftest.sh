@@ -202,11 +202,11 @@ expect_accepted_reporting() {
     report PASS "$scenario"
 }
 
-# An unpublished scenario: the branch is unborn, so there is no baseline and
-# the guard has to say so rather than passing over it.
+# An unpublished scenario: the branch is unborn, so no candidate ref resolves -
+# not even HEAD - and the guard has to say so rather than passing over it.
 expect_accepted() {
     expect_accepted_reporting "$1" "$2" \
-        "published history is UNCHECKED: neither main nor origin/main resolves"
+        "published history is UNCHECKED: none of origin/main, main, or HEAD resolves"
 }
 
 expect_rejected() {
@@ -577,6 +577,105 @@ printf 'Placeholder.\n' >"$root/README.md"
 publish "$root" "Commit nothing but a placeholder" -- README.md
 expect_rejected "a baseline that read no published entry at all" "$root" \
     "no entry has ever been published in main, so history bounded nothing"
+
+# --- History simplification must not hide a published entry -----------------
+# The shape that defeats a plain `git rev-list <ref> -- <paths>`. A branch that
+# touches nothing in the record is merged back with the record files resolved
+# to its side. The merge is then TREESAME to that parent for these paths, so
+# default simplification follows it alone and discards the other parent - and
+# every entry published on it. The dropped entry is in no file and in no
+# manifest, so nothing but history can demand it, and history is exactly what
+# simplification threw away.
+root="$(build_repository merge_simplification)"
+publish "$root" "Publish the record"
+before_the_entry="$(git -C "$root" rev-parse HEAD)"
+printf '\n---\n\n## %s\n\nBody text.\n' \
+    "2026-08-10 -- Tenth August entry" >>"$root/DEVLOG.md"
+refresh_manifest "$root"
+publish "$root" "Publish a tenth entry"
+git -C "$root" checkout --quiet -b touches_nothing_in_the_record "$before_the_entry"
+printf 'An unrelated file.\n' >"$root/NOTES.md"
+publish "$root" "Change a file outside the record"
+git -C "$root" checkout --quiet main
+git -C "$root" merge --quiet --no-ff --no-commit touches_nothing_in_the_record \
+    >/dev/null 2>&1 || true
+# The ordinary take-theirs resolution. Nothing here looks like an attack, and
+# the resulting tree passes every arrangement rule the guard has.
+git -C "$root" checkout touches_nothing_in_the_record -- DEVLOG.md docs/devlog
+publish "$root" "Merge the branch, resolving the record to its side"
+expect_rejected "an entry hidden behind a merge by history simplification" "$root" \
+    "a published entry is present nowhere in the record: ## 2026-08-10 -- Tenth August entry"
+
+# --- The baseline is the published branch, not the local one ----------------
+# This gate runs after the commit exists. With local `main` as the baseline, a
+# rewrite committed there is compared against itself and approved - the whole
+# rewriting class self-approves on the integration branch. `origin/main` is the
+# published branch and the commit under test is not in it.
+root="$(build_repository baseline_prefers_the_published_branch)"
+publish "$root" "Publish the record"
+git -C "$root" update-ref refs/remotes/origin/main "$(git -C "$root" rev-parse HEAD)"
+sed -i '/^## 2026-08-04 -- Fourth August entry$/,+2s/^Body text\.$/Body text, quietly rewritten./' \
+    "$root/docs/devlog/2026-08-part2.md"
+publish "$root" "Rewrite a published entry on the local branch"
+expect_rejected "a published entry rewritten and then committed on the local branch" \
+    "$root" \
+    "a published entry has been rewritten under an unchanged heading: ## 2026-08-04 -- Fourth August entry"
+
+# --- A repository whose branch and remote were renamed ----------------------
+# A full clone carries the whole of history under any set of names. Resolving
+# only the two expected names reaches the unchecked path with that history
+# sitting right there, and the notice goes to standard output where a passing
+# run hides it. HEAD resolves in any repository that has commits.
+root="$(build_repository baseline_falls_back_to_head)"
+publish "$root" "Publish the record"
+git -C "$root" branch -m main trunk
+expect_accepted_reporting "a renamed branch is still judged against its history" \
+    "$root" "8 entries published in HEAD, 8 compared against their published text"
+
+root="$(build_repository dropped_under_a_renamed_branch)"
+publish "$root" "Publish the record"
+git -C "$root" branch -m main trunk
+sed -i '/^## 2026-08-01 -- First August entry$/,+3d' \
+    "$root/docs/devlog/2026-08-part1.md"
+refresh_manifest "$root"
+expect_rejected "an entry dropped where neither main nor origin/main resolves" "$root" \
+    "a published entry is present nowhere in the record: ## 2026-08-01 -- First August entry"
+
+# --- The manifest is a list of headings, not a record file ------------------
+# Read as a record it presents every published entry as one with no body, so
+# every entry that has a body reads as rewritten. Here a commit's record files
+# no longer carry an entry that its manifest still lists, so the manifest is
+# the first place that heading is seen and its empty body would be taken for
+# what was published.
+#
+# STATED EXACTLY: this does not discriminate the exclusion on its own, and
+# nothing can while the manifest is named `.txt`. The blob filter admits only
+# `.md`, so it rejects the manifest before the exclusion is ever consulted -
+# removing the exclusion alone changes no behaviour and this scenario keeps
+# passing. What the scenario does pin is the pair: remove the exclusion and
+# widen that filter, which is what renaming the manifest to a `.md` file would
+# amount to, and this scenario fails by name for the eighth entry.
+root="$(build_repository manifest_is_not_a_record)"
+publish "$root" "Publish the record"
+write_live_record "$root" \
+    docs/devlog/2026-08-part2.md \
+    docs/devlog/2026-08-part1.md \
+    docs/devlog/2026-07.md \
+    -- \
+    "2026-08-09 -- Ninth August entry"
+# Deliberately not refreshed: the manifest keeps the heading the record files
+# just lost, which is the state this scenario needs in history.
+publish "$root" "A commit whose manifest outlives an entry in its record files"
+write_live_record "$root" \
+    docs/devlog/2026-08-part2.md \
+    docs/devlog/2026-08-part1.md \
+    docs/devlog/2026-07.md \
+    -- \
+    "2026-08-09 -- Ninth August entry" \
+    "2026-08-08 -- Eighth August entry"
+refresh_manifest "$root"
+expect_accepted_reporting "the manifest is not read as a published record file" \
+    "$root" "8 entries published in main, 8 compared against their published text"
 
 # --- Without repository metadata the guard runs rather than declining -------
 # A copy of the guard is installed in a source tree that has a live record and

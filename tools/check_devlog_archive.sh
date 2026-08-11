@@ -27,10 +27,29 @@
 # manifest and files in exact agreement. A record cannot be bounded by a file
 # whoever removes the entry also writes.
 #
-# What bounds it is history, which no commit under test can edit. Walking the
-# published branch yields every entry ever published and the text it was
-# published with, and the comparison is non-forgetting: an entry deleted three
-# commits ago is still demanded today.
+# What bounds it is history. Walking the published branch yields every entry
+# ever published and the text it was published with, and the comparison is
+# non-forgetting: an entry deleted three commits ago is still demanded today.
+#
+# The walk is --full-history deliberately. Default history simplification
+# follows one parent through a merge that is TREESAME to it for the paths
+# given, and discards the other side entirely - published entries with it. A
+# branch that touches nothing in the record, merged with the record files
+# resolved to that branch's older version, is TREESAME to it, so an entry
+# published on the other parent is never walked and never demanded. That is not
+# hypothetical here: this branch carries merge commits whose record-touching
+# parents simplification drops.
+#
+# HOW FAR HISTORY BOUNDS THE COMMIT UNDER TEST, exactly. The commits it reads
+# cannot be edited by the change being judged. The choice of ref can be: this
+# gate runs after the commit exists, so a baseline of local `main` would
+# compare a just-committed rewrite against itself and approve it. The baseline
+# is therefore `origin/main` where it resolves - the published branch is the
+# remote one - which catches every feature branch and every local commit that
+# has not been pushed. The residue is real and is not closed here: a rewrite
+# committed on a local `main` that has already been fast-forwarded past it, in
+# a clone with no `origin/main`, is judged against itself. What remains is the
+# window between committing on the integration branch and pushing it.
 #
 # WHAT THIS GATE DOES NOT DO, stated exactly, because the division matters. In
 # a repository, loss and alteration are both mechanically caught - history is
@@ -383,7 +402,25 @@ entry_pairs() {
 
 # The record files one commit held, as blob names. The manifest is skipped: it
 # is a list of headings, so read as a record it would present every published
-# entry as one with no body at all.
+# entry as one with no body at all, and every entry that does have a body would
+# be reported as rewritten.
+#
+# That exclusion is currently unreachable, and it is worth being exact about
+# why, because the obvious explanation is the wrong one. It is not the order
+# the blobs arrive in: first-seen-wins would indeed let `DEVLOG.md` register a
+# heading before the manifest could, but that only holds while no commit is
+# missing an entry its manifest still lists, and such commits are ordinary
+# intermediate states. What actually makes the exclusion unreachable today is
+# the extension test on the line above - the manifest is a `.txt` file, so it
+# is already filtered out as a candidate blob before the name is compared.
+#
+# So the exclusion is the principled check and the extension is the accident.
+# Rename this file to `published-entries.md`, or widen that filter, and the
+# exclusion becomes the only thing standing between the comparison and a file
+# that would report every entry with a body as rewritten. It stays, and the
+# self-test pins the combination rather than the exclusion alone, because no
+# mutation of the exclusion by itself can be observed while the manifest keeps
+# a name the filter rejects.
 history_record_blobs() {
     git ls-tree -r "$1" -- "$live_record" "$archive_directory" |
         awk -F'\t' -v manifest="$manifest" '
@@ -408,7 +445,11 @@ published_pairs() {
         while IFS= read -r blob; do
             git cat-file blob "$blob" | entry_pairs | sed 's/^/published\t/'
         done < <(history_record_blobs "$commit")
-    done < <(git rev-list "$baseline_ref" -- "$live_record" "$archive_directory")
+        # --full-history: see the note at the top. Without it a merge that is
+        # TREESAME to one parent for these paths hides everything published on
+        # the other.
+    done < <(git rev-list --full-history "$baseline_ref" -- \
+        "$live_record" "$archive_directory")
 }
 
 # Every pair the working tree holds, tagged with the file holding it.
@@ -427,7 +468,16 @@ current_pairs() {
 
 baseline_ref=""
 if guard_corpus_is_git; then
-    for candidate in main origin/main; do
+    # Most authoritative first. `origin/main` is what was actually published,
+    # and it is the only candidate the commit under test cannot have written.
+    # Local `main` follows it for clones that have no remote configured. `HEAD`
+    # is last because it is the one candidate that always resolves in a
+    # repository with commits: without it, renaming the branch and the remote -
+    # `git branch -m main trunk`, `git remote rename origin upstream` - reaches
+    # the unchecked path with the whole of history sitting right there. It
+    # cannot reintroduce an empty baseline either, since the floor below judges
+    # what the walk found rather than which name found it.
+    for candidate in origin/main main HEAD; do
         if git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
             baseline_ref="$candidate"
             break
@@ -441,7 +491,7 @@ if [[ -z "$baseline_ref" ]]; then
     # in both the manifest is the whole of what can be checked, and a run that
     # said nothing here would be indistinguishable from one that checked.
     if guard_corpus_is_git; then
-        printf 'devlog_archive_guard: published history is UNCHECKED: neither main nor origin/main resolves\n'
+        printf 'devlog_archive_guard: published history is UNCHECKED: none of origin/main, main, or HEAD resolves\n'
     else
         printf 'devlog_archive_guard: published history is UNCHECKED: no Git metadata is available\n'
     fi

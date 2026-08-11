@@ -4,9 +4,10 @@
 # exactly, so an entry cannot be dropped, reworded, reordered, or
 # duplicated without the gate failing within one tree. What bounds the
 # record against an entry being dropped from the files and from this
-# list in one change is the published branch's history, which that
-# change cannot edit. Append a line here in the same commit that
-# publishes the entry.
+# list in one change is the published branch's history, read in full so
+# that no merge can retire an entry by simplification. Append a line
+# here in the same commit that publishes the entry.
+## 2026-08-10 -- What the history baseline could still be talked out of
 ## 2026-08-10 -- The session interlock names the compositor it authorises
 ## 2026-08-10 -- The compositor gate will not run against a session it does not own
 ## 2026-08-10 -- The record is bounded by history, not by a file it ships with
