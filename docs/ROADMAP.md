@@ -56,7 +56,10 @@ graphical shell grows around it.
 - [x] Hardened filesystem entry identity for Btrfs subvolume roots.
 - [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
       Btrfs snapshot discovery.
-- [ ] Built-in fuzzy find across the current tree.
+- [x] Built-in fuzzy find across the current tree. Matching and ranking are
+      Qt-free and cancellable; the overlay is reachable by keyboard shortcut
+      and through the shared action surfaces, and results open by keyboard or
+      by pointer.
 - [ ] Optional modal (vim-style) keybindings.
 
 ## M4 — Terminal integration
