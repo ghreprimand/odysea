@@ -54,6 +54,40 @@ requirements of a checked build and not merely of a developer checkout: `git`
 is needed by the gate self-tests, which build throwaway repositories to
 exercise the behaviour they pin.
 
+### Tests that render must not touch a session in use
+
+Verification that renders runs offscreen, or against a compositor started for
+that run and torn down after it. Nothing in this project may create, resize, or
+remove a display output, move input focus, install window rules, or open a
+window on a session someone is using. This is a hard rule, not a preference: a
+test window that takes focus, or that lands on an output nobody is looking at,
+leaves the surfaces a person is actually using unable to receive keyboard or
+pointer input, and a run that ends abnormally leaves that state behind. The
+compositor, the kernel, and the drivers all stay healthy throughout, which is
+what makes the result difficult to diagnose from the outside.
+
+The rule is enforced mechanically rather than trusted. The two compositor test
+entries run through `tools/isolated_compositor_gate.sh`, which starts a
+compositor in a private runtime directory, waits for its socket, and exports
+`ODYSEA_ISOLATED_COMPOSITOR` naming that socket. Both the compositor launcher
+and the shared runner behind the GPU-path suites refuse to run unless the
+platform is non-rendering, or that declaration names a socket that matches
+`WAYLAND_DISPLAY` and exists. A declaration is treated as a claim, not as
+evidence: a harness whose compositor never bound presents the same environment
+as one that succeeded, so the socket is checked rather than the name alone.
+
+The refusal is a skip and stays a skip. `ODYSEA_REQUIRE_COMPOSITOR`, which
+turns an inability to run into a failure so a skip cannot read as a pass, does
+not override it — a gate that punished its own refusal would only argue for
+removing the refusal. Running a suite binary directly is refused for the same
+reason: where a suite renders is decided by test properties and by the
+launcher, neither of which is part of the binary, and with no platform pinned
+Qt falls back to whatever session is in the environment.
+
+Consequently the real-compositor path is exercised only where an isolated
+compositor can be started, and is reported as unmeasured elsewhere rather than
+approximated against an ambient session.
+
 ## Project layout
 
 - `core/` — toolkit-agnostic C++20 filesystem model. **No Qt or GUI types here.**

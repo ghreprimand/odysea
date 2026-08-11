@@ -24,6 +24,30 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- The prohibition is published, not only the mechanism
+
+The rule that verification must not act on a session in use existed only as
+mechanism. No tracked file stated it. That is the same condition that produced
+the practice the mechanism now blocks: a procedure carried outside the
+repository, inherited by nobody, and reconstructed from scratch by whoever
+needs it next. A contributor reading the tracked policy would have found
+public-repository safety, attribution, the file-length ceiling and verification
+discipline, and nothing at all about the display session.
+
+`CONTRIBUTING.md` now carries it. Tests that render run offscreen or against a
+compositor started for the run; nothing creates, resizes or removes an output,
+moves focus, installs window rules, or opens a window on a session in use. The
+text states how it is enforced, that a declaration is checked as a claim rather
+than trusted as evidence, and why the refusal is a skip that the required-mode
+override deliberately does not convert into a failure.
+
+It also states the cost, because a rule that hides its price gets removed by
+whoever meets the price later: the real-compositor path is exercised only where
+an isolated compositor can be started, and is reported as unmeasured elsewhere
+rather than approximated against whatever session is available.
+
+---
+
 ## 2026-08-11 -- An isolated compositor is created and owned for GPU gates
 
 The real-compositor GPU gates now have a harness that creates the compositor
