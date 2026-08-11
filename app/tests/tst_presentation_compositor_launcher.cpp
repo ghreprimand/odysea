@@ -15,9 +15,9 @@
 // states a reader can tell apart at a glance:
 //
 //   DECL  The gate declined the session it was handed, because that session
-//         was not declared as one started for it. It exits 77 before reading
-//         WAYLAND_DISPLAY, before forking a probe, and before any window can
-//         exist. See the interlock note below.
+//         was not declared as one started for it, or does not match what was
+//         declared. It exits 77 before forking a probe and before any window
+//         can exist. See the interlock note below.
 //   RUN   A compositor and a usable OpenGL context were found; the suite is
 //         exec'd on the real platform and its own pass or fail is the gate's.
 //         Whether real frames actually materialized is decided by the suite's
@@ -58,11 +58,25 @@
 // itself, the kernel, and the drivers all remained healthy.
 //
 // So the gate is opt-in against a named, disposable compositor rather than
-// opt-out against whatever session happens to be in the environment. It runs
-// only when ODYSEA_ISOLATED_COMPOSITOR is set, which a harness sets when it has
-// started a compositor for this run and will tear it down afterwards. The check
-// comes first, before anything is read or forked, so declining costs nothing
-// and touches nothing.
+// opt-out against whatever session happens to be in the environment.
+// ODYSEA_ISOLATED_COMPOSITOR carries the Wayland socket the harness created, so
+// the declaration says what it authorises instead of merely that something is
+// authorised. Three things follow, and each of them closes a way the earlier
+// presence-only form could still have reached a session in use:
+//
+//   * An empty value is refused. Presence alone is what a harness exports when
+//     it failed to create the socket it meant to name, which would authorise
+//     precisely the run that has nothing prepared to run against.
+//   * WAYLAND_DISPLAY must equal the declared socket. Otherwise a harness that
+//     started a compositor and failed to export its socket would hand the gate
+//     an authorisation for one session and an environment pointing at another.
+//   * There is no X11 path. The declaration cannot name an X display, so an
+//     inherited DISPLAY could only ever be a session the harness did not create
+//     and will not tear down; DISPLAY is removed from the environment before
+//     the suite is exec'd rather than merely left unpreferred.
+//
+// The first check comes before anything is read or forked, so declining costs
+// nothing and touches nothing.
 //
 // ODYSEA_REQUIRE_COMPOSITOR deliberately does NOT override the interlock. That
 // override exists so a machine that *cannot* run the gate goes red instead of
@@ -81,6 +95,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include <sys/wait.h>
@@ -96,19 +111,28 @@ struct Compositor {
     [[nodiscard]] bool isValid() const { return !platform.isEmpty(); }
 };
 
-/// Reads the ambient session without forcing offscreen. Wayland is preferred:
-/// it is the reference session type and the path the previously undetected
-/// failure lived on. X11 is the fallback real display server. A machine that
-/// advertises neither has no compositor for the gate to run against.
-Compositor detectCompositor() {
-    if (qEnvironmentVariableIsSet("WAYLAND_DISPLAY") &&
-        qEnvironmentVariableIsSet("XDG_RUNTIME_DIR")) {
-        return {.platform = QByteArrayLiteral("wayland"), .label = QByteArrayLiteral("Wayland")};
+/// Resolves the session the gate is permitted to target: the one the
+/// declaration names, and no other.
+///
+/// The declaration carries the Wayland socket the harness created, so it both
+/// authorises the run and says what it authorises. WAYLAND_DISPLAY must equal
+/// it — a declaration that names one socket while the environment points at
+/// another describes a harness that failed to prepare the session it claims to
+/// have prepared, and the gate refuses rather than rendering into whatever the
+/// environment happens to hold.
+///
+/// There is no X11 branch here any more. A gate that may target an inherited
+/// DISPLAY is a gate that may activate a window on a session in use, and the
+/// declaration cannot name an X display, so an X11 fallback could only ever
+/// reach a session the harness did not create.
+Compositor resolveDeclaredCompositor(const QByteArray& declaredSocket) {
+    if (qgetenv("WAYLAND_DISPLAY") != declaredSocket) {
+        return {};
     }
-    if (qEnvironmentVariableIsSet("DISPLAY")) {
-        return {.platform = QByteArrayLiteral("xcb"), .label = QByteArrayLiteral("X11")};
+    if (!qEnvironmentVariableIsSet("XDG_RUNTIME_DIR")) {
+        return {};
     }
-    return {};
+    return {.platform = QByteArrayLiteral("wayland"), .label = QByteArrayLiteral("Wayland")};
 }
 
 /// Probes a usable OpenGL context under the given real platform, in a forked
@@ -182,19 +206,17 @@ bool usableOpenGlContext(const QByteArray& platform) {
 /// and this is a refusal to run, which is a policy the gate is enforcing rather
 /// than a capability it is missing. The message says which of the two happened
 /// so a log can never be read as the other.
-[[noreturn]] void declineSession() {
-    std::fputs(
-        "compositor-gate: DECL -- declined: ODYSEA_ISOLATED_COMPOSITOR is not set, so no "
-        "compositor was declared as started for this run.\n"
-        "This gate renders an activating window and can leave a compositor it does not own "
-        "with input focus on a surface nobody is looking at, so it will not run against a "
-        "session it was merely handed.\n"
-        "Set ODYSEA_ISOLATED_COMPOSITOR=1 from a harness that started a compositor for this "
-        "run and tears it down afterwards. Setting it by hand against an interactive session "
+[[noreturn]] void declineSession(const char* reason) {
+    const QByteArray message =
+        QByteArrayLiteral("compositor-gate: DECL -- declined: ") + reason +
+        "\nThis gate renders an activating window and can leave a compositor it does not own "
+        "with input focus on a surface nobody is looking at, so it runs only against a Wayland "
+        "compositor a harness started for it and will tear down afterwards.\n"
+        "ODYSEA_ISOLATED_COMPOSITOR must carry the name of that compositor's Wayland socket, "
+        "and WAYLAND_DISPLAY must equal it. Setting it by hand against an interactive session "
         "defeats the interlock and is the exact case it exists to prevent.\n"
-        "This is a refusal, not an inability: ODYSEA_REQUIRE_COMPOSITOR does not override it, "
-        "and the real-compositor path is unmeasured until such a harness exists.\n",
-        stderr);
+        "This is a refusal, not an inability: ODYSEA_REQUIRE_COMPOSITOR does not override it.\n";
+    std::fputs(message.constData(), stderr);
     _exit(77);
 }
 
@@ -204,13 +226,27 @@ int main(int /*argc*/, char** argv) {
     // First, before the environment is read for a display, before a probe is
     // forked, and before any window can exist.
     if (!qEnvironmentVariableIsSet("ODYSEA_ISOLATED_COMPOSITOR")) {
-        declineSession();
+        declineSession("ODYSEA_ISOLATED_COMPOSITOR is not set, so no compositor was declared "
+                       "as started for this run");
     }
-    const Compositor compositor = detectCompositor();
+    // Presence is not a declaration. An empty value is what a harness exports
+    // when it failed to create the socket it meant to name, so it authorises
+    // precisely the run that has nothing to run against.
+    const QByteArray declaredSocket = qgetenv("ODYSEA_ISOLATED_COMPOSITOR");
+    if (declaredSocket.isEmpty()) {
+        declineSession("ODYSEA_ISOLATED_COMPOSITOR is set but empty, so it names no compositor; "
+                       "a harness that failed to create its socket exports exactly this");
+    }
+    const Compositor compositor = resolveDeclaredCompositor(declaredSocket);
     if (!compositor.isValid()) {
-        cannotRun("no compositor advertised (neither WAYLAND_DISPLAY nor "
-                  "DISPLAY is set)");
+        declineSession("WAYLAND_DISPLAY does not equal the socket named by "
+                       "ODYSEA_ISOLATED_COMPOSITOR (or XDG_RUNTIME_DIR is unset), so the "
+                       "session in the environment is not the one that was declared");
     }
+    // Nothing downstream may reach an inherited X display. The declaration
+    // cannot name one, so an X11 fallback could only ever be a session the
+    // harness did not create and will not tear down.
+    ::unsetenv("DISPLAY");
     if (!usableOpenGlContext(compositor.platform)) {
         cannotRun("a compositor is advertised but no usable OpenGL context "
                   "could be created on it");

@@ -24,6 +24,55 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- The session interlock names the compositor it authorises
+
+The interlock added with the compositor gate's refusal was a presence check on
+a single environment variable. Presence is not a declaration. An empty value
+passed it, and so did the string `false`, which meant a harness that failed to
+create the socket it meant to name would export exactly the marker that
+authorised the run it had not prepared.
+
+Worse, the marker authorised a run without constraining what that run targeted.
+The gate went on to read the ambient environment for a display, and its second
+choice was X11. A declaration set alongside an inherited `DISPLAY` therefore
+resolved to an X11 session the harness never created and would not tear down.
+Measured rather than reasoned about: with a declaration present and a
+nonexistent X display, the gate passed the interlock and reached the OpenGL
+probe, failing only because that display does not exist. A working one leads to
+the exec.
+
+The declaration now carries the Wayland socket, so it says what it authorises
+instead of merely that something is authorised. An empty value is refused.
+`WAYLAND_DISPLAY` must equal the named socket, so an authorisation for one
+session cannot be spent on another. The X11 path is gone rather than
+deprioritised, because the declaration cannot name an X display and any such
+fallback could only reach a session the harness did not create; `DISPLAY` is
+removed from the environment before the suite is exec'd.
+
+The suite binary enforces the same rule itself. Where a suite renders was
+decided entirely by CMake test properties and by the launcher, and neither is
+part of the binary, so running it directly -- the first thing anyone does when
+investigating a compositor failure -- reached the ambient session with nothing
+in the way, and with no platform pinned Qt falls back to it unprompted. The
+scenes call `requestActivate()`. The shared runner for the GPU-path suites now
+permits only a non-rendering platform or a declared isolated compositor, and
+exits 77 with both permitted forms named so the next step a reader takes is a
+safe one. A policy enforced for the registered entries and documented for
+humans is the shape of the practice this exists to end.
+
+Verified by discrimination on each closed hole: empty declaration, the literal
+`false`, a declaration whose socket disagrees with `WAYLAND_DISPLAY`, and a
+declaration alongside an inherited `DISPLAY` all refuse, the last one refusing
+under the required-mode override too. The distinction the refusal was built to
+preserve still holds -- a matching declaration pointed at a socket with nothing
+behind it reports an inability, not a refusal, and still exits 1 under that
+override. Direct runs of the suite binary against an ambient display refuse,
+while the offscreen form every registered entry uses is unaffected: release
+59/59 with the two compositor entries declining, and the offscreen GPU gates
+still running at full duration, 76.27 s and 25.54 s.
+
+---
+
 ## 2026-08-10 -- The compositor gate will not run against a session it does not own
 
 The real-compositor validation gate rendered onto whatever display server was
