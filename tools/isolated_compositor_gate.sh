@@ -8,11 +8,12 @@
 # looking at; if the run ends abnormally it leaves that state behind, and the
 # visible surfaces stop receiving keyboard and pointer input until the session
 # is restarted. The gate therefore refuses to run unless
-# ODYSEA_ISOLATED_COMPOSITOR marks the compositor as one started for the run and
-# disposable after it (see app/tests/tst_presentation_compositor_launcher.cpp).
-# This harness is the thing that legitimately sets that mark: it starts a
-# compositor in a private runtime directory, points the gate at it, and disposes
-# of it on every exit path a trap can reach.
+# ODYSEA_ISOLATED_COMPOSITOR names the Wayland socket of the compositor started
+# for this run and disposed of afterwards (see
+# app/tests/tst_presentation_compositor_launcher.cpp). This harness is the
+# thing that legitimately makes that declaration: it starts a compositor in a
+# private runtime directory, points the gate at it, and disposes of it on every
+# exit path a trap can reach.
 #
 # CONTRACT
 #   isolated_compositor_gate.sh <gate-command> [args...]
@@ -43,7 +44,8 @@
 #                               path outside every worktree. The self-test
 #                               points it at a sandbox; changing it in a real
 #                               run defeats cross-worktree exclusion, the same
-#                               way setting ODYSEA_ISOLATED_COMPOSITOR by hand
+#                               way setting an isolated-compositor declaration
+#                               by hand
 #                               defeats the interlock.
 set -euo pipefail
 
@@ -269,7 +271,10 @@ fi
 
 # The socket lives inside the private runtime directory, which was already
 # refused if it equalled the ambient one, so the gate's WAYLAND_DISPLAY and
-# XDG_RUNTIME_DIR together cannot resolve to the inherited session.
+# XDG_RUNTIME_DIR together cannot resolve to the inherited session. The
+# declaration carries that exact socket name too: a launcher accepts it only
+# when it equals WAYLAND_DISPLAY, so a failed or stale export cannot authorise
+# a different session.
 log "RUN -- compositor ready at $private_runtime/$wayland_display; running the gate"
 
 # --- Run the gate against the isolated compositor ---------------------------
@@ -278,7 +283,7 @@ log "RUN -- compositor ready at $private_runtime/$wayland_display; running the g
 # the gate's whole process group can be stopped on teardown.
 XDG_RUNTIME_DIR="$private_runtime" \
     WAYLAND_DISPLAY="$wayland_display" \
-    ODYSEA_ISOLATED_COMPOSITOR=1 \
+    ODYSEA_ISOLATED_COMPOSITOR="$wayland_display" \
     setsid "$@" {lock_fd}>&- {liveness_fd}>&- &
 gate_pid="$!"
 gate_group_pid="$gate_pid"

@@ -6,8 +6,9 @@
 # checked by observing a specific consequence, not merely an exit status, so a
 # harness that quietly dropped the property fails here:
 #
-#   - the declaration the gate requires (ODYSEA_ISOLATED_COMPOSITOR) is set, and
-#     the gate is pointed at the private runtime directory, never the ambient;
+#   - the declaration the gate requires (ODYSEA_ISOLATED_COMPOSITOR) names the
+#     same socket as WAYLAND_DISPLAY, and the gate is pointed at the private
+#     runtime directory, never the ambient;
 #   - the gate's own exit status is passed through unchanged;
 #   - the cross-run lock makes a second run skip by name rather than proceed,
 #     and releases so a later run is not blocked forever;
@@ -99,6 +100,16 @@ s.listen(1)
 time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
 STUB
 chmod +x "$stub_compositor"
+
+# Deliberately advertises no socket. The harness must refuse before invoking its
+# gate, so a failed compositor start cannot hand a declaration to a command
+# pointed at an ambient or stale display.
+readonly no_socket_compositor="$sandbox/no_socket_compositor.sh"
+cat >"$no_socket_compositor" <<'STUB'
+#!/usr/bin/env bash
+exec sleep 100000
+STUB
+chmod +x "$no_socket_compositor"
 
 # Records the environment the harness handed the gate, then exits with a chosen
 # status so exit-code pass-through is observable.
@@ -209,8 +220,7 @@ run_harness_fg() {
     return "$status"
 }
 
-# --- Scenario 1: declaration set, gate pointed at the private runtime, and a
-# clean success tears everything down ---------------------------------------
+# --- Scenario 1: socket declaration, private runtime, and clean teardown ----
 scenario_success_and_env() {
     new_state success
     local envfile="$sandbox/env1.txt" log="$sandbox/log1.txt" status=0
@@ -224,8 +234,8 @@ scenario_success_and_env() {
     iso="$(grep '^ODYSEA_ISOLATED_COMPOSITOR=' "$envfile" | cut -d= -f2-)"
     wd="$(grep '^WAYLAND_DISPLAY=' "$envfile" | cut -d= -f2-)"
     xrd="$(grep '^XDG_RUNTIME_DIR=' "$envfile" | cut -d= -f2-)"
-    if [[ "$iso" != "1" ]]; then
-        report FAIL "the gate did not receive ODYSEA_ISOLATED_COMPOSITOR=1 (got '$iso')"
+    if [[ "$iso" != "$wd" ]]; then
+        report FAIL "the declaration did not name the gate's WAYLAND_DISPLAY socket (declaration '$iso', display '$wd')"
         return
     fi
     if [[ "$wd" != "wayland-1" ]]; then
@@ -244,10 +254,45 @@ scenario_success_and_env() {
         report FAIL "the lock was not released after a clean run"
         return
     fi
-    report PASS "clean run sets the declaration, points the gate at the private runtime, and tears down"
+    report PASS "clean run declares the private socket, points the gate at its runtime, and tears down"
 }
 
-# --- Scenario 2: an assertion failure is passed through, and still tears down
+# --- Scenario 2: no socket means no declaration reaches the gate ------------
+scenario_missing_socket_refuses_gate() {
+    new_state missing_socket
+    local marker="$sandbox/gate_missing_socket.marker" log="$sandbox/log_missing_socket.txt" status=0
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$no_socket_compositor" \
+        ODYSEA_GATE_READY_TIMEOUT=1 \
+        bash "$harness" "$gate_block" "$marker" 2>"$log" || status=$?
+
+    local ok=1
+    if ((status != 1)); then
+        report FAIL "a compositor that advertises no socket should make the harness refuse (expected 1, got $status)"
+        ok=0
+    fi
+    if [[ -e "$marker" ]]; then
+        report FAIL "the gate ran even though the compositor never created a socket"
+        ok=0
+    fi
+    if ! grep -q "timed out.*waiting for the compositor socket" "$log"; then
+        report FAIL "the missing-socket refusal did not name the missing socket"
+        ok=0
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "a missing-socket run left a private directory behind"
+        ok=0
+    fi
+    if ! lock_is_free; then
+        report FAIL "a missing-socket run left the cross-run lock held"
+        ok=0
+    fi
+    if ((ok)); then
+        report PASS "a compositor that creates no socket is refused before the gate can run"
+    fi
+}
+
+# --- Scenario 3: an assertion failure is passed through, and still tears down
 scenario_failure_passthrough() {
     new_state failure
     local envfile="$sandbox/env2.txt" status=0
@@ -263,7 +308,7 @@ scenario_failure_passthrough() {
     report PASS "a failing gate's status is passed through and the run is still torn down"
 }
 
-# --- Scenario 3: a second run skips by name; the lock releases afterward -----
+# --- Scenario 4: a second run skips by name; the lock releases afterward -----
 scenario_lock_excludes_second_run() {
     new_state lock
     local marker="$sandbox/gate3.marker" logA="$sandbox/log3a.txt"
@@ -322,7 +367,7 @@ scenario_lock_excludes_second_run() {
     fi
 }
 
-# --- Scenarios 4 and 5: a signal mid-run tears the compositor down -----------
+# --- Scenarios 5 and 6: a signal mid-run tears the compositor down -----------
 scenario_signal_teardown() {
     local signal="$1" label="$2"
     new_state "signal_$signal"
@@ -375,7 +420,7 @@ scenario_signal_teardown() {
     fi
 }
 
-# --- Scenario 6: SIGKILL releases the lock; the reaper disposes of the residue
+# --- Scenario 7: SIGKILL releases the lock; the reaper disposes of the residue
 scenario_sigkill_and_reaper() {
     new_state sigkill
     local marker="$sandbox/gate6.marker" logA="$sandbox/log6a.txt"
@@ -454,7 +499,7 @@ scenario_sigkill_and_reaper() {
     fi
 }
 
-# --- Scenario 7: a bare invocation with no gate command is refused -----------
+# --- Scenario 8: a bare invocation with no gate command is refused -----------
 scenario_requires_a_gate_command() {
     new_state usage
     local status=0
@@ -467,6 +512,7 @@ scenario_requires_a_gate_command() {
 }
 
 scenario_success_and_env
+scenario_missing_socket_refuses_gate
 scenario_failure_passthrough
 scenario_lock_excludes_second_run
 scenario_signal_teardown TERM "SIGTERM (the CTest timeout signal)"

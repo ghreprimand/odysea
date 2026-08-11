@@ -24,6 +24,29 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- An isolated compositor is created and owned for GPU gates
+
+The real-compositor GPU gates now have a harness that creates the compositor
+they may target. It makes a private runtime directory, starts the compositor
+there, waits for the socket it created, and gives the gate that socket through
+`WAYLAND_DISPLAY` and `ODYSEA_ISOLATED_COMPOSITOR`. The latter now carries the
+socket name rather than a constant, so the launcher's socket-binding interlock
+can reject a stale or incomplete environment before a test window is created.
+A compositor that never advertises its socket is refused before the gate runs.
+
+The harness holds a fixed `flock` across worktrees, not only within one CTest
+invocation. Its teardown handles a passed or failed gate, SIGINT, and SIGTERM;
+it closes lock descriptors for child processes so a killed harness cannot leave
+an orphan holding the lock. An abandoned run is reaped by the next invocation
+only after its liveness lock is free, and recorded process start times prevent a
+reused pid from being signalled.
+
+The headless compositor command remains a capability-dependent integration
+path. The self-test uses a real local Unix socket without opening a window and
+checks the socket declaration, no-socket refusal, result pass-through,
+cross-worktree exclusion, signal cleanup, SIGKILL residue reaping, and argument
+validation. All eight scenarios passed.
+
 ## 2026-08-11 -- A declaration is a claim, not evidence
 
 The session interlock accepted a declaration that named a Wayland socket
