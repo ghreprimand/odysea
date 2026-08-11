@@ -24,6 +24,49 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- Static-analysis drift reported new diagnostics as departed ones
+
+The static-analysis gate compares the current advisory diagnostic set against a
+recorded baseline and reports which way each entry moved. The comparison loaded
+the recorded set with awk's record-number idiom, which identifies the first of
+two files by whether the record number has restarted. That test is true for the
+second file's records whenever the first file is empty, so with an empty
+baseline the current set was loaded as the recorded one. A genuinely new
+diagnostic then matched itself, was deleted from the recorded map, and was
+finally reported as a diagnostic that no longer occurs.
+
+The gate still failed, so nothing passed that should not have. What it printed
+was the opposite of what happened, on a gate whose only output is telling a
+reader which direction the set moved. An empty baseline is not a hypothetical
+state either: a ratchet that only turns downward has zero as its target, so the
+wrong reading gets more likely the closer the tree gets to the goal.
+
+The two sets are now tagged and read as a single stream, so which set a record
+belongs to is carried by the record instead of inferred from how many have been
+seen. This is the same defect and the same repair as the one made in the devlog
+archive guard, where it was written and then found by that guard's own
+zero-baseline scenario.
+
+No floor was added on the recorded set being empty, and that is a deliberate
+refusal rather than an omission. Refusing an empty baseline would forbid the
+ratchet from reaching the state it exists to reach. The vacuity that can be
+refused already is: with nothing analysed there is nothing to compare, and the
+existing translation-unit floor rejects that by name. What was missing was any
+way to tell an exhausted baseline from a held one in the log, since both print
+as a pass, so the success line now states the number of recorded entries as
+well as the diagnostic total.
+
+Verified: 10 self-test scenarios, three of them new - a new diagnostic against
+an empty baseline is reported as new, is separately required not to be reported
+as departed, and an exhausted baseline over a clean tree passes while stating
+its size. The second of those is asserted separately because the gate prints
+one line per drifted entry, so a comparison emitting both readings would
+satisfy the positive assertion alone. Restoring the previous comparison exactly
+fails those two scenarios and no others. Four mutations of the comparison, the
+stream tags, the reported size and the translation-unit floor, four caught.
+Against the repository itself the recorded set is unchanged at 98 entries and
+291 diagnostics across 52 translation units.
+
 ## 2026-08-10 -- What the history baseline could still be talked out of
 
 The record's lower bound is the published branch's history, and three ways

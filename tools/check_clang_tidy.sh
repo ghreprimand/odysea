@@ -181,19 +181,28 @@ grep -v '^#' "$baseline_file" | grep -v '^[[:space:]]*$' |
 
 # Compares the recorded and current sets keyed on path and check, so a count
 # that moves in either direction is reported with both values.
+#
+# The two sets are tagged and read as one stream rather than passed as two
+# files told apart by record number. The record-number idiom reads the second
+# file as the first whenever the first is empty, and an empty recorded set is
+# not a hypothetical here: it is the state this ratchet exists to reach. In
+# that state the current set was loaded as the recorded one, so a genuinely new
+# diagnostic was reported as one that no longer occurs. The gate still failed,
+# but its message pointed at the opposite conclusion, on a gate whose only job
+# is telling a reader which way the set moved.
 readonly drift_file="$workspace/drift.txt"
 awk -F'\t' '
-    FNR == NR {
-        recorded[$2 "\t" $3] = $1
+    $1 == "recorded" {
+        recorded[$3 "\t" $4] = $2
         next
     }
-    {
-        key = $2 "\t" $3
+    $1 == "current" {
+        key = $3 "\t" $4
         if (!(key in recorded)) {
-            printf "new\t%s\t%s\t0\t%s\n", $2, $3, $1
+            printf "new\t%s\t%s\t0\t%s\n", $3, $4, $2
         } else {
-            if (recorded[key] + 0 != $1 + 0) {
-                printf "changed\t%s\t%s\t%s\t%s\n", $2, $3, recorded[key], $1
+            if (recorded[key] + 0 != $2 + 0) {
+                printf "changed\t%s\t%s\t%s\t%s\n", $3, $4, recorded[key], $2
             }
             delete recorded[key]
         }
@@ -204,7 +213,10 @@ awk -F'\t' '
             printf "cleared\t%s\t%s\t%s\t0\n", parts[1], parts[2], recorded[key]
         }
     }
-' "$recorded_file" "$current_file" | sort >"$drift_file"
+' < <(
+    sed 's/^/recorded\t/' "$recorded_file"
+    sed 's/^/current\t/' "$current_file"
+) | sort >"$drift_file"
 
 if [[ -s "$drift_file" ]]; then
     printf 'static_analysis: the advisory diagnostic set moved away from the baseline\n' >&2
@@ -234,5 +246,14 @@ fi
 
 readonly recorded_total="$(awk -F'\t' '{ total += $1 } END { printf "%d", total }' \
     "$current_file")"
-printf 'static_analysis: %d translation units passed, %d advisory diagnostics held at the baseline\n' \
-    "$checked" "$recorded_total"
+
+# The success line states the size of both sets, not only the diagnostic total.
+# A held baseline and an exhausted one both pass, and only the recorded entry
+# count tells them apart: zero recorded entries is the end state this
+# ratchet is aimed at, but it is also what an emptied baseline over a tree with
+# nothing to say looks like. It is not made a failure - refusing it would
+# forbid the ratchet from ever reaching its own target - so it is made visible
+# instead.
+readonly recorded_entries="$(grep -c . <"$recorded_file" || true)"
+printf 'static_analysis: %d translation units passed, %d advisory diagnostics across %d recorded entries held at the baseline\n' \
+    "$checked" "$recorded_total" "$recorded_entries"

@@ -153,13 +153,31 @@ expect_verdict() {
                 return
             fi
             ;;
-        reject)
+        reject | reject_without)
             if ((exit_status == 0)); then
                 report fail "$description (accepted: ${output})"
                 return
             fi
             ;;
+        *)
+            report fail "$description (unknown expectation ${expectation})"
+            return
+            ;;
     esac
+
+    # `reject_without` requires the rejection NOT to carry the fragment. A
+    # wrong explanation cannot be caught by requiring the right one alone: the
+    # gate prints a line per drifted entry, so a comparison that produced both
+    # readings would satisfy a positive assertion while still telling a reader
+    # the opposite of what happened.
+    if [[ "$expectation" == "reject_without" ]]; then
+        if [[ "$output" == *"$fragment"* ]]; then
+            report fail "$description (message stated ${fragment}: ${output})"
+            return
+        fi
+        report pass "$description"
+        return
+    fi
 
     if [[ "$output" != *"$fragment"* ]]; then
         report fail "$description (message did not state ${fragment}: ${output})"
@@ -183,13 +201,38 @@ expect_verdict "a fatal diagnostic is rejected" \
 
 # The baseline holds one of the two units on purpose. A recorded set that is
 # empty takes a different path through the gate's comparison, and that path is
-# not the subject of this scenario.
+# the subject of the three scenarios below rather than of this one.
 expect_verdict "an unrecorded advisory diagnostic is rejected as new" \
     reject "extra.cpp: $advisory_check is new" \
     "$advisory_baseline" "advisory=advisory" "extra=advisory"
 
+# The same diagnostic against an EMPTY recorded set: the case that read
+# backwards. With nothing recorded, the comparison loaded the current set as
+# the recorded one and announced a brand-new diagnostic as one that had stopped
+# occurring. The gate failed either way, so the wording is the only thing that
+# distinguishes the fixed comparison from the broken one - and the wording is
+# what a reader acts on.
+expect_verdict "a new diagnostic against an empty baseline is called new" \
+    reject "advisory.cpp: $advisory_check is new" \
+    "$empty_baseline" "advisory=advisory"
+
+# Asserted separately, because the gate prints one line per drifted entry: a
+# comparison emitting both readings would satisfy the scenario above while
+# still telling a reader the opposite of what happened.
+expect_verdict "a new diagnostic against an empty baseline is not called cleared" \
+    reject_without "no longer occurs" \
+    "$empty_baseline" "advisory=advisory"
+
+# The end state the ratchet aims at: nothing recorded because nothing occurs.
+# It passes, and the size of the recorded set is stated so that it can be told
+# from a baseline holding a real set. Both otherwise pass identically, and an
+# emptied baseline is exactly what the wrong reading above was born of.
+expect_verdict "an exhausted baseline over a clean tree passes and states its size" \
+    accept "across 0 recorded entries" \
+    "$empty_baseline" "clean=clean"
+
 expect_verdict "a recorded advisory diagnostic is accepted" \
-    accept "advisory diagnostics held at the baseline" \
+    accept "1 advisory diagnostics across 1 recorded entries held at the baseline" \
     "$advisory_baseline" "advisory=advisory"
 
 # The ratchet turns one way only: an entry that stops occurring has to be
