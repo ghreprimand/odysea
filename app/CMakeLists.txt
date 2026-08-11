@@ -709,10 +709,11 @@ set_tests_properties(
 # Application smoke gate. The launch must come up and stay up without a fatal
 # fault. It replaces the "zero bytes on both streams" criterion — which a core
 # dump also satisfied — with one a core dump cannot: the gate script forces the
-# offscreen software path with QT_FORCE_STDERR_LOGGING=1, requires the timeout
-# status (the process was still alive when the timeout closed it) and a stderr
-# free of platform-plugin, RHI, scene-graph, and sanitizer faults, and names an
-# early exit or an abort rather than reading either as quiet. Offscreen
+# offscreen software path with QT_FORCE_STDERR_LOGGING=1 and records when its
+# watchdog terminates a process that survived the observation window. This
+# distinguishes that harness-owned signal from an early exit — including an
+# early status 124 — or a crash, and a stderr carrying a platform-plugin, RHI,
+# scene-graph, or sanitizer fault still fails an otherwise live launch. Offscreen
 # software renders at device pixel ratio 1 and runs with or without a display,
 # so the gate is deterministic everywhere; a real-GPU launch is the compositor
 # gate's stronger and separate job, not a second offscreen smoke run twice.
@@ -720,4 +721,5 @@ add_test(NAME application_smoke
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_smoke.sh $<TARGET_FILE:odysea> 5)
 
 set_tests_properties(application_smoke PROPERTIES
-    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt"
+    TIMEOUT 12)

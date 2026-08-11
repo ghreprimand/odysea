@@ -735,11 +735,13 @@ on both streams" was accepted as a clean launch for the life of the project,
 but under redirection Qt routes its diagnostics to the journal, so a healthy
 launch, a silently non-functional one, and a core dump are byte-identical. The
 `application_smoke` gate forces `QT_FORCE_STDERR_LOGGING=1` so a fault names
-itself, requires the process to be alive when the timeout closes it — exit
-status exactly the timeout signal — with no platform-plugin, RHI, scene-graph,
-or sanitizer fault on stderr, and reports an early exit or an abort by name
-rather than reading either as quiet. It runs on the offscreen software scene
-graph, selected with `QT_QUICK_BACKEND=software` — the real software key, where
+itself and records the watchdog's harness-owned termination of a process that
+survived the observation window. An early exit — including status 124 — or a
+signal death fails by name, as does a live process reporting a platform-plugin,
+RHI, scene-graph, or sanitizer fault. It removes ambient display variables,
+redirects XDG storage and the opened directory into a temporary workspace, and
+runs on the offscreen software scene graph, selected with
+`QT_QUICK_BACKEND=software` — the real software key, where
 `QSG_RHI_BACKEND=software` is not a valid key and silently falls back to the
 default — which renders at device pixel ratio 1 and runs with or without a
 display. A launch on a real GPU path is the compositor gate's stronger and

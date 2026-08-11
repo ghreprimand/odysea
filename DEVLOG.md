@@ -24,6 +24,34 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-12 -- One smoke gate replaces two independent implementations
+
+Two independently complete implementations of the same application smoke gate
+reached integration. Keeping both would run one criterion twice, inflate the
+verification roster, and leave two scripts whose behaviour could drift. They
+are reconciled into one `application_smoke` entry and one self-test under the
+established `tools/check_smoke.sh` name, so the coverage battery still counts
+one registered smoke rather than accepting duplicated evidence.
+
+The consolidated gate keeps the stronger lifecycle and isolation properties.
+It launches the application in its own process group, removes ambient display
+variables, redirects XDG storage and the opened directory into a temporary
+workspace, pins the offscreen software backend, and forces Qt diagnostics onto
+standard error. A watchdog marker distinguishes the harness terminating an
+application that survived the observation window from an early status 124;
+signal deaths name the signal, and fatal Qt, scene-graph, or sanitizer output
+fails an otherwise live launch.
+
+The self-test now discriminates eight outcomes: a correctly isolated process
+that stays alive, one that ignores SIGTERM and requires harness-owned SIGKILL,
+immediate SIGABRT and SIGSEGV deaths, early statuses 0 and 124, a live process
+reporting a platform failure, and a missing executable. The redundant script,
+self-test, and CTest registrations are removed rather than retained as aliases.
+
+The reconciled battery accounted for all 66 registered entries: 64 ran and the
+two real-compositor entries declared their policy refusal before rendering.
+Both offscreen OpenGL entries ran against an X context with the Wayland display
+removed; no real-compositor path was invoked.
 ## 2026-08-12 -- A filtered gate now has to list what its TestCase defines
 
 One GPU-path entry does not run its whole suite. `shell_visual_validation_rhi`
@@ -239,7 +267,6 @@ defect — two entries sharing a date are accepted in either order, and a
 baseline naming an entry the record does not hold fails rather than checking
 nothing. Every existing scenario's fixture record now carries the baseline
 entry, so the whole suite runs with the check live: 42 scenarios, all passing.
-
 ---
 
 ## 2026-08-11 -- The prohibition is published, not only the mechanism

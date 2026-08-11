@@ -14,6 +14,7 @@
 cmake --preset release
 cmake --build build/release
 ctest --preset release
+./tools/check_smoke.sh ./build/release/app/odysea
 ./build/release/app/odysea ~        # run on a directory
 
 # Full battery with coverage reconciliation (preferred before submitting):
@@ -245,12 +246,15 @@ These are not optional; they are how the project stays safe in C++:
 - `application_smoke` is the honest smoke: it forces `QT_FORCE_STDERR_LOGGING=1`
   and the offscreen software backend (`QT_QUICK_BACKEND=software`, the real
   software key — `QSG_RHI_BACKEND=software` is not a valid key and falls back to
-  the default), requires the process to be alive at the timeout with no
-  platform, RHI, scene-graph, or sanitizer fault on stderr, and names an early
-  exit or an abort. Zero bytes is not evidence of a healthy launch on its own —
-  it is also what a journal-routed core dump leaves. `application_smoke_self_test`
-  holds the gate to that with a core dump, an early exit, and a live-but-faulting
-  stub.
+  the default), removes ambient display variables, redirects XDG storage and
+  the opened directory into a temporary workspace, and records the watchdog's
+  harness-owned termination of a process that survived the observation window.
+  An early exit — including status 124 — or signal death fails by name, as does
+  an otherwise live process with a platform, RHI, scene-graph, or sanitizer
+  fault on stderr. Zero bytes is not evidence of a healthy launch on its own —
+  it is also what a journal-routed core dump leaves. The eight-scenario
+  `application_smoke_self_test` discriminates those outcomes and checks the
+  pinned environment.
 - Warnings are errors (`-Werror`); keep the build clean.
 - No tracked source or text file may exceed 2,000 physical lines. Split files
   along clear ownership or responsibility boundaries before reaching the

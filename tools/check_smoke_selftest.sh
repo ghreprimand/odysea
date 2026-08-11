@@ -1,91 +1,114 @@
 #!/usr/bin/env bash
+
+# Discriminates the application smoke gate with planted executable mutations.
+# The passing program verifies the pinned environment and stays alive. The
+# failing programs abort or exit before the observation window, including an
+# early status 124 that a timeout-status-only gate would accept.
+
 set -euo pipefail
 
-# Proves the smoke gate rejects every outcome the old zero-bytes criterion
-# accepted, and accepts only a launch that is genuinely alive and clean.
-#
-# Each scenario asserts the SPECIFIC result, not merely pass or fail: a gate
-# that fails a core dump for the wrong reason is as blind as one that passes
-# it. The planted binaries are tiny stubs standing in for the application, so
-# the gate's decision logic is exercised without a Qt process.
+readonly tools_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly gate="$tools_directory/check_smoke.sh"
 
-readonly smoke_gate="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check_smoke.sh"
+if [[ ! -x "$gate" ]]; then
+    printf 'application_smoke_self_test: gate is missing or not executable\n' >&2
+    exit 1
+fi
 
-workspace="$(mktemp -d)"
+readonly workspace="$(mktemp -d)"
 trap 'rm -rf -- "$workspace"' EXIT
 
 failures=0
+checked=0
 
-report() {
+report_failure() {
     printf 'application_smoke_self_test: %s\n' "$1" >&2
     failures=$((failures + 1))
 }
 
-# Writes an executable stub with the given body and returns its path.
 make_stub() {
     local name="$1"
     local body="$2"
     local path="$workspace/$name"
-    printf '#!/bin/sh\n%s\n' "$body" >"$path"
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n%s\n' "$body" >"$path"
     chmod +x "$path"
     printf '%s\n' "$path"
 }
 
-# Runs the gate against a stub and asserts its exit code and reason. The alive
-# stubs are held for one second so the timeout, not the stub, decides the run.
-expect_smoke() {
+expect_result() {
     local scenario="$1"
     local stub="$2"
-    local expected_code="$3"
+    local expected_status="$3"
     local expected_text="$4"
     local output
-    local code
-    output="$(bash "$smoke_gate" "$stub" 1 2>&1)" && code=0 || code=$?
+    local status
 
-    if [[ "$code" != "$expected_code" ]]; then
-        report "$scenario: expected exit $expected_code, got $code; output: $output"
+    output="$(DISPLAY=:91 WAYLAND_DISPLAY=ambient-socket \
+        XDG_CONFIG_HOME=/ambient/config XDG_CACHE_HOME=/ambient/cache \
+        XDG_DATA_HOME=/ambient/data \
+        bash "$gate" "$stub" 1 2>&1)" && status=0 || status=$?
+    checked=$((checked + 1))
+
+    if [[ "$status" != "$expected_status" ]]; then
+        report_failure "$scenario: expected status $expected_status, got $status; output: $output"
         return
     fi
-    if [[ -n "$expected_text" && "$output" != *"$expected_text"* ]]; then
-        report "$scenario: expected the result to mention '$expected_text'; output: $output"
+    if [[ "$output" != *"$expected_text"* ]]; then
+        report_failure "$scenario: expected '$expected_text'; output: $output"
     fi
 }
 
-# Scenario 1: a launch that stays alive and says nothing is the one pass.
-stub="$(make_stub alive_clean 'exec sleep 999')"
-expect_smoke "alive and clean" "$stub" 0 "alive at timeout"
+alive_stub="$(make_stub alive '
+    [[ "${QT_QPA_PLATFORM:-}" == "offscreen" ]]
+    [[ "${QT_FORCE_STDERR_LOGGING:-}" == "1" ]]
+    [[ "${QT_QUICK_BACKEND:-}" == "software" ]]
+    [[ -z "${DISPLAY:-}" ]]
+    [[ -z "${WAYLAND_DISPLAY:-}" ]]
+    [[ "${XDG_CONFIG_HOME:-}" != "/ambient/config" ]]
+    [[ "${XDG_CACHE_HOME:-}" != "/ambient/cache" ]]
+    [[ "${XDG_DATA_HOME:-}" != "/ambient/data" ]]
+    [[ -d "$1" ]]
+    exec sleep 30
+')"
+expect_result "alive with pinned environment" "$alive_stub" 0 \
+    "harness closed it with SIGTERM"
 
-# Scenario 2: alive but announcing a platform fault fails, even though the
-# process is still up when the timeout fires. This is the silently
-# non-functional case the exit code alone cannot see.
-stub="$(make_stub alive_dirty 'printf "qt.qpa.xcb: could not connect to display\n" >&2; exec sleep 999')"
-expect_smoke "alive but faulting" "$stub" 1 "printed a fault line"
+abort_stub="$(make_stub aborts 'kill -ABRT $$')"
+expect_result "abort mutation" "$abort_stub" 1 "died from SIGABRT (status 134)"
 
-# Scenario 3: a core dump is the case the old criterion accepted. It must fail
-# by name.
-stub="$(make_stub aborts 'printf "Failed to create RHI\n" >&2; kill -ABRT $$')"
-expect_smoke "aborts before timeout" "$stub" 1 "aborted (SIGABRT)"
+segfault_stub="$(make_stub segfaults 'kill -SEGV $$')"
+expect_result "segmentation-fault mutation" "$segfault_stub" 1 \
+    "died from SIGSEGV (status 139)"
 
-# Scenario 4: a segmentation fault fails by name too.
-stub="$(make_stub segfaults 'kill -SEGV $$')"
-expect_smoke "segfaults before timeout" "$stub" 1 "segmentation fault"
+clean_exit_stub="$(make_stub clean_exit 'exit 0')"
+expect_result "early clean exit" "$clean_exit_stub" 1 \
+    "exited with status 0 before 1s"
 
-# Scenario 5: an application that exits cleanly before the timeout did not stay
-# alive, so it is not a healthy launch.
-stub="$(make_stub exits_zero 'exit 0')"
-expect_smoke "exits cleanly and early" "$stub" 1 "did not stay alive"
+status_124_stub="$(make_stub status_124 'exit 124')"
+expect_result "early status 124" "$status_124_stub" 1 \
+    "exited with status 124 before 1s"
 
-# Scenario 6: any other early exit fails, naming the status.
-stub="$(make_stub exits_three 'exit 3')"
-expect_smoke "exits non-zero and early" "$stub" 1 "status 3"
+fatal_stub="$(make_stub fatal_while_alive '
+    printf "qt.qpa.xcb: could not connect to display\n" >&2
+    exec sleep 30
+')"
+expect_result "alive with fatal diagnostics" "$fatal_stub" 1 \
+    "remained alive but reported a fatal diagnostic"
 
-# Scenario 7: a path that is not an executable is rejected rather than treated
-# as a silent pass.
-expect_smoke "missing binary" "$workspace/does_not_exist" 1 "not an executable file"
+ignore_term_stub="$(make_stub ignores_term '
+    trap "" TERM
+    exec sleep 30
+')"
+expect_result "alive and ignoring SIGTERM" "$ignore_term_stub" 0 \
+    "harness closed it with SIGKILL"
+
+expect_result "missing executable" "$workspace/missing" 1 \
+    "not an executable file"
 
 if ((failures != 0)); then
-    printf 'application_smoke_self_test: %d scenario(s) failed\n' "$failures" >&2
+    printf 'application_smoke_self_test: %d of %d scenarios failed\n' \
+        "$failures" "$checked" >&2
     exit 1
 fi
 
-echo "application_smoke_self_test: all scenarios passed"
+printf 'application_smoke_self_test: %d scenarios passed\n' "$checked"
