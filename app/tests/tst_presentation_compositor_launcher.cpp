@@ -10,10 +10,14 @@
 // merely on "a real GL context". Every shipped verification axis either
 // avoided the real compositor or treated its absence as a pass.
 //
-// This launcher runs the full presentation suite on the ambient real
-// compositor (Wayland preferred, then X11), with the OpenGL RHI scene graph
-// forced. It reports three states a reader can tell apart at a glance:
+// This launcher runs the full presentation suite on a real compositor (Wayland
+// preferred, then X11), with the OpenGL RHI scene graph forced. It reports four
+// states a reader can tell apart at a glance:
 //
+//   DECL  The gate declined the session it was handed, because that session
+//         was not declared as one started for it. It exits 77 before reading
+//         WAYLAND_DISPLAY, before forking a probe, and before any window can
+//         exist. See the interlock note below.
 //   RUN   A compositor and a usable OpenGL context were found; the suite is
 //         exec'd on the real platform and its own pass or fail is the gate's.
 //         Whether real frames actually materialized is decided by the suite's
@@ -43,6 +47,33 @@
 // and they already fail loudly when it does not. The launcher checks what it
 // can decide reliably — a compositor is advertised and OpenGL is usable — and
 // leaves frame-reality to the sentinels.
+//
+// THE SESSION INTERLOCK. This gate renders a real window on a real compositor
+// and asks to be activated, which means a compositor it does not own is a
+// compositor it can disturb: a window that takes focus, or that lands on an
+// output no one is looking at, leaves the surfaces a person is actually using
+// unable to receive keyboard or pointer input, and a run that ends abnormally
+// leaves that state behind. This is not hypothetical — an interactive session
+// was rendered unusable this way and had to be restarted, while the compositor
+// itself, the kernel, and the drivers all remained healthy.
+//
+// So the gate is opt-in against a named, disposable compositor rather than
+// opt-out against whatever session happens to be in the environment. It runs
+// only when ODYSEA_ISOLATED_COMPOSITOR is set, which a harness sets when it has
+// started a compositor for this run and will tear it down afterwards. The check
+// comes first, before anything is read or forked, so declining costs nothing
+// and touches nothing.
+//
+// ODYSEA_REQUIRE_COMPOSITOR deliberately does NOT override the interlock. That
+// override exists so a machine that *cannot* run the gate goes red instead of
+// reporting a skip as a pass, and this is a different thing: the gate is not
+// unable, it is unwilling, and turning a refusal into a failure would only
+// pressure the next reader into removing the refusal. The distinction is in the
+// exit text so the two are never confused in a log. What this costs is real and
+// is stated plainly: while no isolated-compositor harness exists, the real
+// compositor path is unmeasured, and every result this gate produced before the
+// interlock was measured against whichever session and output the window
+// happened to reach.
 #include <QByteArray>
 #include <QGuiApplication>
 #include <QOffscreenSurface>
@@ -146,9 +177,35 @@ bool usableOpenGlContext(const QByteArray& platform) {
     _exit(77);
 }
 
+/// Reports that the gate declined the session it was handed. Always a skip,
+/// never a failure: ODYSEA_REQUIRE_COMPOSITOR turns an *inability* to run red,
+/// and this is a refusal to run, which is a policy the gate is enforcing rather
+/// than a capability it is missing. The message says which of the two happened
+/// so a log can never be read as the other.
+[[noreturn]] void declineSession() {
+    std::fputs(
+        "compositor-gate: DECL -- declined: ODYSEA_ISOLATED_COMPOSITOR is not set, so no "
+        "compositor was declared as started for this run.\n"
+        "This gate renders an activating window and can leave a compositor it does not own "
+        "with input focus on a surface nobody is looking at, so it will not run against a "
+        "session it was merely handed.\n"
+        "Set ODYSEA_ISOLATED_COMPOSITOR=1 from a harness that started a compositor for this "
+        "run and tears it down afterwards. Setting it by hand against an interactive session "
+        "defeats the interlock and is the exact case it exists to prevent.\n"
+        "This is a refusal, not an inability: ODYSEA_REQUIRE_COMPOSITOR does not override it, "
+        "and the real-compositor path is unmeasured until such a harness exists.\n",
+        stderr);
+    _exit(77);
+}
+
 } // namespace
 
 int main(int /*argc*/, char** argv) {
+    // First, before the environment is read for a display, before a probe is
+    // forked, and before any window can exist.
+    if (!qEnvironmentVariableIsSet("ODYSEA_ISOLATED_COMPOSITOR")) {
+        declineSession();
+    }
     const Compositor compositor = detectCompositor();
     if (!compositor.isValid()) {
         cannotRun("no compositor advertised (neither WAYLAND_DISPLAY nor "

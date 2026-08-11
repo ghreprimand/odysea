@@ -24,6 +24,50 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-10 -- The compositor gate will not run against a session it does not own
+
+The real-compositor validation gate rendered onto whatever display server was
+advertised in its environment, and the suite it launches asks its window to be
+activated. Running the test suite inside a session someone was using could
+therefore move that session's input focus onto a test surface, and if the run
+ended without restoring it, the focus stayed moved. Where the surface was not
+visible, the result was a session that ignored keyboard and pointer input while
+the compositor, the kernel, and the drivers were all working normally. That
+outcome was reached, and recovering from it required restarting the session.
+
+The gate now declines any compositor that was not declared as started for the
+run. `ODYSEA_ISOLATED_COMPOSITOR` is that declaration, and the check runs before
+the environment is read for a display, before the OpenGL probe is forked, and
+before any window can exist, so declining touches nothing at all. A test that
+can take over an input device is opt-in against a disposable compositor, not
+opt-out against whatever happens to be there.
+
+`ODYSEA_REQUIRE_COMPOSITOR` does not override the refusal, which is the part
+worth stating precisely, because that override exists to stop a skip reading as
+a pass. An inability to run still turns red under it: with the interlock
+satisfied and no display advertised, the gate reports FAIL and exits 1 exactly
+as before. A refusal exits 77 whether or not the override is set. The two are
+different states with different exit texts, because a gate that punished the
+refusal would only teach the next reader to delete the refusal.
+
+What this costs is stated rather than absorbed: no harness starts an isolated
+compositor yet, so the entry declines everywhere and the real-compositor path
+is unmeasured. Its earlier results are not a baseline either. That gate was
+observed passing five of five runs on one day and failing four of five on
+another with nothing changed between them, because its outcome depended on
+which output the window reached and on the set of outputs being changed around
+it. Results gathered against an unowned session are treated as uninformative in
+both directions rather than retained as history.
+
+Verified by exercising all four exit paths. No declaration, exit 77 with the
+refusal text. No declaration with the override set, exit 77, unchanged. The
+declaration present with no display advertised, exit 77 with the inability text
+and the old skip reason. The same with the override set, exit 1. The refusal is
+what stops the first two: satisfying the interlock alone moves the gate to a
+different exit path with a different message.
+
+---
+
 ## 2026-08-10 -- The record is bounded by history, not by a file it ships with
 
 The manifest introduced with the part split was described as bounding the

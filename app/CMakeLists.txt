@@ -540,15 +540,25 @@ set_tests_properties(shell_visual_validation_rhi PROPERTIES
 # runs the pixel assertions at 1x, and the software 2x pass checks only the
 # logical-coordinate layout. Neither exercises the device-resolution pixel
 # comparisons at a true 2x surface. This launcher runs the validation suite on
-# the ambient real compositor with OpenGL RHI forced and QT_SCALE_FACTOR=2, so
-# a windowing system that can allocate a 2x surface grabs frames at genuine
-# device resolution and the border, ring, and interior sweeps run at full
-# density. ODYSEA_EXPECTED_FRAME_SCALE=2 makes the device-resolution test
-# assert the frame is exactly twice the logical size, so a run that fell back
-# to 1x fails instead of passing as if it had rendered at 2x. It reuses the
-# compositor launcher, which skips (77) when no compositor or no usable GL is
-# present and turns that skip into a failure when ODYSEA_REQUIRE_COMPOSITOR is
-# set in the verifying environment.
+# a real compositor with OpenGL RHI forced and QT_SCALE_FACTOR=2, so a windowing
+# system that can allocate a 2x surface grabs frames at genuine device
+# resolution and the border, ring, and interior sweeps run at full density.
+# ODYSEA_EXPECTED_FRAME_SCALE=2 makes the device-resolution test assert the
+# frame is exactly twice the logical size, so a run that fell back to 1x fails
+# instead of passing as if it had rendered at 2x. It reuses the compositor
+# launcher, which skips (77) when no compositor or no usable GL is present and
+# turns that skip into a failure when ODYSEA_REQUIRE_COMPOSITOR is set in the
+# verifying environment.
+#
+# It does NOT run against whatever session is in the environment. The suite
+# renders an activating window, so a compositor it does not own is one it can
+# leave with input focus on a surface nobody is looking at, and an abnormal exit
+# leaves that behind. The launcher therefore declines with a skip unless
+# ODYSEA_ISOLATED_COMPOSITOR marks the compositor as started for the run and
+# disposable after it — see the interlock note in the launcher source. No
+# harness here starts one yet, so this entry currently declines everywhere and
+# the real-compositor path is unmeasured. That is deliberate and is recorded as
+# a known gap rather than papered over with a run against a session in use.
 qt_add_executable(odysea_validation_compositor_launcher
     tests/tst_presentation_compositor_launcher.cpp)
 
