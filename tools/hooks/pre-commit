@@ -41,3 +41,25 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
         exit 1
     fi
 fi
+
+# Content, not just attribution. The public-repository guard reads the index,
+# so it judges exactly what this commit would publish; running it here is the
+# difference between refusing a commit and discovering it later in a battery,
+# by which point the content is in history and removing it means a rewrite.
+#
+# The guard is skipped only when it is absent — a checkout of a revision that
+# predates it, or an export without tools/ — and never merely because it is
+# inconvenient. A guard that failed to run is reported, so this cannot become a
+# silent pass; that reporting is the whole reason it is safe to continue.
+guard="$(git rev-parse --show-toplevel)/tools/check_public_repo.sh"
+if [[ -x "$guard" ]]; then
+    # No pipe: a pipeline reports the exit status of its last stage, which
+    # would mask a failure here behind whatever was reading the output.
+    if ! "$guard" >/dev/null 2>&1; then
+        echo "Commit blocked: the public-repository guard rejected the staged content." >&2
+        echo "Run tools/check_public_repo.sh to see what it found." >&2
+        exit 1
+    fi
+else
+    echo "Warning: tools/check_public_repo.sh not found; staged content was not scanned." >&2
+fi

@@ -24,6 +24,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-11 -- Staged content is scanned before a commit exists, not after
+
+The pre-commit hook checked attribution and nothing else. The
+public-repository guard, which is what keeps private paths, personal data and
+process vocabulary out of tracked text, ran only as a battery entry — so a
+commit carrying such content was created successfully and found bad later, at
+which point removing it means rewriting history rather than declining a commit.
+This was not theoretical: a commit was made with process vocabulary in a new
+comment and was not blocked.
+
+The guard reads the index, so it judges exactly what the commit would publish.
+It now runs in the hook, and its status is read directly rather than through a
+pipe -- a pipeline reports the status of its last stage, which is how the same
+check had already been run and its failure missed once.
+
+It is skipped only when absent, which happens in a checkout predating it or an
+export without `tools/`, and that case prints a warning rather than passing
+quietly. A check that cannot distinguish "ran and was satisfied" from "was
+never there" is the failure this project keeps finding in its own gates, so the
+skip announces itself.
+
+Verified by planting the same content that got through before: staged, the
+commit is refused by name and no commit object is created; unstaged, commits
+proceed. The hooks self-test passes unchanged.
+
+---
+
 ## 2026-08-11 -- Make a skipped battery entry impossible to read as a pass
 
 The verification battery could report every entry green while a third of them
