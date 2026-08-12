@@ -24,6 +24,68 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-12 -- A filtered gate now has to list what its TestCase defines
+
+One GPU-path entry does not run its whole suite. `shell_visual_validation_rhi`
+passes `TestCase::function` arguments straight through to the suite it
+re-execs, because the validation scope also holds the broader visual cases,
+which do not belong on the GPU path. That filter was a second thing to keep in
+step with the QML, and nothing kept it there.
+
+Both directions of the drift are silent. A function added to the filtered
+TestCase and left off the list runs nowhere on that path: the entry passes, in
+the time it always took, because it never ran the new function. A listed
+function that no longer exists matches nothing, because Qt Quick Test does not
+object to a filter matching none, so a rename leaves an argument behind that
+covers nothing and the entry still reports success.
+
+The first fault is survivable where the same function also runs under an
+unfiltered entry — the two offscreen validation entries carry no filter, so
+they would catch a plain failure. It is not survivable for a test that is only
+meaningful on a real GL path, because such a test passes vacuously offscreen or
+guards itself away there. Left off the list as well, it runs nowhere at all and
+no entry turns red. That is not a hypothetical shape: it is the shape of the
+ring-outside-the-well test, which is what exposed the hole.
+
+`rhi_function_filter` resolves each filtered entry to the QML it actually runs
+and requires exact agreement in both directions. The resolution is three hops,
+all read from the build file rather than assumed: the entry names a launcher,
+the launcher declares the suite binary it re-execs, and the suite declares the
+directory its cases live in. A break anywhere along that chain fails by name,
+because a gate that could not follow the chain has not checked the entry.
+
+Completeness is required per TestCase, not per directory, and the distinction
+decides whether the gate survives contact. A scope may hold several TestCases
+and a filtered entry may legitimately want only some of them; demanding every
+function in the directory would demand that the visual suite be added to a list
+it does not belong on, and the first person to hit that would delete the gate.
+So selection at TestCase granularity is treated as intentional and completeness
+is required within each TestCase the filter names. The limit that follows is
+stated rather than left to be found: a TestCase no filtered entry mentions is
+not bounded at all, because omitting one is indistinguishable from choosing not
+to run it.
+
+The QML is parsed by walking each line character by character rather than by
+matching whole lines, which two of the mutations below justify: a `name:` may
+share a line with the brace that opens its block, and a brace inside a string
+is not a block boundary.
+
+Verified against the real record before anything else: adding a function to the
+device-pixel TestCase without listing it is refused by name, and adding a listed
+argument for a function that does not exist is refused by name; both restore
+clean. Twelve self-test states, nine planted mutations, nine caught. Two of
+those nine survived their first round because the fixtures could not tell the
+readings apart — every fixture had exactly one named block, so attributing a
+function to the outermost name rather than the nearest one gave the same
+answer, and the only stray brace sat in a comment, which is stripped before the
+walk. The fixtures now nest a named TestCase inside a named outer block and
+carry a closing brace inside a real string above the functions, and both
+mutations fail four scenarios each. A stray opening brace would still prove
+little, since attribution falls back outward to the same TestCase; the closing
+one is the brace that bites.
+
+---
+
 ## 2026-08-11 -- Staged content is scanned before a commit exists, not after
 
 The pre-commit hook checked attribution and nothing else. The

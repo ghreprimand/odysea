@@ -605,6 +605,16 @@ axes, each of which either exercises the comparisons or reports a visible skip
   skip into a failure where an offscreen context is expected; it is deliberately
   distinct from `ODYSEA_REQUIRE_COMPOSITOR`, so a pure-Wayland verifier with no
   X display can require the compositor gate while honestly skipping this one.
+  `shell_visual_validation_rhi` is the one entry that does not run its whole
+  suite: it passes `TestCase::function` arguments through to the suite, because
+  the validation scope also holds the broader visual cases, which do not belong
+  on the GPU path. A filter is a second thing to keep in step, and both ways it
+  can drift are silent — an added function left off the list runs nowhere here,
+  and a listed function that no longer exists matches nothing, since Qt Quick
+  Test accepts a filter matching none. `rhi_function_filter` resolves the entry
+  through its launcher's `ODYSEA_PRESENTATION_BINARY` and the suite's
+  `QUICK_TEST_SOURCE_DIR` to the QML it actually runs and requires the two to
+  agree exactly, per TestCase the filter names.
 - **Real compositor** (`shell_presentation_compositor`). A launcher runs the
   full presentation suite on the ambient real compositor — Wayland preferred,
   X11 as the fallback display server — with OpenGL RHI forced. This is the only

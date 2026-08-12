@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-12 -- A filtered gate now has to list what its TestCase defines
 ## 2026-08-11 -- Staged content is scanned before a commit exists, not after
 ## 2026-08-11 -- Make a skipped battery entry impossible to read as a pass
 ## 2026-08-11 -- The record's promised order is checked from a fixed point up

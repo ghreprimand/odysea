@@ -198,6 +198,29 @@ These are not optional; they are how the project stays safe in C++:
   sibling scopes, a nested scope, a deeply nested scope, two runners sharing a
   directory, an empty scope, an absent scope, a sibling whose name is a prefix
   of another, and a build file declaring no runner at all.
+- An entry that filters its suite to named functions must list every function
+  of every TestCase it names. One GPU-path entry passes
+  `TestCase::function` arguments through to the suite it re-execs, and both
+  directions of the drift are silent: a function added to that TestCase and
+  left off the list runs nowhere on that path, and a listed function that no
+  longer exists matches nothing, because Qt Quick Test does not object to a
+  filter that matches none. Either way the entry stays green in the time it
+  always took. Where the same function also runs under an unfiltered entry the
+  first fault is survivable; it is not survivable for a test that is only
+  meaningful on a real GL path, since such a test passes vacuously offscreen or
+  guards itself away there and would then run nowhere at all.
+  `rhi_function_filter` resolves each filtered entry through its launcher's
+  `ODYSEA_PRESENTATION_BINARY` and that suite's `QUICK_TEST_SOURCE_DIR` to the
+  QML it actually runs, and requires exact agreement in both directions.
+  Completeness is required per TestCase rather than per directory: a scope may
+  hold several TestCases and naming only some of them is a decision the build
+  file is allowed to make, so a TestCase no filtered entry mentions is not
+  bounded — that limit and the broken-chain failures are stated in the gate.
+  `rhi_function_filter_self_test` holds it to twelve states, including a
+  function added and unlisted, a listed function that does not exist, a listed
+  TestCase that does not exist, a TestCase deliberately left out, one TestCase
+  continued across two files, each hop of the resolution chain broken, a scope
+  defining no test function, and a build file with no filtered entry at all.
 - A skipped battery entry must never read as a pass. `battery_coverage_self_test`
   and `run_verification_battery.sh` reconcile every registered entry against the
   live `ctest -N` roster and classify each one: it ran, it declared a refusal,

@@ -83,6 +83,17 @@ add_test(
 add_test(
     NAME qml_test_scopes_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_qml_test_scopes_selftest.sh)
+# Companion to qml_test_scopes: that gate checks which directory a runner
+# scans, this one checks which functions a filtered entry actually runs. A
+# function added to a filtered TestCase and left off the list executes nowhere
+# on that path, and a listed function that no longer exists matches nothing;
+# both leave the entry green in the time it always took.
+add_test(
+    NAME rhi_function_filter
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_rhi_function_filter.sh)
+add_test(
+    NAME rhi_function_filter_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_rhi_function_filter_selftest.sh)
 add_test(
     NAME file_length_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length.sh)
