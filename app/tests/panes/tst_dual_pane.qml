@@ -424,7 +424,8 @@ TestCase {
         compare(shellWindow.oppositeEntryModel, rightColumns.activeListing);
         compare(shellWindow.oppositeTransferPath(), child("secondPane").entryModel.path);
         compare(shellWindow.oppositeTransferPath(), rightColumns.currentPath);
-        verify(shellWindow.oppositeTransferPath() !== rightModel.path);
+        compare(shellWindow.oppositeTransferPath(), rightModel.path);
+        verify(shellWindow.oppositeEntryModel !== rightModel);
         verify(shellWindow.canTransferToOppositePane(false));
     }
 }

@@ -65,6 +65,7 @@ class MillerColumnsModelTest : public QObject {
     void selectionBuildsOnlyTheLivePathChain();
     void reselectingAnOpenBranchReusesItsListing();
     void traversalAndActivationCoverFoldersAndFiles();
+    void focusedColumnPublishesLocationTransitions();
     void presentationSettingsPreserveThePathChain();
     void fiveLargeColumnsBoundRetainedState();
 };
@@ -172,6 +173,45 @@ void MillerColumnsModelTest::traversalAndActivationCoverFoldersAndFiles() {
     QCOMPARE(QString::fromStdString(launcher.openedPath.string()), document);
     QCOMPARE(activation.count(), 1);
     QCOMPARE(activation.first().first().toString(), document);
+}
+
+// Qt's wait macros expand into several branches around the two assertions.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void MillerColumnsModelTest::focusedColumnPublishesLocationTransitions() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QString childPath = fixture.path() + QStringLiteral("/folder");
+    QVERIFY(QDir().mkpath(childPath));
+
+    RecordingLauncher launcher;
+    odysea::app::MillerColumnsModel model(launcher);
+    model.setRootPath(fixture.path());
+    waitForListing(model, 0);
+    QSignalSpy locationChanged(&model, &odysea::app::MillerColumnsModel::currentPathChanged);
+
+    const int folder = rowForName(model, 0, QStringLiteral("folder"));
+    QVERIFY(folder >= 0);
+    model.select(0, folder);
+    waitForListing(model, 1);
+    QCOMPARE(model.currentPath(), fixture.path());
+    QCOMPARE(locationChanged.count(), 0);
+
+    model.moveAcross(1);
+    QCOMPARE(model.currentPath(), childPath);
+    QCOMPARE(locationChanged.count(), 1);
+
+    model.moveAcross(-1);
+    QCOMPARE(model.currentPath(), fixture.path());
+    QCOMPARE(locationChanged.count(), 2);
+
+    model.moveAcross(1);
+    QCOMPARE(model.currentPath(), childPath);
+    QCOMPARE(locationChanged.count(), 3);
+
+    model.collapseBack();
+    QCOMPARE(model.liveColumnCount(), 1);
+    QCOMPARE(model.currentPath(), fixture.path());
+    QCOMPARE(locationChanged.count(), 4);
 }
 
 // Qt's assertion macros account for the reported branch count.

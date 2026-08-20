@@ -113,13 +113,15 @@ terminal file manager. Achieving both at once is a deliberate design target.
   the matching pointer control collapses the rightmost level. A pointer press
   on a row selects it and reveals a directory to the right; double-click uses
   the same activation path as Return. `Ctrl+Shift+3` and the toolbar choose the
-  view alongside the list and grid modes. Workspace navigation and tab history
-  remain rooted in the directory from which the columns chain opened, while
-  entry operations follow the focused view: copy, move, rename, trash,
-  selection status, dialogs, and cross-pane transfers resolve against the
-  active column listing. A transfer destination follows the opposite pane's
-  visible listing by the same rule, rather than the workspace location from
-  which its chain opened. The active column path is shown in the pane header.
+  view alongside the list and grid modes. Moving focus across the live chain
+  drives that pane's workspace adapter, so its current tab, history, path
+  navigator, breadcrumbs, and pane header name the active column. Workspace
+  navigation back to a path already in the chain focuses that live column;
+  navigation elsewhere starts a new chain at the requested location. Entry
+  operations follow the focused view: copy, move, rename, trash, selection
+  status, dialogs, and cross-pane transfers resolve against the active column
+  listing. A transfer destination follows the opposite pane's visible listing
+  by the same rule. The active column path is shown in the pane header.
   Column rows publish the same URI drag payload and accept the same directory
   drops as list and grid rows. This split preserves an exploratory path chain
   without allowing an operation to act on an invisible source or destination.

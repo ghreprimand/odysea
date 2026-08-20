@@ -32,13 +32,46 @@ FocusScope {
     /// Optional protected-content mask layer for grid thumbnails.
     property WellMaskLayer wellLayer: null
     readonly property MillerColumnsView millerView: millerLoader.item as MillerColumnsView
-    readonly property bool entryModelReady: !pane.columnsMode || (pane.millerView !== null && pane.millerView.columnsModel.activeListing !== null)
-    readonly property var entryModel: pane.columnsMode && pane.entryModelReady ? pane.millerView.columnsModel.activeListing : pane.shellModel
+    readonly property bool entryModelReady: {
+        const view = pane.millerView;
+        return !pane.columnsMode || (view !== null && view.columnsModel.activeListing !== null);
+    }
+    readonly property var entryModel: {
+        const view = pane.millerView;
+        return pane.columnsMode && view !== null && view.columnsModel.activeListing !== null ? view.columnsModel.activeListing : pane.shellModel;
+    }
 
     /// The pane's one shared context menu. Both views open it for entry,
     /// selection, and blank-canvas targets; the menu builds its items from
     /// the registry for whichever context each invocation passes.
     readonly property ActionMenu actionMenu: paneActionMenu
+
+    function followMillerLocation(columnsModel) {
+        if (!pane.columnsMode || columnsModel === null || columnsModel.currentPath.length === 0 || pane.shellModel.path === columnsModel.currentPath) {
+            return;
+        }
+        // The workspace adapter remains the owner of tabs and history. Entry
+        // actions continue to resolve through entryModel, which still names
+        // the focused column listing while columns mode is visible.
+        pane.shellModel.navigateToPath(columnsModel.currentPath);
+    }
+
+    function synchronizeMillerLocationFromWorkspace() {
+        if (!pane.columnsMode || pane.millerView === null) {
+            return;
+        }
+        const columnsModel = pane.millerView.columnsModel;
+        if (columnsModel.currentPath === pane.shellModel.path) {
+            return;
+        }
+        for (let column = 0; column < columnsModel.columnCount; ++column) {
+            if (columnsModel.columnModel(column).path === pane.shellModel.path) {
+                columnsModel.setActiveColumn(column);
+                return;
+            }
+        }
+        columnsModel.rootPath = pane.shellModel.path;
+    }
 
     function focusCurrentView() {
         if (pane.columnsMode) {
@@ -148,12 +181,24 @@ FocusScope {
         visible: active
         sourceComponent: MillerColumnsView {
             columnsModel: MillerColumnsModel {
-                rootPath: pane.shellModel.path
+                id: columnsState
+
                 showHidden: pane.shellModel.showHidden
                 filterText: pane.shellModel.filterText
                 sortMode: pane.shellModel.sortMode
+
+                Component.onCompleted: rootPath = pane.shellModel.path
+                onCurrentPathChanged: pane.followMillerLocation(columnsState)
             }
             theme: pane.theme
+        }
+    }
+
+    Connections {
+        target: pane.shellModel
+
+        function onPathChanged() {
+            pane.synchronizeMillerLocationFromWorkspace();
         }
     }
 

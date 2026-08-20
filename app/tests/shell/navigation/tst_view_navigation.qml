@@ -9,6 +9,35 @@ Support.ShellTestCase {
 
     name: "ViewNavigationParity"
 
+    function rowForColumnName(columnsModel, column, name) {
+        for (let row = 0; row < columnsModel.entryCount(column); ++row) {
+            if (columnsModel.entryName(column, row) === name) {
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    function openColumnsAtQmlRoot() {
+        const sourceUrl = Qt.resolvedUrl("../../../qml").toString();
+        const sourcePath = sourceUrl.startsWith("file://") ? decodeURIComponent(sourceUrl.slice(7)) : "";
+        verify(sourcePath.length > 0);
+        fakeModel.path = sourcePath;
+        fakeModel.resetTelemetry();
+        shellWindow.switchColumnsView();
+        const loader = child("millerColumnsLoader");
+        tryVerify(function () {
+            return loader.item !== null;
+        });
+        const columnsView = loader.item;
+        const columnsModel = columnsView.columnsModel;
+        tryVerify(function () {
+            return columnsModel.columnModel(0) !== null && !columnsModel.columnBusy(0);
+        });
+        compare(columnsModel.currentPath, sourcePath);
+        return columnsView;
+    }
+
     function test_presentationLayerWiredIntoTheShell() {
         const layer = child("presentationLayer");
         verify(layer !== null);
@@ -84,13 +113,92 @@ Support.ShellTestCase {
             return columnsModel.columnCount === 2 && !columnsModel.columnBusy(1);
         });
         verify(shellWindow.activeEntryModel !== fakeModel);
-        verify(shellWindow.activeEntryModel.path !== fakeModel.path);
+        compare(shellWindow.activeEntryModel.path, fakeModel.path);
 
         shellWindow.openTreeSearch();
         const overlay = child("fuzzyFindOverlay");
         tryCompare(overlay, "opened", true);
         compare(overlay.finderModel.rootPath, shellWindow.activeEntryModel.path);
         overlay.close();
+    }
+
+    function test_columnsKeyboardFocusFollowsWorkspaceLocationWithoutLosingTheChain() {
+        const columnsView = openColumnsAtQmlRoot();
+        const columnsModel = columnsView.columnsModel;
+        const rootPath = columnsModel.currentPath;
+        const shaders = rowForColumnName(columnsModel, 0, "shaders");
+        verify(shaders >= 0);
+        columnsModel.moveToRow(shaders);
+        tryVerify(function () {
+            return columnsModel.columnCount === 2 && !columnsModel.columnBusy(1);
+        });
+        const childPath = columnsModel.columnModel(1).path;
+        fakeModel.resetTelemetry();
+        columnsView.focusView();
+
+        keyClick(Qt.Key_Right);
+
+        compare(columnsModel.activeColumn, 1);
+        compare(columnsModel.currentPath, childPath);
+        compare(fakeModel.navigateToPathCalls, 1);
+        compare(fakeModel.path, childPath);
+        compare(shellWindow.activeEntryModel.path, childPath);
+        verify(shellWindow.activeEntryModel !== fakeModel);
+        compare(child("pathNavigator").draftText, childPath);
+
+        keyClick(Qt.Key_Left);
+        compare(columnsModel.activeColumn, 0);
+        compare(columnsModel.columnCount, 2);
+        compare(fakeModel.navigateToPathCalls, 2);
+        compare(fakeModel.path, rootPath);
+
+        keyClick(Qt.Key_Right);
+        compare(columnsModel.activeColumn, 1);
+        compare(columnsModel.columnCount, 2);
+        compare(fakeModel.navigateToPathCalls, 3);
+        compare(fakeModel.path, childPath);
+
+        fakeModel.path = rootPath;
+        tryCompare(columnsModel, "activeColumn", 0);
+        compare(columnsModel.columnCount, 2);
+        compare(columnsModel.currentPath, rootPath);
+        compare(shellWindow.activeEntryModel.path, rootPath);
+
+        const outsidePath = rootPath.slice(0, rootPath.lastIndexOf("/"));
+        verify(outsidePath.length > 0);
+        fakeModel.path = outsidePath;
+        tryCompare(columnsModel, "columnCount", 1);
+        compare(columnsModel.currentPath, outsidePath);
+        compare(shellWindow.activeEntryModel.path, outsidePath);
+    }
+
+    function test_columnsPointerFocusAndCollapseFollowWorkspaceLocation() {
+        const columnsView = openColumnsAtQmlRoot();
+        const columnsModel = columnsView.columnsModel;
+        const rootPath = columnsModel.currentPath;
+        const shaders = rowForColumnName(columnsModel, 0, "shaders");
+        verify(shaders >= 0);
+        columnsModel.moveToRow(shaders);
+        tryVerify(function () {
+            return columnsModel.columnCount === 2 && !columnsModel.columnBusy(1);
+        });
+        const childPath = columnsModel.columnModel(1).path;
+        fakeModel.resetTelemetry();
+
+        mouseClick(child("millerHeader-1"));
+
+        compare(columnsModel.activeColumn, 1);
+        compare(fakeModel.navigateToPathCalls, 1);
+        compare(fakeModel.path, childPath);
+        compare(shellWindow.activeEntryModel.path, childPath);
+        verify(shellWindow.activeEntryModel !== fakeModel);
+
+        mouseClick(child("millerCollapse-1"));
+        compare(columnsModel.columnCount, 1);
+        compare(columnsModel.activeColumn, 0);
+        compare(fakeModel.navigateToPathCalls, 2);
+        compare(fakeModel.path, rootPath);
+        compare(shellWindow.activeEntryModel.path, rootPath);
     }
 
     function test_keyboardSelectionPaths() {

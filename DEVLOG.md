@@ -25,6 +25,7 @@ order, and the archive gate compares it against what the files actually hold.
 ---
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things
@@ -186,6 +187,35 @@ result.
 
 ---
 >>>>>>> 4c47dbb (Account for every process an isolated compositor run starts)
+=======
+## 2026-08-20 -- Make workspace location follow the focused Miller column
+
+Miller navigation now advances the pane's workspace adapter whenever keyboard
+or pointer input focuses a different live column. The adapter remains the sole
+owner of tabs and history, so the window title, path navigator, breadcrumbs,
+tab label, navigation actions, and recent-destination state all observe the
+same location as the column that holds focus.
+
+The synchronization is directional rather than a binding loop. A
+column-originated change updates workspace location without rebuilding the
+chain it came from. Workspace navigation to a path already represented in the
+chain focuses that column, while a path outside the chain replaces it with a
+new root. Entry and transfer actions remain resolved through the focused
+column listing throughout; updating workspace navigation state does not make
+the invisible list/grid listing an action target.
+
+The model test records the exact focused-path transition sequence across
+right, left, right, and collapse. Rendered-shell coverage drives the same
+transitions through keyboard and pointer paths, proves the live chain survives
+its own location updates, proves an external destination resets the root, and
+keeps the active entry model distinct from the workspace adapter. Release and
+ASan/UBSan builds are warning-clean. Release passed 65 non-compositor entries
+plus static analysis; ASan/UBSan passed the same 65 with static analysis
+disabled. The two offscreen RHI probes skipped in both presets, and the two
+real-compositor entries remained excluded under the session-safety policy.
+Repository, formatting, QML, file-length, attribution, and application-smoke
+gates pass.
+>>>>>>> 478cf30 (Make Miller focus drive workspace location)
 
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 
