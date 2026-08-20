@@ -24,6 +24,7 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+<<<<<<< HEAD
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things
@@ -109,6 +110,82 @@ directions of the value allow-list; a genuine harness run is still accepted end
 to end, so the refusal discriminates rather than closing the path. The
 real-compositor path remains unmeasured on this machine and the contributor
 guide continues to say so.
+=======
+## 2026-08-20 -- Starting a compositor is an obligation to end it
+
+The harness that runs compositor-dependent gates started a compositor and a
+gate, each in its own session, and recorded both. What it did on the way out
+was weaker than what it had taken on. Teardown signalled the gate's process
+group once and moved on without waiting for it or escalating, then stopped the
+compositor and deleted the runtime directory. A gate that did not stop for
+SIGTERM therefore kept running against a display being torn down, inside a
+directory being removed, with nothing said about it. A gate that ignores that
+signal demonstrates it exactly.
+
+The sweep that disposes of runs abandoned by an untrappable kill had the same
+shape and a worse consequence. It sent SIGTERM to each recorded process group,
+deleted the directory whatever happened next, and reported a reap. A compositor
+that ignores SIGTERM survived it, and deleting the record removed the only
+thing that named the survivor, so nothing could find it again -- while the log
+said it had been disposed of. In production that survivor holds the GPU, a
+seat, and a runtime directory.
+
+Underneath both sat an identity problem. A pid is not an identity: numbers are
+reused, and every signal here goes to a whole process group, so a stale record
+would name whichever group now holds that number. Each pid is therefore
+recorded with its start time and both must match before anything is signalled.
+The start time was read in a way that returns empty on any failure to read it,
+and an empty recorded value can never match, so one transient failure disabled
+teardown, the escalation, and every later sweep at once -- silently, and with
+the record deleted anyway. It is now a hard failure at the moment of recording:
+a run that could not be torn down afterwards does not start.
+
+What replaces all of it is one rule applied in both places. The gate is stopped
+first, because it is the process using the compositor and reading the directory
+that the following steps take away, and teardown waits for it. Each group is
+escalated from SIGTERM to SIGKILL. A record is deleted only once every process
+in it is confirmed gone; anything that cannot be confirmed is kept and named,
+because the record is what keeps a survivor reachable. A run that finds an
+earlier one it cannot dispose of does not start beside it. And a gate that
+passed while its own teardown failed is reported as a harness failure rather
+than as a pass, since something it started is still alive on the machine.
+
+One defect was introduced and caught here rather than shipped. A process that
+is exiting normally passes through a window where the kernel still answers
+`kill -0` for it while its `/proc` entry has already stopped being readable.
+Treating the first such reading as "cannot be accounted for" failed every
+healthy teardown in the suite. What separates that window from a record that
+has genuinely stopped being checkable is only that the second is still the
+answer when the wait runs out, so the judgement is made there and not on first
+sight.
+
+Verification is by consequence, with stubs standing in for a compositor: a real
+one is neither started nor needed for any of it. The self-test grew from nine
+scenarios to eighteen, and the four defects were reproduced against the
+unmodified harness first -- the ordering probe reported a refused connection,
+the SIGTERM-ignoring gate outlived the harness, the SIGTERM-ignoring orphan
+survived the sweep, the sweep claimed a reap it had not performed and deleted
+the record, and an unreadable start time ran a gate that could not have been
+torn down. Eleven mutations were then planted in the fixed harness and all
+eleven were caught, each by the scenarios written for it and by no others; the
+mutation runner compares each mutated file against the original, so a mutation
+that failed to apply is reported as unmeasured rather than as a survivor.
+
+Known gaps, stated rather than implied. The real-compositor path stays
+unmeasured on this class of machine: the headless proof refuses a compositor
+whose backend selector it cannot show to apply, and everything above is proven
+with stubs. A process that genuinely survives SIGKILL cannot be fabricated, so
+that branch is reported but not witnessed; the witness for the
+cannot-be-accounted-for path instead makes the process records stop being
+readable while the processes are still running. Liveness is asked of the kernel
+rather than of the record, which has one known limit: a pid this user may not
+signal reads as gone, a case that does not arise for a harness's own children.
+And the early refusal for a record carrying no start time at all is a clearer
+message on a path the general one already covers, so removing it changes no
+result.
+
+---
+>>>>>>> 4c47dbb (Account for every process an isolated compositor run starts)
 
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 

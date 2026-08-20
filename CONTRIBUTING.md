@@ -120,6 +120,26 @@ declaration succeeds. `app_isolated_compositor_declaration` reproduces each of
 those ways through as an executable case, including the accepting one, since a
 check that refuses everything would satisfy every refusal test.
 
+Starting a compositor is an obligation to end it, and the harness is held to
+that obligation rather than trusted with it. The gate is stopped first and
+waited for, because it is the process using the compositor and reading the
+runtime directory that the following steps take away; then the compositor; and
+each process group is escalated from SIGTERM to SIGKILL rather than signalled
+once and forgotten. A run's record is deleted only once every process recorded
+in it is confirmed gone. Anything that cannot be confirmed is kept and named,
+because the record is the only thing that keeps a survivor reachable by a later
+run, and a deleted record with a live process behind it is a compositor holding
+the GPU and a seat that nothing can find again. A run that meets an earlier one
+it cannot dispose of does not start beside it, and a gate that passed while its
+own teardown failed is reported as a harness failure, not as a pass.
+
+Identity is part of that, because every signal goes to a whole process group. A
+pid alone would name whichever group now holds that number, so each pid is
+recorded with its start time and both must match before anything is signalled.
+A start time that cannot be read is a hard failure at the moment of recording:
+an empty value can never match, which would disable teardown, the escalation,
+and every later sweep at once while the record was deleted anyway.
+
 What this does not yet do is measure anything on a real compositor. The two
 compositor test entries are registered directly rather than through the
 harness, and they decline, so the real-compositor path is unmeasured. The

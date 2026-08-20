@@ -22,7 +22,17 @@
 # per-run token, waits for its socket, exports WAYLAND_DISPLAY +
 # XDG_RUNTIME_DIR + ODYSEA_ISOLATED_COMPOSITOR +
 # ODYSEA_ISOLATED_COMPOSITOR_NONCE into the gate's environment, runs the gate,
-# and tears the compositor down.
+# and tears the run down.
+#
+# TEARDOWN IS AN OBLIGATION, NOT A GESTURE. Everything this harness starts is a
+# process group it must account for before it exits. The gate is stopped first
+# and waited for, because it is the process using the compositor and reading the
+# runtime directory that teardown then takes away; the compositor follows; each
+# is escalated from SIGTERM to SIGKILL; and a run directory is deleted only once
+# every process recorded in it is confirmed gone. What cannot be confirmed is
+# kept and named, because the record is the only thing that keeps an orphan
+# reachable by a later run, and a deleted record with a live process behind it
+# is an orphan holding the GPU and the seat that nothing can find again.
 #
 # WHAT ACTUALLY ISOLATES THE RUN. Not the socket name: the harness clears
 # WAYLAND_DISPLAY and then DISCOVERS whatever name the compositor bound inside
@@ -37,7 +47,11 @@
 # EXIT STATUS
 #   0..N   the gate command's own status, passed through unchanged
 #   77     skipped: another run holds the cross-run lock (never proceeds)
-#   1      the harness could not start a compositor for the run
+#   1      the harness could not start a compositor for the run; or an
+#          abandoned earlier run could not be disposed of, so this one does not
+#          start beside it; or the gate passed but its own teardown failed,
+#          which is not a clean run and is not reported as one. A gate's own
+#          non-zero status is never overwritten: it is the more specific answer.
 #
 # ENVIRONMENT KNOBS (defaults are the production settings)
 #   ODYSEA_GATE_COMPOSITOR_CMD  How to start the compositor, run under a private
@@ -63,6 +77,12 @@
 #                               skipping by name. Default 0 (try once).
 #   ODYSEA_GATE_READY_TIMEOUT   Seconds to wait for the compositor socket to
 #                               appear. Default 20.
+#   ODYSEA_GATE_PROC_ROOT       Where process records are read from. Default
+#                               /proc. The self-test points it at an empty
+#                               directory to measure the refusal that follows
+#                               when a start time cannot be read. Any other
+#                               value in a real run makes every record
+#                               unreadable, which is refused rather than run.
 #   ODYSEA_GATE_STATE_DIR       Directory holding the fixed lock and the private
 #                               run directories. Default is a fixed per-user
 #                               path outside every worktree. The self-test
@@ -95,6 +115,16 @@ readonly headless_env="${ODYSEA_GATE_HEADLESS_ENV:-WLR_BACKENDS}"
 # The file name the per-run token is written into, inside the private runtime
 # directory. app/tests/isolated_compositor_declaration.hpp reads the same name.
 readonly nonce_file_name="odysea-isolated-compositor.nonce"
+# Where process records are read from. Overridable so the self-test can present
+# a /proc that answers nothing and measure what the harness does when a start
+# time cannot be read. Pointing it anywhere else in a real run makes every
+# record unreadable, and this harness treats that as a hard failure rather than
+# running with its teardown quietly disabled -- so the knob fails closed.
+readonly proc_root="${ODYSEA_GATE_PROC_ROOT:-/proc}"
+# How long a process group is given to stop, in tenths of a second: 2.0s for
+# SIGTERM, then 3.0s for SIGKILL before it is reported as having survived one.
+readonly term_wait_ticks=20
+readonly kill_wait_ticks=30
 
 log() { printf 'isolated-compositor-gate: %s\n' "$*" >&2; }
 
@@ -255,10 +285,13 @@ require_provably_headless_compositor() {
 }
 
 # The starttime field (proc(5) field 22) of a live process, used to tell a pid
-# apart from a later reuse of the same number. Empty when the pid is gone.
+# apart from a later reuse of the same number. Empty when the pid is gone, and
+# equally empty when the record could not be read at all: the two are
+# indistinguishable from here, which is why an empty value is never recorded and
+# never compared. See require_starttime.
 starttime_of() {
     local pid="$1" stat rest
-    stat="$(cat "/proc/$pid/stat" 2>/dev/null)" || return 0
+    stat="$(cat "$proc_root/$pid/stat" 2>/dev/null)" || return 0
     # comm (field 2) is wrapped in parentheses and may itself contain spaces and
     # parentheses, so everything up to the last ") " is dropped before the
     # remaining fields are split. starttime is field 22 overall, which is field
@@ -269,37 +302,183 @@ starttime_of() {
     printf '%s' "${20:-}"
 }
 
+# What a record says about the process it names, as three answers rather than
+# two:
+#   0  the recorded process is alive
+#   1  it is gone, or the number now names something else
+#   2  it cannot be told apart -- the pid is alive but its start time is
+#      unreadable, or no start time was recorded with it
+#
+# The third answer is the one that matters and the one this file used to fold
+# into "nothing to do". An unreadable record is not an absent process: acting on
+# it means signalling a whole process group on no evidence, and ignoring it
+# means walking away from something still running. Neither is acceptable
+# silently, so callers get told which case they are in.
+#
+# Liveness is asked of the kernel (kill -0), not of the record, so a /proc that
+# has stopped answering cannot make a live process look gone. The known limit is
+# EPERM: a pid this user may not signal reads as gone. Every pid recorded here is
+# this harness's own child, so that case does not arise in the runs it covers.
+recorded_process_state() {
+    local pid="$1" recorded="$2" current
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    ((pid > 1)) || return 1
+    [[ -n "$recorded" ]] || return 2
+    kill -0 "$pid" 2>/dev/null || return 1
+    current="$(starttime_of "$pid")"
+    [[ -n "$current" ]] || return 2
+    [[ "$current" == "$recorded" ]] || return 1
+    return 0
+}
+
+# True only when the recorded process is alive and identified. Anything else,
+# including a record that cannot be checked, is false -- so nothing is ever
+# signalled on the strength of a record this harness cannot verify.
+process_matches() {
+    local state=0
+    recorded_process_state "$1" "$2" || state=$?
+    ((state == 0))
+}
+
+# Refuses to record a pid whose start time could not be read. A pid on its own
+# cannot be told from a later reuse of the same number, so nothing is allowed to
+# signal it -- which means teardown, the escalation and every later reap of this
+# run all become silent no-ops, and the run directory is deleted anyway, leaving
+# nothing that names the process at all. One transient read failure would
+# produce a permanent orphan holding the GPU and the seat, with no record of it.
+# Refusing to start the run is the smaller cost, and it is loud.
+require_starttime() {
+    local starttime="$1" what="$2" pid="$3"
+    if [[ -z "$starttime" ]]; then
+        log "refusing: could not read the start time of the $what (pid $pid) under $proc_root."
+        log "Without it this run could not be torn down or reaped afterwards, so it does not run."
+        return 1
+    fi
+    return 0
+}
+
 # Signals a process group by its leader pid, but only when that pid still names
-# the process recorded with it. The starttime comparison closes the window where
-# the number has been reused by an unrelated process since it was written down.
+# the process recorded with it. The start-time comparison closes the window
+# where the number has been reused since it was written down, and because the
+# signal goes to a whole process group, what it closes is this harness sending
+# SIGKILL to an unrelated group in the session it exists to protect.
 kill_group_if_matches() {
     local pid="$1" recorded_starttime="$2" signal="$3"
-    [[ "$pid" =~ ^[0-9]+$ ]] || return 0
-    ((pid > 1)) || return 0
-    local current
-    current="$(starttime_of "$pid")"
-    [[ -n "$current" && "$current" == "$recorded_starttime" ]] || return 0
+    process_matches "$pid" "$recorded_starttime" || return 0
     # Negative pid targets the whole process group; the compositor is a session
     # leader, so its group id equals its pid.
     kill "-$signal" "-$pid" 2>/dev/null || kill "-$signal" "$pid" 2>/dev/null || true
 }
 
-# Removes one abandoned run directory: stops each process group recorded in it,
-# if that exact process is still alive, then deletes the directory. Both the
+# Waits for a recorded process to disappear, for a bounded number of tenths of a
+# second:
+#   0  it is gone
+#   1  it is still there when the window closes
+#   2  it is still there and no longer identifiable when the window closes
+#
+# The unidentifiable answer is deliberately not raised the moment it is seen. A
+# process that is exiting normally passes through a brief window where the
+# kernel still answers kill -0 for it while its /proc entry has already stopped
+# being readable, so treating the first such reading as a failure fails every
+# healthy teardown -- which is exactly what the first version of this did. What
+# distinguishes a transient window from a record that has genuinely stopped
+# being checkable is that the latter is still the answer when the wait runs out.
+wait_for_stop() {
+    local pid="$1" starttime="$2" ticks="$3" waited=0 state=0
+    while ((waited < ticks)); do
+        state=0
+        recorded_process_state "$pid" "$starttime" || state=$?
+        if ((state == 1)); then
+            return 0
+        fi
+        sleep 0.1
+        ((waited += 1))
+    done
+    if ((state == 2)); then
+        return 2
+    fi
+    return 1
+}
+
+# Says what a process that outlasted its own record means. It is not signalled:
+# the signal goes to a whole process group, and a group this harness cannot
+# identify is one it has no business signalling. It is not forgotten either.
+report_unaccountable() {
+    local what="$1" pid="$2"
+    log "cannot account for the $what (pid $pid): it is still alive and its start time is no"
+    log "longer readable under $proc_root, so it can be neither confirmed stopped nor safely"
+    log "signalled. It is left running and its record is kept."
+}
+
+# Stops a recorded process group and does not return until it is gone or has
+# survived SIGKILL. Politeness, then force, then the truth about which happened:
+#   0  the process is gone, or the record names nothing live
+#   1  the record is unusable, or the process is still alive after SIGKILL
+# A caller that is about to delete a record must treat 1 as "do not delete": the
+# record is the only thing that keeps the process reachable by a later run.
+stop_group() {
+    local pid="$1" starttime="$2" what="${3:-process group}"
+    [[ -n "$pid" ]] || return 0
+    if [[ -z "$starttime" ]]; then
+        log "cannot stop the $what: pid $pid was recorded with no start time, so the process"
+        log "it names cannot be identified and must not be signalled."
+        return 1
+    fi
+    kill_group_if_matches "$pid" "$starttime" TERM
+    if wait_for_stop "$pid" "$starttime" "$term_wait_ticks"; then
+        return 0
+    fi
+    local state=$?
+    if ((state == 2)); then
+        report_unaccountable "$what" "$pid"
+        return 1
+    fi
+    log "the $what (pid $pid) did not stop for SIGTERM; escalating to SIGKILL"
+    kill_group_if_matches "$pid" "$starttime" KILL
+    if wait_for_stop "$pid" "$starttime" "$kill_wait_ticks"; then
+        return 0
+    fi
+    state=$?
+    if ((state == 2)); then
+        report_unaccountable "$what" "$pid"
+        return 1
+    fi
+    log "the $what (pid $pid) is still alive after SIGKILL"
+    return 1
+}
+
+# Disposes of one abandoned run directory: stops every process group recorded in
+# it, and removes the directory only once each one is confirmed gone. Both the
 # compositor and the gate are recorded, so an untrappable kill of a harness
-# leaves neither its compositor nor the gate's own subtree behind past the next
-# run. Only ever called for a directory whose liveness lock this process already
+# leaves neither behind past the next run.
+#
+# The record is deleted on no other terms. Removing it while a process it names
+# is still alive turns a recoverable orphan -- one holding the GPU, a seat and a
+# runtime directory -- into one nothing can find again, and reporting that as a
+# reap writes the opposite of what happened into the log someone reads next.
+# Only ever called for a directory whose liveness lock this process already
 # holds, so no live harness owns it.
 reap_run_dir() {
-    local dir="$1" pidfile pid recorded_starttime
+    local dir="$1" pidfile pid recorded_starttime survivors=0
     for pidfile in "$dir/compositor.pid" "$dir/gate.pid"; do
         [[ -f "$pidfile" ]] || continue
+        pid=""
+        recorded_starttime=""
         read -r pid recorded_starttime <"$pidfile" || true
         [[ -n "${pid:-}" ]] || continue
-        kill_group_if_matches "$pid" "${recorded_starttime:-}" TERM
+        if ! stop_group "$pid" "${recorded_starttime:-}" "abandoned $(basename "$pidfile" .pid)"; then
+            survivors=$((survivors + 1))
+        fi
     done
+    if ((survivors > 0)); then
+        log "NOT reaping $dir: $survivors recorded process group(s) could not be confirmed"
+        log "stopped. The directory is kept, so they stay reachable and a later run can try"
+        log "again."
+        return 1
+    fi
     rm -rf -- "$dir"
     log "reaped an abandoned run directory: $dir"
+    return 0
 }
 
 # Sweeps for run directories no live harness holds and disposes of them. A
@@ -308,18 +487,23 @@ reap_run_dir() {
 # So a directory whose lock this sweep can take is one whose harness is gone,
 # and reaping it here bounds the residue an untrappable kill leaves behind to
 # the interval until the next run.
+#
+# Returns non-zero when any abandoned run could not be disposed of, which the
+# caller treats as a reason not to start: whatever survived is holding the
+# resources this run is about to ask for.
 reap_stale_runs() {
     [[ -d "$runs_parent" ]] || return 0
-    local dir probe_fd
+    local dir probe_fd failures=0
     for dir in "$runs_parent"/run.*; do
         [[ -d "$dir" ]] || continue
         [[ -f "$dir/harness.lock" ]] || continue
         exec {probe_fd}>"$dir/harness.lock" || continue
         if flock -n "$probe_fd"; then
-            reap_run_dir "$dir"
+            reap_run_dir "$dir" || failures=$((failures + 1))
         fi
         exec {probe_fd}>&-
     done
+    ((failures == 0))
 }
 
 # State the teardown needs. Set as the run progresses; cleanup tolerates each
@@ -328,34 +512,53 @@ compositor_pid=""
 compositor_starttime=""
 private_runtime=""
 gate_pid=""
-gate_group_pid=""
+gate_starttime=""
 cleanup_done=0
-
-stop_group() {
-    local pid="$1" starttime="$2"
-    [[ -n "$pid" ]] || return 0
-    kill_group_if_matches "$pid" "$starttime" TERM
-    local waited=0
-    while ((waited < 20)); do
-        kill -0 "$pid" 2>/dev/null || return 0
-        sleep 0.1
-        ((waited += 1))
-    done
-    kill_group_if_matches "$pid" "$starttime" KILL
-}
+teardown_failed=0
 
 cleanup() {
     ((cleanup_done)) && return 0
     cleanup_done=1
-    if [[ -n "$gate_group_pid" ]]; then
-        # The gate ran in its own session; stop that whole group so a launcher's
-        # own children go with it.
-        kill -TERM "-$gate_group_pid" 2>/dev/null || true
+    # The gate is stopped first, and teardown waits for it. It is the process
+    # using the compositor and reading the runtime directory that the next two
+    # steps take away; signalling it and walking away -- which is what this did
+    # -- leaves it rendering against a display being torn down, inside a
+    # directory being deleted, with nothing said about it. It ran in its own
+    # session, so stopping the group takes a launcher's own children with it.
+    if [[ -n "$gate_pid" ]]; then
+        if ! stop_group "$gate_pid" "$gate_starttime" "gate"; then
+            teardown_failed=1
+        fi
     fi
     if [[ -n "$compositor_pid" ]]; then
-        stop_group "$compositor_pid" "$compositor_starttime"
+        if ! stop_group "$compositor_pid" "$compositor_starttime" "compositor"; then
+            teardown_failed=1
+        fi
     fi
-    [[ -n "$private_runtime" ]] && rm -rf -- "$private_runtime"
+    if [[ -n "$private_runtime" ]]; then
+        if ((teardown_failed)); then
+            log "keeping $private_runtime: it records the process groups this run could not"
+            log "stop, and deleting it would leave them running with nothing naming them."
+        else
+            rm -rf -- "$private_runtime"
+        fi
+    fi
+    return 0
+}
+
+# A gate that passed while its own run could not be torn down is not a clean
+# run: something this harness started is still alive on the machine. That is a
+# harness failure and is reported as one, rather than being hidden behind the
+# gate's result. A gate failure is never overwritten -- it is the more specific
+# answer of the two.
+on_exit() {
+    local status=$?
+    cleanup
+    if ((teardown_failed)) && ((status == 0)); then
+        log "the gate exited 0, but its run could not be torn down; reporting a harness failure"
+        exit "$harness_failure_status"
+    fi
+    exit "$status"
 }
 
 # --- Argument and precondition checks ---------------------------------------
@@ -408,12 +611,19 @@ if ((!lock_ok)); then
 fi
 
 # The lock is held: from here on cleanup must run on every path out.
-trap 'cleanup' EXIT
+trap 'on_exit' EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 # Dispose of anything an earlier untrappable kill abandoned before starting new.
-reap_stale_runs
+# A run that cannot be disposed of stops this one: whatever survived it is
+# holding the compositor resources this run is about to ask for, and starting
+# another compositor beside it is how a machine ends up with several.
+if ! reap_stale_runs; then
+    log "refusing: an abandoned run could not be disposed of (named above). Stop the process"
+    log "groups its record lists and remove that directory before running this gate again."
+    exit "$harness_failure_status"
+fi
 
 # --- Start the compositor in a private runtime directory --------------------
 private_runtime="$(mktemp -d "$runs_parent/run.XXXXXX")"
@@ -496,6 +706,16 @@ env -u DBUS_SESSION_BUS_ADDRESS -u DBUS_SESSION_BUS_PID -u DISPLAY -u XAUTHORITY
     {lock_fd}>&- {liveness_fd}>&- &
 compositor_pid="$!"
 compositor_starttime="$(starttime_of "$compositor_pid")"
+if ! require_starttime "$compositor_starttime" "compositor" "$compositor_pid"; then
+    # The record is unusable, so the ordinary teardown path is not allowed to
+    # act on this pid. It was started moments ago by this shell and its number
+    # has not been released, so signalling it directly here is sound in a way it
+    # never is later; and leaving it is not an option, since it holds a socket
+    # inside the directory this exit is about to remove.
+    kill -KILL "-$compositor_pid" 2>/dev/null || kill -KILL "$compositor_pid" 2>/dev/null || true
+    compositor_pid=""
+    exit "$harness_failure_status"
+fi
 printf '%s %s\n' "$compositor_pid" "$compositor_starttime" >"$private_runtime/compositor.pid"
 
 # --- Wait for the socket ----------------------------------------------------
@@ -553,13 +773,20 @@ env -u DISPLAY -u XAUTHORITY \
     ODYSEA_ISOLATED_COMPOSITOR_RUNDIR="$private_runtime" \
     setsid "$@" {lock_fd}>&- {liveness_fd}>&- &
 gate_pid="$!"
-gate_group_pid="$gate_pid"
-printf '%s %s\n' "$gate_pid" "$(starttime_of "$gate_pid")" >"$private_runtime/gate.pid"
+gate_starttime="$(starttime_of "$gate_pid")"
+if ! require_starttime "$gate_starttime" "gate" "$gate_pid"; then
+    # Same reasoning as the compositor above: signalled directly because the pid
+    # is still this shell's own child and cannot yet have been reused, and
+    # stopped rather than left, because it was about to be handed a compositor.
+    kill -KILL "-$gate_pid" 2>/dev/null || kill -KILL "$gate_pid" 2>/dev/null || true
+    gate_pid=""
+    exit "$harness_failure_status"
+fi
+printf '%s %s\n' "$gate_pid" "$gate_starttime" >"$private_runtime/gate.pid"
 
 set +e
 wait "$gate_pid"
 gate_status=$?
 set -e
-gate_group_pid=""
 
 exit "$gate_status"

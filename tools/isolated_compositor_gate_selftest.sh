@@ -37,7 +37,7 @@ fi
 # Stated as preconditions rather than skipped: a self-test that declined to run
 # would report nothing while reading as a pass in the summary. The harness needs
 # flock and setsid; the stub needs python3 to bind a real socket.
-for tool in flock setsid python3 env; do
+for tool in flock setsid python3 env pgrep; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "compositor_gate_harness_self_test: $tool is required and is not installed" >&2
         exit 1
@@ -68,10 +68,19 @@ cleanup_sandbox() {
 harness_pids=()
 trap cleanup_sandbox EXIT
 
+# How many scenarios must report a result. A suite that runs a subset of itself
+# prints nothing but passes and reads as a clean run -- which is exactly what one
+# truncated run of this file did, reporting the first nine scenarios and a
+# summary saying all of them passed. The count below is the floor that makes
+# that impossible to mistake for a result.
+readonly expected_scenario_count=20
+
 failures=0
+reported=0
 report() {
     local outcome="$1" scenario="$2"
     printf '%-5s %s\n' "$outcome" "$scenario"
+    reported=$((reported + 1))
     [[ "$outcome" == PASS ]] || failures=$((failures + 1))
 }
 
@@ -164,6 +173,111 @@ cat >"$gate_block" <<'GATE'
 exec sleep 100000
 GATE
 chmod +x "$gate_block"
+
+# Survives SIGTERM. Stands in for any gate that installs its own handler, blocks
+# in a library call that does not return promptly, or simply takes longer to die
+# than the harness waits: the harness must escalate rather than walk away from
+# it.
+readonly gate_ignores_term="$sandbox/gate_ignores_term.sh"
+cat >"$gate_ignores_term" <<'GATE'
+#!/usr/bin/env bash
+trap '' TERM
+: >"$1"
+while true; do sleep 0.2; done
+GATE
+chmod +x "$gate_ignores_term"
+
+# Signals readiness, then exits 0 as soon as a release file appears. Lets a
+# scenario change the conditions the harness will tear down under, and then have
+# the gate finish normally, so the gate's own result is a clean pass.
+readonly gate_until_released="$sandbox/gate_until_released.sh"
+cat >"$gate_until_released" <<'GATE'
+#!/usr/bin/env bash
+: >"$1"
+while [[ ! -e "$2" ]]; do sleep 0.1; done
+exit 0
+GATE
+chmod +x "$gate_until_released"
+
+# Answers the ordering question from the one place it can be answered. On
+# SIGTERM the gate waits, then tries to CONNECT to the compositor socket it was
+# given, and records whether the connection was accepted or refused. The socket
+# file outlives the compositor process, so its presence proves nothing; a
+# completed connection proves the compositor was still running when the gate was
+# stopped, which is the order teardown must use.
+readonly gate_probes_compositor="$sandbox/gate_probes_compositor.sh"
+cat >"$gate_probes_compositor" <<'GATE'
+#!/usr/bin/env bash
+result="$1"
+marker="$2"
+on_term() {
+    sleep 1
+    python3 -c 'import socket, sys
+try:
+    connection = socket.socket(socket.AF_UNIX)
+    connection.connect(sys.argv[1])
+    print("ok")
+except OSError:
+    print("refused")' "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" >"$result"
+    exit 0
+}
+trap on_term TERM
+: >"$marker"
+while true; do
+    sleep 0.2 &
+    wait $! || true
+done
+GATE
+chmod +x "$gate_probes_compositor"
+
+# A compositor stub that ignores SIGTERM, used to abandon a run whose orphan
+# cannot be stopped politely. What disposes of it is the reaper's escalation.
+readonly stub_compositor_ignores_term="$sandbox/stub_compositor_ignores_term.sh"
+cat >"$stub_compositor_ignores_term" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+exec python3 -c 'import signal, socket, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+sock = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(sock)
+s.listen(1)
+time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
+STUB
+chmod +x "$stub_compositor_ignores_term"
+
+# Creates a REGULAR FILE where the socket belongs, and nothing else. A readiness
+# check that looks for a name rather than for a socket accepts this and hands a
+# declaration to a gate naming something no compositor is listening on.
+readonly stub_compositor_regular_file="$sandbox/stub_compositor_regular_file.sh"
+cat >"$stub_compositor_regular_file" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+: >"$XDG_RUNTIME_DIR/wayland-1"
+exec sleep 100000
+STUB
+chmod +x "$stub_compositor_regular_file"
+
+# Records the WAYLAND_DISPLAY it inherited, and binds its socket only when that
+# variable is empty. A compositor started with the ambient name still set is the
+# nested-backend case: it would attach to the session this harness exists to
+# stay away from.
+readonly stub_compositor_records_display="$sandbox/stub_compositor_records_display.sh"
+cat >"$stub_compositor_records_display" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+printf '%s' "${WAYLAND_DISPLAY-<unset>}" >"$1"
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    exit 3
+fi
+exec python3 -c 'import socket, sys, time
+sock = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(sock)
+s.listen(1)
+time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
+STUB
+chmod +x "$stub_compositor_records_display"
 
 # --- Small assertion helpers ------------------------------------------------
 is_alive() { kill -0 "$1" 2>/dev/null; }
@@ -735,6 +849,521 @@ scenario_requires_a_gate_command() {
     report PASS "the harness refuses an invocation with no gate command"
 }
 
+# --- Helpers for the teardown and reaper scenarios ---------------------------
+# A live process in its own session, so a group signal aimed at it cannot reach
+# this self-test, and its pid can be recorded the way the harness records one.
+spawn_detached_blocker() {
+    local pidfile="$1"
+    rm -f -- "$pidfile"
+    # Streams go to /dev/null: this function is called inside a command
+    # substitution, and a detached process holding that pipe's write end open
+    # blocks the caller's read on it forever. The first version of this helper
+    # did exactly that and hung the suite.
+    setsid bash -c 'printf "%s" "$$" >"$1"; exec sleep 100000' _ "$pidfile" >/dev/null 2>&1 &
+    wait_for_file "$pidfile" 10 || return 1
+    local pid
+    read -r pid <"$pidfile"
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    printf '%s' "$pid"
+}
+
+# proc(5) field 22 of a live process, read the same way the harness reads it.
+starttime_field() {
+    local stat rest
+    stat="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+    rest="${stat##*') '}"
+    # shellcheck disable=SC2086
+    set -- $rest
+    printf '%s' "${20:-}"
+}
+
+# Plants a run directory that looks abandoned: a liveness lock no process holds,
+# and one recorded process group. Whatever the reaper does with it is then
+# observable against a process the scenario controls.
+plant_abandoned_run() {
+    local record="$1" dir="$active_state/runs/run.planted"
+    mkdir -p "$dir"
+    : >"$dir/harness.lock"
+    printf '%s\n' "$record" >"$dir/compositor.pid"
+    printf '%s' "$dir"
+}
+
+# True when no live process names this scenario's run tree in its command line.
+# The stub compositor is started with the socket path as an argument, so a
+# survivor of a refused run is visible this way even after its record is gone.
+no_process_mentions_state() {
+    ! pgrep -f -- "$active_state/runs" >/dev/null 2>&1
+}
+
+kill_group_hard() {
+    local pid="${1:-}"
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+    ((pid > 1)) || return 0
+    kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+}
+
+# --- Scenario 18: teardown that cannot account for a process says so ---------
+# The record can stop being checkable while the run is in progress, not only at
+# the start: /proc is the only thing that identifies a pid, and a pid that
+# cannot be identified must be neither signalled nor forgotten. What the harness
+# owes in that case is the truth -- keep the record, name it, and do not report
+# the run as clean, even though the gate itself passed.
+scenario_unaccountable_process_is_reported() {
+    new_state unaccountable
+    local proc_root_link="$sandbox/proc_root_link" empty_proc="$sandbox/empty_proc_late"
+    mkdir -p "$empty_proc"
+    ln -sfn /proc "$proc_root_link"
+    local marker="$sandbox/unaccountable.marker" release="$sandbox/unaccountable.release"
+    local log="$sandbox/log_unaccountable.txt"
+    rm -f -- "$marker" "$release"
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        ODYSEA_GATE_PROC_ROOT="$proc_root_link" \
+        bash "$harness" "$gate_until_released" "$marker" "$release" 2>"$log" &
+    local h_pid=$!
+    harness_pids+=("$h_pid")
+
+    if ! wait_for_file "$marker" 10; then
+        report FAIL "unaccountable process: the run never reached its gate"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    fi
+    local run_dir stub_pid
+    run_dir="$(single_run_dir)" || {
+        report FAIL "unaccountable process: no run directory was created"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    }
+    read -r stub_pid _ <"$run_dir/compositor.pid"
+
+    # From here on every record reads as unreadable, while the processes they
+    # name are still running. The gate is then released and exits 0, so the only
+    # thing wrong with this run is that its teardown cannot account for the
+    # compositor.
+    ln -sfn "$empty_proc" "$proc_root_link"
+    : >"$release"
+    local status=0
+    wait "$h_pid" 2>/dev/null || status=$?
+
+    local ok=1
+    if ((status == 0)); then
+        report FAIL "unaccountable process: a gate that passed hid a teardown that did not happen"
+        ok=0
+    fi
+    if [[ ! -d "$run_dir" ]]; then
+        report FAIL "unaccountable process: the record was deleted with the process it names still running"
+        ok=0
+    fi
+    if ! grep -q "$run_dir" "$log"; then
+        report FAIL "unaccountable process: the run directory it kept was not named"
+        ok=0
+    fi
+    if ! is_alive "$stub_pid"; then
+        report FAIL "unaccountable process: an unverifiable process group was signalled anyway"
+        ok=0
+    fi
+    # This scenario deliberately leaves a live process and its record behind;
+    # dispose of both here rather than leaving them for the sandbox teardown.
+    kill_group_hard "$stub_pid"
+    ln -sfn /proc "$proc_root_link"
+    rm -rf -- "$run_dir"
+    if ((ok)); then
+        report PASS "a process teardown cannot account for is kept, named, and not reported as a clean run"
+    fi
+}
+
+# --- Scenario 10: the gate is stopped before the compositor it is using ------
+# Teardown order is not cosmetic. Stopping the compositor first pulls the
+# display out from under a gate that is still rendering against it, and then
+# deletes the runtime directory it is still reading. The gate answers from its
+# own side: on SIGTERM it waits, connects to the socket it was handed, and
+# records whether a compositor was still listening.
+scenario_gate_stopped_before_compositor() {
+    new_state teardown_order
+    local marker="$sandbox/order.marker" result="$sandbox/order.result" log="$sandbox/log_order.txt"
+    rm -f -- "$marker" "$result"
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_probes_compositor" "$result" "$marker" 2>"$log" &
+    local h_pid=$!
+    harness_pids+=("$h_pid")
+
+    if ! wait_for_file "$marker" 10; then
+        report FAIL "teardown order: the run never reached its gate"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    fi
+    local run_dir stub_pid gate_pid
+    run_dir="$(single_run_dir)" || {
+        report FAIL "teardown order: no run directory was created"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    }
+    read -r stub_pid _ <"$run_dir/compositor.pid"
+    read -r gate_pid _ <"$run_dir/gate.pid" 2>/dev/null || gate_pid=""
+
+    kill -TERM "$h_pid" 2>/dev/null || true
+    wait "$h_pid" 2>/dev/null || true
+
+    local ok=1
+    if ! wait_for_file "$result" 10; then
+        report FAIL "teardown order: the gate was never told to stop, so it recorded nothing"
+        ok=0
+    else
+        local observed
+        observed="$(cat "$result")"
+        if [[ "$observed" != "ok" ]]; then
+            report FAIL "teardown order: the compositor was already gone when the gate was stopped (connection '$observed')"
+            ok=0
+        fi
+    fi
+    if ! wait_until_gone "$run_dir" 10; then
+        report FAIL "teardown order: the run directory survived"
+        ok=0
+    fi
+    if ! wait_pid_dead "$stub_pid" 10; then
+        report FAIL "teardown order: the compositor was left running"
+        ok=0
+    fi
+    kill_group_hard "$gate_pid"
+    if ((ok)); then
+        report PASS "teardown stops the gate while its compositor is still up, then stops the compositor"
+    fi
+}
+
+# --- Scenario 11: a gate that ignores SIGTERM is escalated, not abandoned ----
+# The harness deletes the runtime directory the gate is using as part of
+# teardown. A polite signal it never waits for means the gate can still be
+# running, on a compositor being stopped, in a directory being removed, with
+# nothing said about it.
+scenario_gate_escalated_to_kill() {
+    new_state teardown_escalation
+    local marker="$sandbox/escalate.marker" log="$sandbox/log_escalate.txt"
+    rm -f -- "$marker"
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_ignores_term" "$marker" 2>"$log" &
+    local h_pid=$!
+    harness_pids+=("$h_pid")
+
+    if ! wait_for_file "$marker" 10; then
+        report FAIL "gate escalation: the run never reached its gate"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    fi
+    local run_dir stub_pid gate_pid
+    run_dir="$(single_run_dir)" || {
+        report FAIL "gate escalation: no run directory was created"
+        kill -KILL "$h_pid" 2>/dev/null || true
+        return
+    }
+    read -r stub_pid _ <"$run_dir/compositor.pid"
+    read -r gate_pid _ <"$run_dir/gate.pid"
+
+    kill -TERM "$h_pid" 2>/dev/null || true
+    wait "$h_pid" 2>/dev/null || true
+
+    local ok=1
+    if ! wait_pid_dead "$gate_pid" 15; then
+        report FAIL "gate escalation: a gate that ignores SIGTERM outlived the harness"
+        ok=0
+    fi
+    if ! wait_pid_dead "$stub_pid" 10; then
+        report FAIL "gate escalation: the compositor was left running"
+        ok=0
+    fi
+    if ! wait_until_gone "$run_dir" 10; then
+        report FAIL "gate escalation: the run directory survived"
+        ok=0
+    fi
+    kill_group_hard "$gate_pid"
+    if ((ok)); then
+        report PASS "a gate that ignores SIGTERM is escalated to SIGKILL before the run directory goes"
+    fi
+}
+
+# --- Scenario 12: the reaper escalates to SIGKILL ---------------------------
+# The residue of an untrappable kill is disposed of by the next run. A polite
+# signal is not disposal: a compositor that ignores it holds the GPU, the seat
+# and its runtime directory, and deleting the record makes it unreachable.
+scenario_reaper_escalates_to_kill() {
+    new_state reaper_escalation
+    local marker="$sandbox/reap_kill.marker" log="$sandbox/log_reap_kill_a.txt"
+    rm -f -- "$marker"
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor_ignores_term" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_block" "$marker" 2>"$log" &
+    local a_pid=$!
+    harness_pids+=("$a_pid")
+
+    if ! wait_for_file "$marker" 10; then
+        report FAIL "reaper escalation: the run never reached its gate"
+        kill -KILL "$a_pid" 2>/dev/null || true
+        return
+    fi
+    local run_dir stub_pid
+    run_dir="$(single_run_dir)" || {
+        report FAIL "reaper escalation: no run directory was created"
+        kill -KILL "$a_pid" 2>/dev/null || true
+        return
+    }
+    read -r stub_pid _ <"$run_dir/compositor.pid"
+
+    kill -KILL "$a_pid" 2>/dev/null || true
+    wait "$a_pid" 2>/dev/null || true
+
+    local ok=1
+    if ! is_alive "$stub_pid"; then
+        report FAIL "reaper escalation: the orphan was expected to survive the kill of its harness"
+        ok=0
+    fi
+
+    local status=0 log_b="$sandbox/log_reap_kill_b.txt"
+    run_harness_fg bash "$harness" "$gate_record" "$sandbox/env_reap_kill.txt" 0 2>"$log_b" || status=$?
+    if ((status != 0)); then
+        report FAIL "reaper escalation: the reaping run did not complete cleanly (got $status)"
+        ok=0
+    fi
+    if ! wait_pid_dead "$stub_pid" 10; then
+        report FAIL "reaper escalation: an orphaned compositor that ignores SIGTERM survived the reaper"
+        ok=0
+    fi
+    if [[ -d "$run_dir" ]]; then
+        report FAIL "reaper escalation: the abandoned run directory was not removed"
+        ok=0
+    fi
+    kill_group_hard "$stub_pid"
+    if ((ok)); then
+        report PASS "the reaper escalates to SIGKILL and only then disposes of the record"
+    fi
+}
+
+# --- Scenario 13: a reap that did not happen is never reported as one --------
+# The record is the only thing that makes an orphan reachable by a later run.
+# Deleting it while the process it names is still unaccounted for turns a
+# recoverable orphan into a permanent one, and reporting that as a reap puts the
+# opposite of what happened into the log a person reads afterwards.
+scenario_unverified_reap_is_refused() {
+    new_state reaper_honesty
+    local blocker_pid
+    blocker_pid="$(spawn_detached_blocker "$sandbox/blocker_honesty.pid")" || {
+        report FAIL "unverified reap: could not start the process that stands in for an orphan"
+        return
+    }
+    # A record with no start time: exactly what one transient /proc read failure
+    # used to write, and the value against which no comparison can ever match.
+    local dir
+    dir="$(plant_abandoned_run "$blocker_pid")"
+
+    local status=0 log="$sandbox/log_reap_honesty.txt"
+    run_harness_fg bash "$harness" "$gate_record" "$sandbox/env_reap_honesty.txt" 0 2>"$log" || status=$?
+
+    local ok=1
+    if ((status == 0)); then
+        report FAIL "unverified reap: the harness proceeded past a record it could not act on"
+        ok=0
+    fi
+    if grep -q "reaped an abandoned run directory" "$log"; then
+        report FAIL "unverified reap: the log claims a reap that did not happen"
+        ok=0
+    fi
+    if [[ ! -d "$dir" ]]; then
+        report FAIL "unverified reap: the record was deleted, leaving the process it named unreachable"
+        ok=0
+    fi
+    if ! is_alive "$blocker_pid"; then
+        report FAIL "unverified reap: the process was stopped even though its record could not identify it"
+        ok=0
+    fi
+    if ! grep -q "$dir" "$log"; then
+        report FAIL "unverified reap: the refusal did not name the run directory it kept"
+        ok=0
+    fi
+    kill_group_hard "$blocker_pid"
+    if ((ok)); then
+        report PASS "a record the reaper cannot act on is kept, named, and never reported as reaped"
+    fi
+}
+
+# --- Scenario 14: an unreadable start time is a hard failure at record time --
+# starttime_of returns empty when /proc cannot be read. An empty value recorded
+# beside a pid can never match anything, which silently disables cleanup, the
+# escalation, and every later reap of that run -- and the run directory is then
+# deleted, so nothing is left to find the process by.
+scenario_unreadable_starttime_refuses() {
+    new_state starttime_failure
+    local empty_proc="$sandbox/empty_proc"
+    mkdir -p "$empty_proc"
+    local status=0 log="$sandbox/log_starttime.txt" envfile="$sandbox/env_starttime.txt"
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        ODYSEA_GATE_PROC_ROOT="$empty_proc" \
+        bash "$harness" "$gate_record" "$envfile" 0 2>"$log" || status=$?
+
+    local ok=1
+    if ((status == 0)); then
+        report FAIL "unreadable start time: the harness ran a gate it would not have been able to tear down"
+        ok=0
+    fi
+    if ! grep -qi "start time" "$log"; then
+        report FAIL "unreadable start time: the refusal did not name what could not be read"
+        ok=0
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "unreadable start time: a run directory was left behind"
+        ok=0
+    fi
+    local waited=0
+    while ((waited < 100)); do
+        no_process_mentions_state && break
+        sleep 0.05
+        ((waited += 1))
+    done
+    if ! no_process_mentions_state; then
+        report FAIL "unreadable start time: the compositor it had already started was left running"
+        pkill -KILL -f -- "$active_state/runs" 2>/dev/null || true
+        ok=0
+    fi
+    if ! lock_is_free; then
+        report FAIL "unreadable start time: the cross-run lock was left held"
+        ok=0
+    fi
+    if ((ok)); then
+        report PASS "a start time that cannot be read stops the run instead of disabling every teardown path"
+    fi
+}
+
+# --- Scenario 15: the reaper spares a pid that was reused --------------------
+# The reaper signals a NEGATIVE pid, which is a whole process group. Between
+# that and an unrelated group in the live session there is one thing: the
+# recorded start time. Without it, a run directory left over from a previous
+# boot names whichever process now holds that number.
+scenario_reaper_spares_a_reused_pid() {
+    new_state reaper_reuse
+    local blocker_pid
+    blocker_pid="$(spawn_detached_blocker "$sandbox/blocker_reuse.pid")" || {
+        report FAIL "reused pid: could not start the process that stands in for an unrelated one"
+        return
+    }
+    local real_starttime
+    real_starttime="$(starttime_field "$blocker_pid")" || real_starttime=""
+    if [[ -z "$real_starttime" ]]; then
+        report FAIL "reused pid: could not read the start time of the process under test"
+        kill_group_hard "$blocker_pid"
+        return
+    fi
+    # The recorded start time belongs to a process that is gone; the number now
+    # names something else. 1 is a start time no live process can have, since
+    # the boot-time process that could is init.
+    local dir
+    dir="$(plant_abandoned_run "$blocker_pid 1")"
+
+    local status=0 log="$sandbox/log_reuse.txt"
+    run_harness_fg bash "$harness" "$gate_record" "$sandbox/env_reuse.txt" 0 2>"$log" || status=$?
+
+    local ok=1
+    if ((status != 0)); then
+        report FAIL "reused pid: the run did not complete cleanly (got $status)"
+        ok=0
+    fi
+    if ! is_alive "$blocker_pid"; then
+        report FAIL "reused pid: the reaper signalled a process group that was not the one recorded"
+        ok=0
+    fi
+    if [[ -d "$dir" ]]; then
+        report FAIL "reused pid: a record naming nothing live was kept instead of reaped"
+        ok=0
+    fi
+    kill_group_hard "$blocker_pid"
+    if ((ok)); then
+        report PASS "a recorded pid whose start time no longer matches is spared, and its record is reaped"
+    fi
+}
+
+# --- Scenario 16: the compositor inherits no ambient display name ------------
+# WAYLAND_DISPLAY is the selector for a nested Wayland backend. A compositor
+# started with the ambient name still set can attach to the session this harness
+# exists to stay away from, and the private runtime directory does not prevent
+# it, because the name resolves against the parent's directory first.
+scenario_compositor_gets_no_ambient_display() {
+    new_state ambient_display
+    local record="$sandbox/inherited_display.txt" status=0 log="$sandbox/log_ambient_display.txt"
+    rm -f -- "$record"
+    WAYLAND_DISPLAY="wayland-ambient-selftest" \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor_records_display $record" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_record" "$sandbox/env_ambient_display.txt" 0 2>"$log" || status=$?
+
+    local ok=1
+    if ((status != 0)); then
+        report FAIL "ambient display: the run did not complete (got $status); the compositor refused the display it inherited"
+        ok=0
+    fi
+    if [[ ! -f "$record" ]]; then
+        report FAIL "ambient display: the compositor recorded nothing"
+        ok=0
+    else
+        local inherited
+        inherited="$(cat "$record")"
+        if [[ "$inherited" == "wayland-ambient-selftest" ]]; then
+            report FAIL "ambient display: the compositor inherited the ambient display name"
+            ok=0
+        elif [[ -n "$inherited" && "$inherited" != "<unset>" ]]; then
+            report FAIL "ambient display: the compositor inherited a display name ('$inherited')"
+            ok=0
+        fi
+    fi
+    if ((ok)); then
+        report PASS "the compositor is started with no ambient display name to attach to"
+    fi
+}
+
+# --- Scenario 17: readiness requires a socket, not a name --------------------
+# The readiness wait is what decides that a compositor exists. If it accepts any
+# file with the right name, a compositor that failed halfway -- or anything else
+# that created that name -- produces a declaration for a display nothing is
+# listening on, and the gate that receives it looks elsewhere for a session.
+scenario_readiness_requires_a_socket() {
+    new_state readiness_socket
+    local envfile="$sandbox/env_readiness.txt" log="$sandbox/log_readiness.txt" status=0
+    rm -f -- "$envfile"
+    # The gate here exits as soon as it starts rather than blocking. A readiness
+    # check that wrongly accepted a regular file would otherwise hand a
+    # long-running gate a display nothing answers on, and this scenario would
+    # report that by hanging until a timeout instead of by name.
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor_regular_file" \
+        ODYSEA_GATE_READY_TIMEOUT=2 \
+        bash "$harness" "$gate_record" "$envfile" 0 2>"$log" || status=$?
+
+    local ok=1
+    if ((status != 1)); then
+        report FAIL "readiness: a regular file where the socket belongs should make the harness refuse (expected 1, got $status)"
+        ok=0
+    fi
+    if [[ -e "$envfile" ]]; then
+        report FAIL "readiness: the gate was handed a declaration for a name nothing is listening on"
+        ok=0
+    fi
+    if ! grep -q "timed out.*waiting for the compositor socket" "$log"; then
+        report FAIL "readiness: the refusal did not name the missing socket"
+        ok=0
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "readiness: a refused run left a private directory behind"
+        ok=0
+    fi
+    if ((ok)); then
+        report PASS "a regular file with the socket's name does not satisfy the readiness wait"
+    fi
+}
+
 scenario_success_and_env
 scenario_missing_socket_refuses_gate
 scenario_failure_passthrough
@@ -746,9 +1375,25 @@ scenario_requires_a_gate_command
 scenario_headless_proof
 scenario_headless_value_allowlist
 scenario_stub_bypass_is_qualified
+scenario_gate_stopped_before_compositor
+scenario_gate_escalated_to_kill
+scenario_reaper_escalates_to_kill
+scenario_unverified_reap_is_refused
+scenario_unreadable_starttime_refuses
+scenario_reaper_spares_a_reused_pid
+scenario_compositor_gets_no_ambient_display
+scenario_readiness_requires_a_socket
+scenario_unaccountable_process_is_reported
 
 if ((failures == 0)); then
-    echo "compositor_gate_harness_self_test: all scenarios passed"
+    # Only meaningful on the passing path: a failing scenario reports each
+    # broken expectation separately, so the count exceeds the number of
+    # scenarios and the suite fails on its own terms anyway.
+    if ((reported != expected_scenario_count)); then
+        echo "compositor_gate_harness_self_test: $reported scenario(s) reported a result, expected $expected_scenario_count; the suite did not run in full" >&2
+        exit 1
+    fi
+    echo "compositor_gate_harness_self_test: all $reported scenarios passed"
     exit 0
 fi
 
