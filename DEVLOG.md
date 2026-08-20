@@ -26,6 +26,7 @@ order, and the archive gate compares it against what the files actually hold.
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things
@@ -216,6 +217,42 @@ real-compositor entries remained excluded under the session-safety policy.
 Repository, formatting, QML, file-length, attribution, and application-smoke
 gates pass.
 >>>>>>> 478cf30 (Make Miller focus drive workspace location)
+=======
+## 2026-08-20 -- The filtered RHI gate carries every device-scaling check
+
+The offscreen OpenGL validation entry deliberately filters the device-scaling
+TestCase instead of running unrelated visual cases. Its per-axis-rounding
+companion was added to that TestCase but omitted from the filter, leaving the
+entry that supplies its GPU surface unable to run it. The registered function
+list now includes the companion. `rhi_function_filter` rejects either
+direction of that drift, so a future TestCase addition cannot silently become
+offscreen-GPU coverage in name only.
+
+## 2026-08-20 -- Protected-well mask edges retain their coverage
+
+The presentation pipeline samples the protected-well mask independently from
+the content frame. The shaders classify coverage at one half so an edge with
+partial coverage stays protected without expanding into the one-device-pixel
+ring outside a well. The source texture, however, inherited nearest filtering.
+At a source/destination texel phase mismatch, a nearest lookup can select the
+transparent texel beside a covered edge, exposing that pixel to bloom,
+scanlines, and vignette even though the well's logical rectangle includes it.
+
+The mask source now requests linear filtering explicitly. Its existing
+half-coverage classification turns the filtered edge into the intended binary
+decision: a covered border remains byte-true, while the outside ring remains
+processed. No well geometry is inflated; a scale-independent expansion cannot
+satisfy both boundaries at every device ratio. The device-pixel suite makes
+the filtering choice observable, so changing the source back to nearest fails
+before a frame comparison can quietly stop exercising the condition.
+
+The mutation is measured on the offscreen OpenGL RHI surface: setting the
+source to nearest fails `DevicePixelScaling::initTestCase`, and restoring
+linear filtering passes the same entry. The real-compositor surface remains
+unmeasured: the isolated-compositor harness currently refuses its production
+backend selector before starting a compositor, and no interactive-session
+render is an acceptable substitute.
+>>>>>>> d25c142 (Keep protected mask edges and GPU filter coverage)
 
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 

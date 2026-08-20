@@ -10,6 +10,8 @@
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 ## 2026-08-20 -- Starting a compositor is an obligation to end it
 ## 2026-08-20 -- Make workspace location follow the focused Miller column
+## 2026-08-20 -- The filtered RHI gate carries every device-scaling check
+## 2026-08-20 -- Protected-well mask edges retain their coverage
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 ## 2026-08-12 -- One smoke gate replaces two independent implementations
 ## 2026-08-12 -- A filtered gate now has to list what its TestCase defines

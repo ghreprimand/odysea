@@ -573,6 +573,7 @@ add_test(NAME shell_visual_validation_rhi
     COMMAND odysea_validation_rhi_launcher
         DevicePixelScaling::test_maskGeometryStaysLogical
         DevicePixelScaling::test_frameRendersAtDeviceResolution
+        DevicePixelScaling::test_perAxisRoundingReachedIsRecordedAndBounded
         DevicePixelScaling::test_wellBorderStaysByteTrueAtDeviceResolution
         DevicePixelScaling::test_ringOutsideWellStaysProcessed)
 

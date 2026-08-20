@@ -183,6 +183,7 @@ Item {
         function initTestCase() {
             dpr = Screen.devicePixelRatio;
             verify(dpr >= 1);
+            verify(layer.wellMaskUsesLinearSampling, "the protected-well mask must retain filtered edge coverage");
             wells.registerWell(thumbWell);
             wells.registerWell(gutterWell);
             compare(wells.wellCount, 2);

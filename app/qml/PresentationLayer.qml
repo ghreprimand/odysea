@@ -79,7 +79,19 @@ Item {
         hideSource: true
         visible: false
         live: true
+        // A mask edge carries geometric coverage, not a nearest texel label.
+        // At a device-pixel boundary a nearest read can select the transparent
+        // texel beside a fully covered well pixel, exposing that pixel to
+        // emission. The shaders classify the resulting coverage at 0.5, so
+        // linear filtering keeps the whole covered edge protected without
+        // expanding the mask into the one-pixel outside ring.
+        smooth: true
     }
+
+    // Kept observable for the device-pixel test: changing the mask back to a
+    // nearest texture silently reopens the edge-leak class on a surface whose
+    // source and destination texel grids land at different phases.
+    readonly property bool wellMaskUsesLinearSampling: wellMaskSrc.smooth
 
     // The bright pass is present in the scene, hidden through hideSource on
     // its ShaderEffectSource, so the blur passes can take it as a direct
