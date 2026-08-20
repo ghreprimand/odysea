@@ -24,6 +24,84 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-20 -- A declared compositor now has to be one this run created
+
+The interlock that keeps GPU-path gates off a session in use required three
+things of a declaration: `WAYLAND_DISPLAY` equal to `ODYSEA_ISOLATED_COMPOSITOR`,
+a non-empty `XDG_RUNTIME_DIR`, and the resolved path being a socket. Every one
+of those is satisfied by the machine's own session. Its Wayland socket is a
+socket, and exporting two variables by hand was enough to authorise a window
+that asks to be brought to the front on the surfaces someone is looking at. The
+check proved that a compositor was listening, which is the single thing that is
+always true of a live session, and never that this run brought one into being.
+
+Proof of origin replaces proof of presence. The harness reads an unpredictable
+token per run, writes it into the private runtime directory it creates, and
+exports it. A declaration is accepted only when the directory holding the socket
+is not the login session's runtime directory and holds a file, owned by this
+user, whose contents equal the exported token exactly. Each condition is a stat
+or a bounded read, each failure is a refusal, and an environment with nothing
+set is refused. The token is not a secret — anyone who can read the private
+directory can read it — and it is not meant to be. It separates a declaration
+this harness made from one an environment inherited or a person typed, which is
+the failure the interlock exists to stop. Both refusals were measured: a
+declaration naming the live session is declined at both gate sites before any
+window can exist, and a declaration the harness made is still accepted and still
+reaches the graphics probe, so the refusal discriminates rather than closing the
+path outright.
+
+The harness's own default was worse than the hole it guarded. It set
+`WLR_BACKENDS=headless` and described itself as headless. That variable belongs
+to wlroots; the compositor installed here links a different backend library
+whose selection uses an unrelated set of names, and the string appears in
+neither the binary nor that library. The assignment was inert, so the compositor
+would have started with no backend constraint at all — and with `WAYLAND_DISPLAY`
+deliberately cleared, which is what selects a nested backend, the remaining
+plausible choice takes a seat, a virtual terminal, and DRM master on the
+machine's own display. A tool written to protect an interactive session would
+have taken it over. The harness now reads the selector out of its own command
+and refuses unless that program, or a library it links, contains the variable
+name; absence is treated as proof the variable is unread, because that direction
+produces a refusal rather than a run. On this machine it refuses, so the
+real-compositor path stays unmeasured, and that is the correct trade.
+
+Three further boundaries were closed at the same edge. The compositor no longer
+inherits the session bus: its address is an absolute path that a private runtime
+directory does not isolate, and this compositor's startup routine rewrites the
+activation environment of whatever bus it can reach, which would have left the
+live session pointed at a throwaway compositor and then unset those variables on
+exit. It no longer inherits `HOME` or the configuration tree, so the real user's
+startup entries cannot launch a second copy of that session's daemons. Neither
+it nor the gate inherits `DISPLAY` or `XAUTHORITY`; the gates strip `DISPLAY`
+themselves once they accept, but the harness accepts any command, and a fallback
+onto an inherited X display is a hole this interlock has already had. The
+harness also refuses to run with no `XDG_RUNTIME_DIR`, where its state would
+otherwise fall back to a path any local user can create first — including as a
+symlink that redirects the harness's own recursive delete.
+
+Two claims in tracked text were false and are corrected rather than softened.
+The harness header said it chose `WAYLAND_DISPLAY`; it clears the variable and
+then discovers whatever name the compositor bound, which on a compositor that
+numbers from zero is routinely the same name the live session uses. The
+protection was always the private directory, never the name. And the contributor
+guide said the two compositor entries run through the harness; they are
+registered directly and decline, so nothing has yet run against a real
+compositor. A refusal in place of a measurement is an honest state to be in, but
+only while the text says so.
+
+One line survives that cannot fail: the harness refuses a private runtime
+directory equal to the ambient one, which a freshly created directory under the
+run parent can never be. It is left in place as an invariant assertion and
+labelled as one. It used to read as the control preventing a gate from being
+pointed back at the inherited session, and a line that cannot fail is not a
+defence.
+
+Verified: the harness self-test covers nine scenarios including both directions
+of the headless proof, with one command whose program contains the selector and
+one that does not, differing in that respect alone. Release and ASan/UBSan
+builds are warning-clean and their suites pass. The refused production path
+starts no process, creates no directory, and exits before the lock is taken.
+
 ## 2026-08-12 -- One smoke gate replaces two independent implementations
 
 Two independently complete implementations of the same application smoke gate

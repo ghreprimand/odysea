@@ -85,6 +85,13 @@ new_state() {
 lock_path() { printf '%s' "$active_state/lock"; }
 
 # --- Stub compositor and stub gate commands ---------------------------------
+# Every scenario below runs a stub that opens a socket and does nothing else, so
+# the harness's headless proof — which asks whether the installed compositor
+# reads the backend selector in its command — has nothing to decide about. The
+# declaration below says so, and it is the only thing it does. The proof itself
+# is exercised in both directions by its own scenario, which does not set this.
+export ODYSEA_GATE_STUB_COMPOSITOR=1
+
 readonly stub_compositor="$sandbox/stub_compositor.sh"
 cat >"$stub_compositor" <<'STUB'
 #!/usr/bin/env bash
@@ -121,6 +128,16 @@ out="$1"; code="$2"
     printf 'ODYSEA_ISOLATED_COMPOSITOR=%s\n' "${ODYSEA_ISOLATED_COMPOSITOR:-<unset>}"
     printf 'WAYLAND_DISPLAY=%s\n' "${WAYLAND_DISPLAY:-<unset>}"
     printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR:-<unset>}"
+    printf 'ODYSEA_ISOLATED_COMPOSITOR_NONCE=%s\n' "${ODYSEA_ISOLATED_COMPOSITOR_NONCE:-<unset>}"
+    # Whether the exported token matches the one in the directory holding the
+    # socket is the whole question the gates ask, so the stub gate answers it
+    # from where a gate stands rather than from where the harness stands.
+    recorded="<absent>"
+    if [[ -f "${XDG_RUNTIME_DIR:-}/odysea-isolated-compositor.nonce" ]]; then
+        recorded="$(cat "$XDG_RUNTIME_DIR/odysea-isolated-compositor.nonce")"
+    fi
+    printf 'NONCE_FILE=%s\n' "$recorded"
+    printf 'DISPLAY=%s\n' "${DISPLAY:-<unset>}"
 } >"$out"
 exit "$code"
 GATE
@@ -244,6 +261,22 @@ scenario_success_and_env() {
     fi
     if [[ "$xrd" != "$active_state"/runs/run.* ]]; then
         report FAIL "the gate's XDG_RUNTIME_DIR was not a private run directory (got '$xrd')"
+        return
+    fi
+    local nonce_env nonce_file display
+    nonce_env="$(grep '^ODYSEA_ISOLATED_COMPOSITOR_NONCE=' "$envfile" | cut -d= -f2-)"
+    nonce_file="$(grep '^NONCE_FILE=' "$envfile" | cut -d= -f2-)"
+    display="$(grep '^DISPLAY=' "$envfile" | cut -d= -f2-)"
+    if ((${#nonce_env} < 32)); then
+        report FAIL "the gate received no usable per-run token (got '$nonce_env')"
+        return
+    fi
+    if [[ "$nonce_env" != "$nonce_file" ]]; then
+        report FAIL "the exported token did not match the one beside the socket (exported '$nonce_env', beside the socket '$nonce_file')"
+        return
+    fi
+    if [[ "$display" != "<unset>" ]]; then
+        report FAIL "an inherited X display reached the gate (DISPLAY='$display')"
         return
     fi
     if (($(count_run_dirs) != 0)); then
@@ -499,6 +532,74 @@ scenario_sigkill_and_reaper() {
     fi
 }
 
+# --- Scenario 9: the headless proof, in both directions ----------------------
+# The harness's first refusal asks whether the program named in the compositor
+# command actually reads the variable that command sets to select a backend. It
+# exists because the shipped default set WLR_BACKENDS for a compositor that does
+# not read it: the assignment was inert, and what would have started was a
+# compositor free to take the seat, the VT, and DRM master on the display in
+# use. So the check is measured with two commands that differ in exactly that
+# one respect — one program that contains the selector and one that does not —
+# and neither of them declares itself a stub.
+scenario_headless_proof() {
+    new_state headless_proof
+    local reads_selector="$sandbox/reads_selector.sh" log="$sandbox/log_headless.txt"
+    # Stands in for a compositor that reads the selector: the string is present
+    # in the program, which is the trace the harness looks for. It then behaves
+    # like the socket stub so the run can proceed past the proof.
+    # The selector appears as a standalone string, which is how a compiled
+    # program that calls getenv on it appears to `strings`: a NUL-terminated
+    # literal on a line of its own. A mention inside a longer line is not the
+    # same trace and deliberately does not satisfy the proof.
+    cat >"$reads_selector" <<'STUB'
+#!/usr/bin/env bash
+: <<'SELECTOR'
+WLR_BACKENDS
+SELECTOR
+set -eu
+exec python3 -c 'import socket, sys, time
+sock = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(sock)
+s.listen(1)
+time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
+STUB
+    chmod +x "$reads_selector"
+
+    local status=0
+    env -u ODYSEA_GATE_STUB_COMPOSITOR \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="env WLR_BACKENDS=headless /bin/true" \
+        ODYSEA_GATE_READY_TIMEOUT=5 \
+        bash "$harness" /bin/true >/dev/null 2>"$log" || status=$?
+    if ((status == 0)); then
+        report FAIL "the harness started a compositor whose backend selector it does not read"
+        return
+    fi
+    if ! grep -q "does not read WLR_BACKENDS" "$log"; then
+        report FAIL "the refusal did not name the selector the program ignores"
+        return
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "a refused compositor command still created a run directory"
+        return
+    fi
+
+    new_state headless_proof_positive
+    local envfile="$sandbox/env_headless.txt"
+    status=0
+    env -u ODYSEA_GATE_STUB_COMPOSITOR \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="env WLR_BACKENDS=headless $reads_selector" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_record" "$envfile" 0 2>>"$log" || status=$?
+    if ((status != 0)); then
+        report FAIL "a compositor command whose program reads the selector was refused too (status $status)"
+        return
+    fi
+    report PASS "the headless proof refuses an inert selector and admits one the program reads"
+}
+
 # --- Scenario 8: a bare invocation with no gate command is refused -----------
 scenario_requires_a_gate_command() {
     new_state usage
@@ -519,6 +620,7 @@ scenario_signal_teardown TERM "SIGTERM (the CTest timeout signal)"
 scenario_signal_teardown INT "SIGINT"
 scenario_sigkill_and_reaper
 scenario_requires_a_gate_command
+scenario_headless_proof
 
 if ((failures == 0)); then
     echo "compositor_gate_harness_self_test: all scenarios passed"

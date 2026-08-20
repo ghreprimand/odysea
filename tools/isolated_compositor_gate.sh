@@ -17,12 +17,22 @@
 #
 # CONTRACT
 #   isolated_compositor_gate.sh <gate-command> [args...]
-# Acquires a cross-run lock, starts a compositor in a private XDG_RUNTIME_DIR,
-# waits for its socket, exports WAYLAND_DISPLAY + XDG_RUNTIME_DIR +
-# ODYSEA_ISOLATED_COMPOSITOR into the gate's environment, runs the gate, and
-# tears the compositor down. The harness — not the compositor command — chooses
-# WAYLAND_DISPLAY, so nothing the command does can point the gate at a session
-# that was already in the environment.
+# Acquires a cross-run lock, proves the compositor command is headless on the
+# compositor actually installed, starts it in a private XDG_RUNTIME_DIR with a
+# per-run token, waits for its socket, exports WAYLAND_DISPLAY +
+# XDG_RUNTIME_DIR + ODYSEA_ISOLATED_COMPOSITOR +
+# ODYSEA_ISOLATED_COMPOSITOR_NONCE into the gate's environment, runs the gate,
+# and tears the compositor down.
+#
+# WHAT ACTUALLY ISOLATES THE RUN. Not the socket name: the harness clears
+# WAYLAND_DISPLAY and then DISCOVERS whatever name the compositor bound inside
+# the private directory, which on a compositor that numbers from zero is
+# routinely the same name the live session uses. The isolation is the private
+# runtime directory, and the proof that a gate is looking at this run's
+# compositor rather than at one that was already listening is the token written
+# into that directory. An earlier version of this comment claimed the harness
+# chose the name; it did not, and a false safety claim in the file auditors
+# read is how three holes survived review here.
 #
 # EXIT STATUS
 #   0..N   the gate command's own status, passed through unchanged
@@ -31,10 +41,24 @@
 #
 # ENVIRONMENT KNOBS (defaults are the production settings)
 #   ODYSEA_GATE_COMPOSITOR_CMD  How to start the compositor, run under a private
-#                               XDG_RUNTIME_DIR. Default is Hyprland headless.
-#                               The self-test overrides this with a stub so the
-#                               lock, trap, teardown, and reaper are provable
-#                               with no real compositor running.
+#                               XDG_RUNTIME_DIR. The default names a headless
+#                               wlroots backend. The self-test overrides this
+#                               with a stub so the lock, trap, teardown, and
+#                               reaper are provable with no real compositor
+#                               running.
+#   ODYSEA_GATE_HEADLESS_ENV    The environment variable in the compositor
+#                               command that selects a headless backend, and
+#                               which the harness verifies the installed
+#                               compositor actually reads. Default WLR_BACKENDS.
+#                               Set alongside ODYSEA_GATE_COMPOSITOR_CMD when
+#                               pointing the harness at a different compositor.
+#   ODYSEA_GATE_STUB_COMPOSITOR Set by the self-test to declare that the
+#                               compositor command is a stub that opens a
+#                               socket and nothing else. It bypasses the
+#                               headless proof — which has no meaning for a
+#                               stub — and nothing else. Production must never
+#                               set it, and the refusal it bypasses is the one
+#                               control that keeps this harness off the seat.
 #   ODYSEA_GATE_LOCK_WAIT       Seconds to wait for the cross-run lock before
 #                               skipping by name. Default 0 (try once).
 #   ODYSEA_GATE_READY_TIMEOUT   Seconds to wait for the compositor socket to
@@ -67,12 +91,99 @@ readonly ready_timeout="${ODYSEA_GATE_READY_TIMEOUT:-20}"
 # until an isolated-compositor run is available; the self-test overrides this
 # with a stub, and the lock, trap, teardown, and reaper are proven without it.
 readonly compositor_cmd="${ODYSEA_GATE_COMPOSITOR_CMD:-env WLR_BACKENDS=headless Hyprland}"
+readonly headless_env="${ODYSEA_GATE_HEADLESS_ENV:-WLR_BACKENDS}"
+# The file name the per-run token is written into, inside the private runtime
+# directory. app/tests/isolated_compositor_declaration.hpp reads the same name.
+readonly nonce_file_name="odysea-isolated-compositor.nonce"
 
 log() { printf 'isolated-compositor-gate: %s\n' "$*" >&2; }
 
 usage() {
     log "usage: isolated_compositor_gate.sh <gate-command> [args...]"
     exit "$harness_failure_status"
+}
+
+# True when the named program, or a library it links, contains the given
+# environment-variable name as a whole string — the observable trace of code
+# that reads it. Absence is treated as proof the variable is not read, which is
+# the conservative direction: it produces a refusal, never a run.
+compositor_reads_variable() {
+    local binary="$1" variable="$2" resolved lib
+    resolved="$(command -v "$binary" 2>/dev/null)" || return 1
+    [[ -n "$resolved" && -f "$resolved" ]] || return 1
+    if strings -a -- "$resolved" 2>/dev/null | grep -qx -- "$variable"; then
+        return 0
+    fi
+    while read -r lib; do
+        [[ -f "$lib" ]] || continue
+        if strings -a -- "$lib" 2>/dev/null | grep -qx -- "$variable"; then
+            return 0
+        fi
+    done < <(ldd "$resolved" 2>/dev/null | grep -oE '/[^ ]+\.so[^ ]*')
+    return 1
+}
+
+# Refuses to start a compositor whose headless selection cannot be shown to
+# have any effect on the compositor that is actually installed.
+#
+# WHY THIS IS THE FIRST CHECK. The default command carried WLR_BACKENDS=headless
+# and was described as "Hyprland headless". That variable belongs to wlroots.
+# The installed Hyprland links aquamarine instead, whose backend selection is a
+# different set of names entirely, and the string WLR_BACKENDS appears in
+# neither the binary nor that library. So the assignment was inert: the
+# compositor would have started with no backend constraint at all, and with
+# WAYLAND_DISPLAY deliberately cleared — which is the selector for a nested
+# Wayland backend — the remaining plausible choice is the DRM backend, which
+# takes a seat, a VT, and DRM master on the machine's own GPU. A harness written
+# to protect an interactive session would have taken it over instead.
+#
+# What follows from that is a rule, not a patch: a declaration of headlessness
+# is worth nothing unless it is checked against the thing being run. The harness
+# reads the selector out of its own command, confirms the installed compositor
+# contains that variable, and refuses otherwise. It never falls through to
+# "start it and see", because seeing costs the session.
+require_provably_headless_compositor() {
+    if [[ -n "${ODYSEA_GATE_STUB_COMPOSITOR:-}" ]]; then
+        return 0
+    fi
+    local words=() word binary="" selector_value="" selector_present=0
+    read -r -a words <<<"$compositor_cmd"
+    for word in "${words[@]}"; do
+        case "$word" in
+            env) continue ;;
+            *=*)
+                if [[ "${word%%=*}" == "$headless_env" ]]; then
+                    selector_present=1
+                    selector_value="${word#*=}"
+                fi
+                ;;
+            *)
+                binary="$word"
+                break
+                ;;
+        esac
+    done
+    if ((!selector_present)) || [[ -z "$selector_value" ]]; then
+        log "refusing: the compositor command does not set $headless_env to a backend, so"
+        log "nothing in it selects a headless backend: $compositor_cmd"
+        return 1
+    fi
+    if [[ -z "$binary" ]]; then
+        log "refusing: the compositor command names no program: $compositor_cmd"
+        return 1
+    fi
+    if ! compositor_reads_variable "$binary" "$headless_env"; then
+        log "refusing: $binary does not read $headless_env, so setting it selects nothing and"
+        log "the compositor would start with whatever backend it picks by itself -- on this"
+        log "class of machine that is the DRM backend, which takes the seat, the VT, and DRM"
+        log "master on the display the session is using."
+        log "Install a compositor whose headless backend this harness can verify, or set"
+        log "ODYSEA_GATE_COMPOSITOR_CMD and ODYSEA_GATE_HEADLESS_ENV together to one that"
+        log "reads its selector. The real-compositor gate stays unmeasured until then, which"
+        log "is a smaller cost than the alternative."
+        return 1
+    fi
+    return 0
 }
 
 # The starttime field (proc(5) field 22) of a live process, used to tell a pid
@@ -186,6 +297,21 @@ command -v flock >/dev/null 2>&1 || {
     exit "$harness_failure_status"
 }
 
+# With XDG_RUNTIME_DIR unset the state directory would fall back to a path under
+# /tmp that any local user can create first, including as a symlink pointing the
+# harness's own rm -rf somewhere else. There is no run worth taking that risk
+# for: a machine with no runtime directory is not the machine this gate is meant
+# to run on.
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    log "refusing: XDG_RUNTIME_DIR is not set, so the run state would live under a"
+    log "world-writable path this harness deletes recursively"
+    exit "$harness_failure_status"
+fi
+
+# Before the lock, before any process is started: a compositor command whose
+# headless selection cannot be shown to apply is refused outright.
+require_provably_headless_compositor || exit "$harness_failure_status"
+
 mkdir -p "$runs_parent"
 
 # --- Cross-run lock (c) ------------------------------------------------------
@@ -217,6 +343,13 @@ reap_stale_runs
 
 # --- Start the compositor in a private runtime directory --------------------
 private_runtime="$(mktemp -d "$runs_parent/run.XXXXXX")"
+# An invariant assertion, and it is worth saying that it is only that: a fresh
+# mktemp directory under the run parent can never equal the ambient one, so this
+# branch cannot fire and deleting it changes no test result. It used to read as
+# the control that stops a gate being pointed back at the inherited session.
+# That control is the per-run token below and the checks the gates apply to it;
+# a line that cannot fail is not a defence, and describing one as a defence is
+# how the interlock kept passing review with a session-shaped hole in it.
 if [[ "$private_runtime" == "$ambient_runtime" ]]; then
     log "refusing: the private runtime directory resolved to the ambient one ($ambient_runtime)"
     exit "$harness_failure_status"
@@ -230,6 +363,29 @@ flock -n -x "$liveness_fd" || {
     exit "$harness_failure_status"
 }
 
+# The per-run token. A gate accepts a declaration only when the directory
+# holding the socket contains this exact value, which is what separates a
+# compositor this run created from one that was already listening — and the
+# machine's own session is always listening. It is read from the kernel's random
+# source per run and written nowhere the declaration itself can reach.
+nonce="$(od -An -tx1 -N 32 /dev/urandom | tr -d ' \n')"
+if ((${#nonce} < 32)); then
+    log "refusing: could not read a per-run token from /dev/urandom"
+    exit "$harness_failure_status"
+fi
+readonly nonce
+(
+    umask 077
+    printf '%s' "$nonce" >"$private_runtime/$nonce_file_name"
+)
+
+# A private HOME and configuration tree. Without them the compositor reads the
+# real user's configuration, whose startup entries would launch a second copy of
+# that session's daemons; with the session bus also removed below, those would
+# have competed for the live session's bus names.
+private_home="$private_runtime/home"
+mkdir -p "$private_home/.config" "$private_home/.cache"
+
 # The compositor creates its socket in its own runtime directory and does not
 # read WAYLAND_DISPLAY, which is cleared so it can never bind the ambient name.
 # setsid puts it in its own session, so its group can be stopped as a unit and
@@ -239,8 +395,26 @@ flock -n -x "$liveness_fd" || {
 # lock held by the surviving orphan instead of released by the kernel, and the
 # reaper — which depends on the liveness lock being free once the harness is
 # gone — could never run.
-WAYLAND_DISPLAY="" XDG_RUNTIME_DIR="$private_runtime" \
-    setsid bash -c "$compositor_cmd" {lock_fd}>&- {liveness_fd}>&- &
+#
+# The session bus is removed as well. It is an absolute unix path, so a private
+# runtime directory does not isolate it, and this compositor's own startup
+# routine calls dbus-update-activation-environment — which would have rewritten
+# the LIVE session's activation environment to point at a throwaway compositor
+# and unset those variables again on exit, leaving residue no teardown here
+# could undo. DISPLAY and XAUTHORITY go for the same reason they go inside the
+# gates: an inherited X display is a session this harness did not create.
+#
+# Streams are redirected into the run directory. A survivor that inherited the
+# harness's stdout holds that pipe open, and a reader that waits for end-of-file
+# — CTest does — then blocks on a process the harness has already stopped
+# reporting about.
+env -u DBUS_SESSION_BUS_ADDRESS -u DBUS_SESSION_BUS_PID -u DISPLAY -u XAUTHORITY \
+    WAYLAND_DISPLAY="" XDG_RUNTIME_DIR="$private_runtime" \
+    HOME="$private_home" XDG_CONFIG_HOME="$private_home/.config" \
+    XDG_CACHE_HOME="$private_home/.cache" XDG_STATE_HOME="$private_home/.local/state" \
+    setsid bash -c "$compositor_cmd" \
+    >"$private_runtime/compositor.out" 2>"$private_runtime/compositor.err" \
+    {lock_fd}>&- {liveness_fd}>&- &
 compositor_pid="$!"
 compositor_starttime="$(starttime_of "$compositor_pid")"
 printf '%s %s\n' "$compositor_pid" "$compositor_starttime" >"$private_runtime/compositor.pid"
@@ -281,9 +455,17 @@ log "RUN -- compositor ready at $private_runtime/$wayland_display; running the g
 # The gate runs in its own session so a signal to the harness is handled by the
 # trap here rather than being swallowed while a foreground child blocks, and so
 # the gate's whole process group can be stopped on teardown.
-XDG_RUNTIME_DIR="$private_runtime" \
+#
+# DISPLAY and XAUTHORITY are removed here too. Both current gates unset DISPLAY
+# themselves once they accept a declaration, but this harness accepts any
+# command, and a Qt fallback onto an inherited X display is one of the holes
+# this interlock has already had. The defence belongs at the boundary as well as
+# inside the things that happen to pass through it today.
+env -u DISPLAY -u XAUTHORITY \
+    XDG_RUNTIME_DIR="$private_runtime" \
     WAYLAND_DISPLAY="$wayland_display" \
     ODYSEA_ISOLATED_COMPOSITOR="$wayland_display" \
+    ODYSEA_ISOLATED_COMPOSITOR_NONCE="$nonce" \
     setsid "$@" {lock_fd}>&- {liveness_fd}>&- &
 gate_pid="$!"
 gate_group_pid="$gate_pid"

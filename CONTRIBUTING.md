@@ -75,15 +75,35 @@ pointer input, and a run that ends abnormally leaves that state behind. The
 compositor, the kernel, and the drivers all stay healthy throughout, which is
 what makes the result difficult to diagnose from the outside.
 
-The rule is enforced mechanically rather than trusted. The two compositor test
-entries run through `tools/isolated_compositor_gate.sh`, which starts a
-compositor in a private runtime directory, waits for its socket, and exports
-`ODYSEA_ISOLATED_COMPOSITOR` naming that socket. Both the compositor launcher
-and the shared runner behind the GPU-path suites refuse to run unless the
-platform is non-rendering, or that declaration names a socket that matches
-`WAYLAND_DISPLAY` and exists. A declaration is treated as a claim, not as
-evidence: a harness whose compositor never bound presents the same environment
-as one that succeeded, so the socket is checked rather than the name alone.
+The rule is enforced mechanically rather than trusted. Both the compositor
+launcher and the shared runner behind the GPU-path suites refuse to run unless
+the platform is non-rendering, or a declaration names a socket that matches
+`WAYLAND_DISPLAY`, exists, and is proven to belong to the run making the claim.
+A declaration is treated as a claim, not as evidence, in two distinct ways. A
+harness whose compositor never bound presents the same environment as one that
+succeeded, so the socket is checked rather than the name alone. And a socket
+being present proves only that some compositor is listening — which is exactly
+what is always true of the session in use, whose socket is a socket and whose
+name can be exported by hand. So `tools/isolated_compositor_gate.sh` writes an
+unpredictable per-run token into the private runtime directory it creates and
+exports it as `ODYSEA_ISOLATED_COMPOSITOR_NONCE`; a gate accepts a declaration
+only when the directory holding the socket is not the login session's and holds
+that exact token. Every check is a stat or a bounded read, and the state with
+nothing set is refusal.
+
+What this does not yet do is measure anything on a real compositor. The two
+compositor test entries are registered directly rather than through the
+harness, and they decline, so the real-compositor path is unmeasured. The
+harness refuses to start a compositor whose headless selection cannot be shown
+to apply to the compositor actually installed: it reads the backend selector
+out of its own command and requires that program, or a library it links, to
+contain that variable name. On a machine whose compositor does not read the
+selector the default command names, the harness refuses and the path stays
+unmeasured. That is the intended outcome. A compositor started with no backend
+constraint falls back to whichever backend it chooses by itself, which on a
+workstation is the one that takes the seat, the virtual terminal, and DRM
+master on the display the session is using — a worse outcome than the one this
+whole rule exists to prevent, produced by the tool written to prevent it.
 
 The refusal is a skip and stays a skip. `ODYSEA_REQUIRE_COMPOSITOR`, which
 turns an inability to run into a failure so a skip cannot read as a pass, does

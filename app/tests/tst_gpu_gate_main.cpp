@@ -30,13 +30,16 @@
 // that direct run could take input focus in a session someone is using and
 // leave it there. A policy enforced only for the registered entries and
 // documented for humans is the shape of the practice that made this necessary.
+#include "isolated_compositor_declaration.hpp"
 #include <QByteArray>
 #include <QQmlContext>
 #include <QQmlEngine>
+
 #include <QtQuickTest>
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include <sys/stat.h>
 
@@ -90,7 +93,14 @@ void refuseAmbientSession() {
                                           ? declaredSocket
                                           : runtimeDirectory + '/' + declaredSocket;
         struct stat socketStatus = {};
-        if (::stat(socketPath.constData(), &socketStatus) == 0 && S_ISSOCK(socketStatus.st_mode)) {
+        const std::string resolvedSocketPath(
+            socketPath.constData(), static_cast<std::string::size_type>(socketPath.size()));
+        // Presence is not ownership: the machine's own session satisfies every
+        // check above once two variables are set by hand. The per-run token is
+        // what separates a compositor this run created from one that was
+        // already listening.
+        if (::stat(socketPath.constData(), &socketStatus) == 0 && S_ISSOCK(socketStatus.st_mode) &&
+            odysea_test::declarationNamesThisRunsCompositor(resolvedSocketPath)) {
             ::unsetenv("DISPLAY");
             return;
         }
@@ -104,7 +114,12 @@ void refuseAmbientSession() {
         "which sets ODYSEA_ISOLATED_COMPOSITOR to the Wayland socket it created and points "
         "WAYLAND_DISPLAY at the same socket. That socket must exist: a declaration naming a "
         "socket nothing is listening on is a harness whose compositor never bound, and with "
-        "no platform pinned Qt would fall back to the ambient X display.\n",
+        "no platform pinned Qt would fall back to the ambient X display.\n"
+        "The socket must also be proven to belong to this run: its directory must not be the "
+        "login session's runtime directory and must hold the token exported as "
+        "ODYSEA_ISOLATED_COMPOSITOR_NONCE. Exporting the declaration variables against an "
+        "interactive session does not satisfy this, which is the case the interlock exists "
+        "to refuse.\n",
         stderr);
     std::_Exit(77);
 }

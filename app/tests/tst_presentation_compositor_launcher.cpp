@@ -88,6 +88,8 @@
 // compositor path is unmeasured, and every result this gate produced before the
 // interlock was measured against whichever session and output the window
 // happened to reach.
+#include "isolated_compositor_declaration.hpp"
+
 #include <QByteArray>
 #include <QGuiApplication>
 #include <QOffscreenSurface>
@@ -135,10 +137,13 @@ struct Compositor {
 /// and reported an inability to run "on an advertised compositor" — a sentence
 /// that is false, since nothing was listening — which is the reading the DECL
 /// state exists to keep separate.
-Compositor resolveDeclaredCompositor(const QByteArray& declaredSocket) {
-    if (qgetenv("WAYLAND_DISPLAY") != declaredSocket) {
-        return {};
-    }
+///
+/// Existence is still not ownership. A live session's socket is a socket too,
+/// so these checks are all satisfied by the machine's own compositor with two
+/// variables set by hand. Proof that this run created the compositor is a
+/// separate check, applied at the call site: see
+/// isolated_compositor_declaration.hpp.
+std::string declaredSocketPath(const QByteArray& declaredSocket) {
     const QByteArray runtimeDirectory = qgetenv("XDG_RUNTIME_DIR");
     if (runtimeDirectory.isEmpty()) {
         return {};
@@ -147,8 +152,19 @@ Compositor resolveDeclaredCompositor(const QByteArray& declaredSocket) {
     // otherwise it names an entry inside XDG_RUNTIME_DIR.
     const QByteArray socketPath =
         declaredSocket.startsWith('/') ? declaredSocket : runtimeDirectory + '/' + declaredSocket;
+    return {socketPath.constData(), static_cast<std::string::size_type>(socketPath.size())};
+}
+
+Compositor resolveDeclaredCompositor(const QByteArray& declaredSocket) {
+    if (qgetenv("WAYLAND_DISPLAY") != declaredSocket) {
+        return {};
+    }
+    const std::string socketPath = declaredSocketPath(declaredSocket);
+    if (socketPath.empty()) {
+        return {};
+    }
     struct stat socketStatus = {};
-    if (::stat(socketPath.constData(), &socketStatus) != 0 || !S_ISSOCK(socketStatus.st_mode)) {
+    if (::stat(socketPath.c_str(), &socketStatus) != 0 || !S_ISSOCK(socketStatus.st_mode)) {
         return {};
     }
     return {.platform = QByteArrayLiteral("wayland"), .label = QByteArrayLiteral("Wayland")};
@@ -263,6 +279,13 @@ int main(int /*argc*/, char** argv) {
                        "set, and that socket must exist. A declaration is a claim that a "
                        "compositor was started, and a harness whose compositor never bound "
                        "presents the same environment as one that succeeded");
+    }
+    // Presence is not ownership. The checks above are all satisfied by the
+    // machine's own session, whose socket is a socket and whose name can be
+    // exported by hand; only the per-run token proves the compositor is one
+    // this run created.
+    if (!odysea_test::declarationNamesThisRunsCompositor(declaredSocketPath(declaredSocket))) {
+        declineSession(odysea_test::kUnprovenDeclarationReason);
     }
     // Nothing downstream may reach an inherited X display. The declaration
     // cannot name one, so an X11 fallback could only ever be a session the
