@@ -137,6 +137,18 @@ out="$1"; code="$2"
         recorded="$(cat "$XDG_RUNTIME_DIR/odysea-isolated-compositor.nonce")"
     fi
     printf 'NONCE_FILE=%s\n' "$recorded"
+    printf 'ODYSEA_ISOLATED_COMPOSITOR_RUNDIR=%s\n' "${ODYSEA_ISOLATED_COMPOSITOR_RUNDIR:-<unset>}"
+    # The liveness lock is what binds the declaration to a running harness. From
+    # the gate's side the accepting answer is that the lock CANNOT be taken.
+    lockstate="<absent>"
+    if [[ -f "${ODYSEA_ISOLATED_COMPOSITOR_RUNDIR:-}/harness.lock" ]]; then
+        if flock -n -x "$ODYSEA_ISOLATED_COMPOSITOR_RUNDIR/harness.lock" true 2>/dev/null; then
+            lockstate="free"
+        else
+            lockstate="held"
+        fi
+    fi
+    printf 'HARNESS_LOCK=%s\n' "$lockstate"
     printf 'DISPLAY=%s\n' "${DISPLAY:-<unset>}"
 } >"$out"
 exit "$code"
@@ -263,10 +275,23 @@ scenario_success_and_env() {
         report FAIL "the gate's XDG_RUNTIME_DIR was not a private run directory (got '$xrd')"
         return
     fi
-    local nonce_env nonce_file display
+    local nonce_env nonce_file display rundir lockstate
     nonce_env="$(grep '^ODYSEA_ISOLATED_COMPOSITOR_NONCE=' "$envfile" | cut -d= -f2-)"
     nonce_file="$(grep '^NONCE_FILE=' "$envfile" | cut -d= -f2-)"
     display="$(grep '^DISPLAY=' "$envfile" | cut -d= -f2-)"
+    rundir="$(grep '^ODYSEA_ISOLATED_COMPOSITOR_RUNDIR=' "$envfile" | cut -d= -f2-)"
+    lockstate="$(grep '^HARNESS_LOCK=' "$envfile" | cut -d= -f2-)"
+    if [[ "$rundir" != "$xrd" ]]; then
+        report FAIL "the exported run directory did not match the gate's runtime directory (run dir '$rundir', runtime '$xrd')"
+        return
+    fi
+    # The accepting answer is that the lock is HELD: a free lock means no live
+    # harness owns the directory, which is exactly what a hand-built declaration
+    # produces.
+    if [[ "$lockstate" != "held" ]]; then
+        report FAIL "the harness's liveness lock was not held while the gate ran (state '$lockstate')"
+        return
+    fi
     if ((${#nonce_env} < 32)); then
         report FAIL "the gate received no usable per-run token (got '$nonce_env')"
         return
@@ -600,6 +625,104 @@ STUB
     report PASS "the headless proof refuses an inert selector and admits one the program reads"
 }
 
+# --- Scenario 10: the selector's VALUE decides where the compositor renders ---
+# The name proves only that the compositor reads the variable. Nothing checked
+# the value at all until a measurement showed WLR_BACKENDS=drm reaching "RUN --
+# compositor ready" and exiting 0 against the shipped harness. On a genuine
+# wlroots compositor drm is the backend that takes the seat, the VT and DRM
+# master, so the check that was meant to keep this harness off the session
+# admitted the exact command that would have taken it — through the documented
+# pair of knobs, not by sabotage.
+#
+# Both directions, against a program that DOES mention the selector, so the
+# earlier check cannot be what refuses and only the value can be.
+scenario_headless_value_allowlist() {
+    new_state headless_value
+    local mentions="$sandbox/mentions_selector.sh" log="$sandbox/log_value.txt"
+    cat >"$mentions" <<'STUB'
+#!/usr/bin/env bash
+: <<'SELECTOR'
+WLR_BACKENDS
+SELECTOR
+set -eu
+exec python3 -c 'import socket, sys, time
+sock = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(sock)
+s.listen(1)
+time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
+STUB
+    chmod +x "$mentions"
+
+    local status=0
+    env -u ODYSEA_GATE_STUB_COMPOSITOR \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="env WLR_BACKENDS=drm $mentions" \
+        ODYSEA_GATE_READY_TIMEOUT=5 \
+        bash "$harness" /bin/true >/dev/null 2>"$log" || status=$?
+    if ((status == 0)); then
+        report FAIL "the harness started a compositor asked for the drm backend"
+        return
+    fi
+    if ! grep -q "does not select a headless backend" "$log"; then
+        report FAIL "the refusal did not name the value as the reason"
+        return
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "a value-refused command still created a run directory"
+        return
+    fi
+
+    # An unrecognised selector has no confirmable headless spelling and is
+    # refused rather than trusted.
+    new_state headless_value_unknown
+    status=0
+    env -u ODYSEA_GATE_STUB_COMPOSITOR \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_HEADLESS_ENV=SOME_OTHER_BACKEND \
+        ODYSEA_GATE_COMPOSITOR_CMD="env SOME_OTHER_BACKEND=headless $mentions" \
+        ODYSEA_GATE_READY_TIMEOUT=5 \
+        bash "$harness" /bin/true >/dev/null 2>>"$log" || status=$?
+    if ((status == 0)); then
+        report FAIL "the harness trusted a selector it does not recognise"
+        return
+    fi
+
+    new_state headless_value_positive
+    local envfile="$sandbox/env_value.txt"
+    status=0
+    env -u ODYSEA_GATE_STUB_COMPOSITOR \
+        ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="env WLR_BACKENDS=headless $mentions" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        bash "$harness" "$gate_record" "$envfile" 0 2>>"$log" || status=$?
+    if ((status != 0)); then
+        report FAIL "the permitted headless value was refused as well (status $status)"
+        return
+    fi
+    report PASS "the selector's value is allow-listed: drm and unknown selectors refused, headless admitted"
+}
+
+# --- Scenario 11: the stub bypass is not an unqualified environment switch ----
+# ODYSEA_GATE_STUB_COMPOSITOR disables the only control keeping this harness off
+# the seat. One exported variable from anywhere must not be enough, so it is
+# honoured only alongside a state directory that is not the production one.
+scenario_stub_bypass_is_qualified() {
+    local log="$sandbox/log_stub.txt" status=0
+    env -u ODYSEA_GATE_STATE_DIR ODYSEA_GATE_STUB_COMPOSITOR=1 \
+        ODYSEA_GATE_COMPOSITOR_CMD="env WLR_BACKENDS=drm /bin/true" \
+        bash "$harness" /bin/true >/dev/null 2>"$log" || status=$?
+    if ((status == 0)); then
+        report FAIL "an exported stub declaration alone disabled the headless proof"
+        return
+    fi
+    if ! grep -q "non-default ODYSEA_GATE_STATE_DIR" "$log"; then
+        report FAIL "the refusal did not name the state directory as the missing half"
+        return
+    fi
+    report PASS "the stub bypass is honoured only with a non-production state directory"
+}
+
 # --- Scenario 8: a bare invocation with no gate command is refused -----------
 scenario_requires_a_gate_command() {
     new_state usage
@@ -621,6 +744,8 @@ scenario_signal_teardown INT "SIGINT"
 scenario_sigkill_and_reaper
 scenario_requires_a_gate_command
 scenario_headless_proof
+scenario_headless_value_allowlist
+scenario_stub_bypass_is_qualified
 
 if ((failures == 0)); then
     echo "compositor_gate_harness_self_test: all scenarios passed"

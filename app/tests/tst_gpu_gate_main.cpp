@@ -65,10 +65,14 @@ namespace {
 /// ambient session, and this suite activates its window.
 ///
 /// The declaration must name the Wayland socket, WAYLAND_DISPLAY must equal it,
-/// and that socket must exist — the same three conditions the compositor
-/// launcher applies, for the same reason: a declaration is a claim that a
-/// compositor was started, and a harness whose compositor never bound presents
-/// exactly the environment of one that succeeded.
+/// and that socket must exist — the same conditions the compositor launcher
+/// applies, for the same reason: a declaration is a claim that a compositor was
+/// started, and a harness whose compositor never bound presents exactly the
+/// environment of one that succeeded. Existence is then not ownership either,
+/// so the shared check in isolated_compositor_declaration.hpp decides origin:
+/// the socket must not be a symbolic link, its directory must be the exported
+/// run directory by device and inode rather than by spelling, and the harness's
+/// liveness lock there must still be held.
 ///
 /// The socket check matters more here than it does in the launcher. This
 /// runner is reached with QT_QPA_PLATFORM unset, so a Wayland socket that
@@ -115,11 +119,12 @@ void refuseAmbientSession() {
         "WAYLAND_DISPLAY at the same socket. That socket must exist: a declaration naming a "
         "socket nothing is listening on is a harness whose compositor never bound, and with "
         "no platform pinned Qt would fall back to the ambient X display.\n"
-        "The socket must also be proven to belong to this run: its directory must not be the "
-        "login session's runtime directory and must hold the token exported as "
-        "ODYSEA_ISOLATED_COMPOSITOR_NONCE. Exporting the declaration variables against an "
-        "interactive session does not satisfy this, which is the case the interlock exists "
-        "to refuse.\n",
+        "The socket must also be proven to belong to this run: it must not be a symbolic link, "
+        "its directory must match ODYSEA_ISOLATED_COMPOSITOR_RUNDIR by device and inode and "
+        "must not be the login session's runtime directory, it must hold the token exported as "
+        "ODYSEA_ISOLATED_COMPOSITOR_NONCE, and the harness's liveness lock there must still be "
+        "held by a running process. Exporting the declaration variables against an interactive "
+        "session does not satisfy this, which is the case the interlock exists to refuse.\n",
         stderr);
     std::_Exit(77);
 }

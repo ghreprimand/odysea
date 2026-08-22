@@ -24,6 +24,92 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
+
+The interlock published yesterday was measured again and let three things
+through, all of them onto the session it exists to protect.
+
+Paths were compared as text. The socket at `/run/user/N/wayland-1` was refused,
+and the same socket spelled `/run/user/N//wayland-1` was accepted — one extra
+character, a spelling a shell or a configuration file produces by accident. So
+were the `/.` and `/../N/` forms. The kernel resolves every one of them to the
+login compositor, and the refusal that was supposed to be the interlock's
+strongest property did not hold for any spelling but the literal one. The
+socket was also inspected with a call that follows symbolic links, so a link in
+any writable directory pointing at the live socket was accepted outright: the
+directory examined was the link's own, which is not the session's, and the
+socket check looked through the link and saw a socket. No path trick was needed
+for that one at all.
+
+Both are now decided by identity rather than spelling. A directory is resolved
+to its device and inode, which every spelling of it shares and no spelling of a
+different directory does, and the socket is inspected without following links.
+Identity is what the kernel agrees with; a string is what a caller typed.
+
+The third was a design error rather than an oversight. The token was described
+as proof because it is unpredictable, but nobody has to guess it: the check
+compared a file the declarer writes against a value the declarer exports, and
+any pair of equal strings satisfies that. Unpredictability buys nothing when
+the verifier accepts any value that matches itself. What cannot be fabricated
+by writing files is a lock the kernel releases when its holder dies, and the
+harness already holds one on its run directory for the whole run. A gate now
+requires that lock to be held, tested with a non-blocking lock attempt — never
+`fcntl(F_GETLK)`, which on Linux does not observe these locks at all and would
+have reported every lock free, turning the check into one that always refuses.
+The socket's directory must also match the run directory the harness exports,
+so "not the session's" is no longer the only bar a directory has to clear.
+
+The headless proof had the same shape of hole one level down: it checked that
+the compositor reads the selector and never looked at what the selector was set
+to. Asking for the drm backend reached "compositor ready" and exited zero. On a
+real wlroots compositor that is precisely the backend that takes the seat, the
+virtual terminal and DRM master — the outcome the check exists to prevent,
+reachable through the documented knobs rather than by sabotage. Values are now
+allow-listed per selector, and a selector the harness does not recognise is
+refused rather than trusted. Two smaller corrections follow it: the library
+sweep reads ELF headers instead of executing the dynamic loader against the
+binary, and the bypass used by the self-test is honoured only alongside a
+non-production state directory, so one exported variable can no longer disable
+the control that keeps this harness off the seat.
+
+Two claims are corrected rather than softened. The comment describing the
+selector search as "the observable trace of code that reads it" was wrong, and
+the proof of it was sitting in the same commit: the positive control is a shell
+script whose only occurrence of the name is inside an unexecuted here-document.
+It does not read the variable in any sense and it passes. What the search
+measures is the presence of a string. The direction that carries weight is the
+failing one, and it is exact — a program that never mentions the name cannot be
+reading it — which is why the value is now checked separately. And the harness
+no longer claims to start nothing before its first refusal; it inspects files
+and forks tools, and what it does not do is start a compositor.
+
+The checks are now gated by `app_isolated_compositor_declaration`, which builds
+its own run directories, sockets and locks and asks the shared check what it
+makes of them. Each way through is an executable case, including the accepting
+one: a check that refused everything would satisfy every refusal test and be
+indistinguishable from a working one. Five mutations were planted and all five
+caught, each by its own named case. One of those runs found a defect in the
+test rather than the code — the login-session cases were being refused because
+no token was present, so they proved nothing about the directory rule, and
+reverting that rule to a string comparison left the suite green. The cases now
+satisfy every other condition deliberately, so only the rule under test can
+refuse. The files they place outside a temporary directory are uniquely named,
+are not names any compositor uses, and are removed when the case ends.
+
+State the limit plainly, since overstating it is what carried the previous two
+versions past review. A local user who runs their own socket and holds their
+own lock can still present something shaped like a harness. Unforgeable proof
+is not available to a check running as the same user as the thing it checks.
+What is claimed is that no declaration can resolve onto the login session's
+compositor and no accidental or hand-typed declaration succeeds.
+
+Verified: the declaration gate passes seventeen cases and each repair has a
+failing witness; the harness self-test passes eleven scenarios including both
+directions of the value allow-list; a genuine harness run is still accepted end
+to end, so the refusal discriminates rather than closing the path. The
+real-compositor path remains unmeasured on this machine and the contributor
+guide continues to say so.
+
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 
 The interlock that keeps GPU-path gates off a session in use required three

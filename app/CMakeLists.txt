@@ -180,6 +180,23 @@ target_link_libraries(odysea_app_interaction_tests
 
 add_test(NAME app_directory_list_model_interaction COMMAND odysea_app_interaction_tests)
 
+# Gates the session interlock the GPU-path gates depend on. It renders nothing
+# and starts no compositor: it builds run directories, sockets and locks of its
+# own and asks the shared check what it makes of them. Registered as an ordinary
+# entry because the property it protects — that no declaration can resolve onto
+# the login session's compositor — must be checked on every machine, including
+# those with no display at all.
+qt_add_executable(odysea_isolated_compositor_declaration_tests
+    tests/tst_isolated_compositor_declaration.cpp)
+
+target_link_libraries(odysea_isolated_compositor_declaration_tests
+    PRIVATE
+        Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_isolated_compositor_declaration
+    COMMAND odysea_isolated_compositor_declaration_tests)
+
 qt_add_executable(odysea_thumbnail_backend_tests
     tests/tst_thumbnail_backend.cpp)
 

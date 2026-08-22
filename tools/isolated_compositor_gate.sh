@@ -103,24 +103,71 @@ usage() {
     exit "$harness_failure_status"
 }
 
-# True when the named program, or a library it links, contains the given
-# environment-variable name as a whole string — the observable trace of code
-# that reads it. Absence is treated as proof the variable is not read, which is
-# the conservative direction: it produces a refusal, never a run.
-compositor_reads_variable() {
-    local binary="$1" variable="$2" resolved lib
+# True when the named program, or a library it links, CONTAINS the given
+# environment-variable name as a whole string.
+#
+# Be exact about what that is worth, because the earlier comment here was not.
+# Containing the string is not reading the variable. A mention in a help text,
+# a log message, or a comment in an interpreted script satisfies it, and the
+# self-test's own positive control is a shell script whose only occurrence sits
+# in an unexecuted here-document. What this measures is the presence of the
+# name, nothing more.
+#
+# The direction that carries the weight is the failing one, and it is exact:
+# a program that never mentions the name cannot be reading it, so the variable
+# selects nothing and the command that sets it is inert. That is the case the
+# shipped default was in. Absence is therefore treated as proof the variable is
+# unread — conservative, because it produces a refusal and never a run. Presence
+# is treated as nothing more than "not provably inert", which is why the
+# selector's VALUE is allow-listed separately: the name decides whether the
+# variable is read at all, and only the value decides where the compositor
+# renders.
+#
+# Library resolution uses objdump on the ELF headers rather than ldd. ldd is a
+# shell script that execs the dynamic loader against the binary, which is more
+# than an inspection and more than this check needs; objdump reads the file.
+compositor_mentions_variable() {
+    local binary="$1" variable="$2" resolved lib soname
     resolved="$(command -v "$binary" 2>/dev/null)" || return 1
     [[ -n "$resolved" && -f "$resolved" ]] || return 1
     if strings -a -- "$resolved" 2>/dev/null | grep -qx -- "$variable"; then
         return 0
     fi
-    while read -r lib; do
-        [[ -f "$lib" ]] || continue
-        if strings -a -- "$lib" 2>/dev/null | grep -qx -- "$variable"; then
-            return 0
-        fi
-    done < <(ldd "$resolved" 2>/dev/null | grep -oE '/[^ ]+\.so[^ ]*')
+    while read -r soname; do
+        [[ -n "$soname" ]] || continue
+        for lib in /usr/lib/"$soname" /lib/"$soname" /usr/lib64/"$soname"; do
+            [[ -f "$lib" ]] || continue
+            if strings -a -- "$lib" 2>/dev/null | grep -qx -- "$variable"; then
+                return 0
+            fi
+        done
+    done < <(objdump -p -- "$resolved" 2>/dev/null | awk '$1 == "NEEDED" { print $2 }')
     return 1
+}
+
+# The backend values a given selector is permitted to carry. The selector's name
+# decides whether the variable is read; only its VALUE decides where the
+# compositor renders, and nothing checked the value at all until a measurement
+# showed WLR_BACKENDS=drm starting a run and logging RUN. On a genuine wlroots
+# compositor drm is precisely the backend that takes the seat, the VT and DRM
+# master — the outcome this whole refusal exists to prevent — and it was
+# reachable through the documented pair of knobs rather than by sabotage.
+#
+# So the value is allow-listed per selector. An unknown selector has no known
+# safe value and is refused rather than trusted, because a selector this harness
+# does not understand is one whose headless spelling it cannot confirm.
+headless_value_allowed() {
+    local selector="$1" value="$2"
+    case "$selector" in
+        WLR_BACKENDS)
+            # wlroots accepts a comma-separated list; every element must be
+            # headless, or a single non-headless entry reintroduces the seat.
+            [[ "$value" == "headless" ]]
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 # Refuses to start a compositor whose headless selection cannot be shown to
@@ -143,7 +190,18 @@ compositor_reads_variable() {
 # contains that variable, and refuses otherwise. It never falls through to
 # "start it and see", because seeing costs the session.
 require_provably_headless_compositor() {
+    # The stub declaration is deliberately hard to set by accident or in
+    # passing. It disables the one control that keeps this harness off the
+    # seat, so it is honoured only when the run is also pointed at a state
+    # directory that is not the production one — which a real run never is. One
+    # exported variable from anywhere else does nothing.
     if [[ -n "${ODYSEA_GATE_STUB_COMPOSITOR:-}" ]]; then
+        if [[ -z "${ODYSEA_GATE_STATE_DIR:-}" ]]; then
+            log "refusing: ODYSEA_GATE_STUB_COMPOSITOR bypasses the headless proof and is"
+            log "honoured only together with a non-default ODYSEA_GATE_STATE_DIR. A run"
+            log "against the production state directory is a real run."
+            return 1
+        fi
         return 0
     fi
     local words=() word binary="" selector_value="" selector_present=0
@@ -172,7 +230,17 @@ require_provably_headless_compositor() {
         log "refusing: the compositor command names no program: $compositor_cmd"
         return 1
     fi
-    if ! compositor_reads_variable "$binary" "$headless_env"; then
+    if ! headless_value_allowed "$headless_env" "$selector_value"; then
+        log "refusing: $headless_env=$selector_value does not select a headless backend."
+        log "The variable's name decides only whether the compositor reads it; the VALUE"
+        log "decides where it renders, and this one does not name a backend known to render"
+        log "nowhere. A value such as drm takes the seat, the VT, and DRM master on the"
+        log "display the session is using, which is the outcome this refusal exists for."
+        log "A selector this harness does not recognise is refused for the same reason: it"
+        log "has no headless spelling that can be confirmed here."
+        return 1
+    fi
+    if ! compositor_mentions_variable "$binary" "$headless_env"; then
         log "refusing: $binary does not read $headless_env, so setting it selects nothing and"
         log "the compositor would start with whatever backend it picks by itself -- on this"
         log "class of machine that is the DRM backend, which takes the seat, the VT, and DRM"
@@ -308,8 +376,14 @@ if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
     exit "$harness_failure_status"
 fi
 
-# Before the lock, before any process is started: a compositor command whose
-# headless selection cannot be shown to apply is refused outright.
+# Before the lock and before any compositor is started: a compositor command
+# whose headless selection cannot be shown to apply is refused outright.
+#
+# Say "no compositor" rather than "nothing". The check itself runs command -v,
+# strings and objdump against the named program, so it does read files and fork
+# tools; what it never does is start the compositor or anything that could open
+# a display. The earlier wording claimed more than that and would have been read
+# as a guarantee it does not make.
 require_provably_headless_compositor || exit "$harness_failure_status"
 
 mkdir -p "$runs_parent"
@@ -356,18 +430,23 @@ if [[ "$private_runtime" == "$ambient_runtime" ]]; then
 fi
 
 # A liveness lock held for this run's lifetime. reap_stale_runs in another run
-# uses it to tell a live run from an abandoned one.
+# uses it to tell a live run from an abandoned one, and the gates use it as the
+# one part of a declaration that cannot be produced by writing files: the kernel
+# releases it when this process ends by any means, so a gate that finds it held
+# knows a harness is alive right now.
 exec {liveness_fd}>"$private_runtime/harness.lock"
 flock -n -x "$liveness_fd" || {
     log "refusing: could not take the liveness lock on a directory we just created"
     exit "$harness_failure_status"
 }
 
-# The per-run token. A gate accepts a declaration only when the directory
-# holding the socket contains this exact value, which is what separates a
-# compositor this run created from one that was already listening — and the
-# machine's own session is always listening. It is read from the kernel's random
-# source per run and written nowhere the declaration itself can reach.
+# The per-run token. One of four conditions a gate applies, not a proof on its
+# own: the comparison is "the file beside the socket equals the exported value",
+# and anyone able to write both halves can satisfy that with any value at all.
+# Its job is to make an accidental or hand-typed declaration fail, not to be
+# unguessable. What binds a declaration to a live process is the liveness lock
+# above; what stops one resolving onto the login session is the directory
+# identity check the gates apply. All four are needed and none is sufficient.
 nonce="$(od -An -tx1 -N 32 /dev/urandom | tr -d ' \n')"
 if ((${#nonce} < 32)); then
     log "refusing: could not read a per-run token from /dev/urandom"
@@ -461,11 +540,17 @@ log "RUN -- compositor ready at $private_runtime/$wayland_display; running the g
 # command, and a Qt fallback onto an inherited X display is one of the holes
 # this interlock has already had. The defence belongs at the boundary as well as
 # inside the things that happen to pass through it today.
+#
+# The run directory is exported alongside the socket name. A gate compares the
+# directory holding the socket against it by device and inode, so no spelling of
+# any other directory — and in particular no spelling of the login session's —
+# can stand in for it.
 env -u DISPLAY -u XAUTHORITY \
     XDG_RUNTIME_DIR="$private_runtime" \
     WAYLAND_DISPLAY="$wayland_display" \
     ODYSEA_ISOLATED_COMPOSITOR="$wayland_display" \
     ODYSEA_ISOLATED_COMPOSITOR_NONCE="$nonce" \
+    ODYSEA_ISOLATED_COMPOSITOR_RUNDIR="$private_runtime" \
     setsid "$@" {lock_fd}>&- {liveness_fd}>&- &
 gate_pid="$!"
 gate_group_pid="$gate_pid"

@@ -79,31 +79,68 @@ The rule is enforced mechanically rather than trusted. Both the compositor
 launcher and the shared runner behind the GPU-path suites refuse to run unless
 the platform is non-rendering, or a declaration names a socket that matches
 `WAYLAND_DISPLAY`, exists, and is proven to belong to the run making the claim.
-A declaration is treated as a claim, not as evidence, in two distinct ways. A
+A declaration is treated as a claim, not as evidence, in three distinct ways. A
 harness whose compositor never bound presents the same environment as one that
-succeeded, so the socket is checked rather than the name alone. And a socket
-being present proves only that some compositor is listening — which is exactly
-what is always true of the session in use, whose socket is a socket and whose
-name can be exported by hand. So `tools/isolated_compositor_gate.sh` writes an
-unpredictable per-run token into the private runtime directory it creates and
-exports it as `ODYSEA_ISOLATED_COMPOSITOR_NONCE`; a gate accepts a declaration
-only when the directory holding the socket is not the login session's and holds
-that exact token. Every check is a stat or a bounded read, and the state with
-nothing set is refusal.
+succeeded, so the socket is checked rather than the name alone. A socket being
+present proves only that some compositor is listening — which is exactly what
+is always true of the session in use, whose socket is a socket and whose name
+can be exported by hand. And a file written beside that socket proves only that
+someone wrote a file, since the same person can export the value it is compared
+against.
+
+So `tools/isolated_compositor_gate.sh` creates a private run directory, writes
+a per-run token into it, holds an exclusive lock on a file there for the whole
+run, and exports the directory and the token alongside the socket name. A gate
+accepts a declaration only when all of the following hold:
+
+- the declared socket is a socket and is **not** a symbolic link;
+- the directory holding it matches `ODYSEA_ISOLATED_COMPOSITOR_RUNDIR` **by
+  device and inode**, not by spelling;
+- that directory is not the login session's runtime directory, again by device
+  and inode;
+- it holds a file matching `ODYSEA_ISOLATED_COMPOSITOR_NONCE`;
+- the harness's liveness lock there is **still held** by a running process.
+
+Paths are never compared as text. Every spelling of one directory shares its
+device and inode and no spelling of another does, so a trailing slash, a `.`
+component, or a `..` round trip cannot turn a refusal into an acceptance. The
+socket is inspected without following links, because a link in a writable
+directory can point anywhere. The lock is the only condition that cannot be
+produced by writing files: the kernel releases it when the holding process ends
+by any means, so a gate that finds it held knows a harness is alive. It is
+tested with a non-blocking `flock(2)` attempt, never `fcntl(F_GETLK)`, which on
+Linux does not observe `flock` locks at all and would report every lock free.
+
+Be exact about the limit. A local user who runs their own socket and holds
+their own lock can still present something shaped like a harness; unforgeable
+proof is not available to a check running as the same user as the thing it
+checks. What is claimed, and all that is claimed: no declaration can resolve
+onto the login session's compositor, and no accidental or hand-typed
+declaration succeeds. `app_isolated_compositor_declaration` reproduces each of
+those ways through as an executable case, including the accepting one, since a
+check that refuses everything would satisfy every refusal test.
 
 What this does not yet do is measure anything on a real compositor. The two
 compositor test entries are registered directly rather than through the
 harness, and they decline, so the real-compositor path is unmeasured. The
 harness refuses to start a compositor whose headless selection cannot be shown
-to apply to the compositor actually installed: it reads the backend selector
-out of its own command and requires that program, or a library it links, to
-contain that variable name. On a machine whose compositor does not read the
-selector the default command names, the harness refuses and the path stays
-unmeasured. That is the intended outcome. A compositor started with no backend
-constraint falls back to whichever backend it chooses by itself, which on a
-workstation is the one that takes the seat, the virtual terminal, and DRM
-master on the display the session is using — a worse outcome than the one this
-whole rule exists to prevent, produced by the tool written to prevent it.
+to apply to the compositor actually installed, and the refusal has two halves.
+The selector's **name** must appear in that program or a library it links:
+containing the name is weak evidence that it is read, but its absence is
+conclusive evidence that it is not, so a command setting a variable nothing
+reads is inert and is refused. The selector's **value** must then be one known
+to render nowhere, because the name decides only whether the variable is read
+and the value decides where the compositor renders. A selector this harness
+does not recognise has no confirmable headless spelling and is refused rather
+than trusted.
+
+On a machine whose compositor does not read the selector the default command
+names, the harness refuses and the path stays unmeasured. That is the intended
+outcome. A compositor started with no backend constraint falls back to whichever
+backend it chooses by itself, which on a workstation is the one that takes the
+seat, the virtual terminal, and DRM master on the display the session is using —
+a worse outcome than the one this whole rule exists to prevent, produced by the
+tool written to prevent it.
 
 The refusal is a skip and stays a skip. `ODYSEA_REQUIRE_COMPOSITOR`, which
 turns an inability to run into a failure so a skip cannot read as a pass, does
