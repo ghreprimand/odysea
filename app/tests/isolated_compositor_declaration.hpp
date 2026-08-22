@@ -42,6 +42,8 @@
 //   * ODYSEA_ISOLATED_COMPOSITOR_NONCE and ODYSEA_ISOLATED_COMPOSITOR_RUNDIR
 //     are both set and non-empty.
 //   * The declared socket is a socket and is not a symbolic link.
+//   * The declared socket has exactly one link. A socket created by bind(2)
+//     always does; a second name for a socket that already exists does not.
 //   * The directory holding it is, by device and inode, the run directory the
 //     harness exported — and is not the login session's runtime directory.
 //   * That directory holds a token file, owned by this user and not a symbolic
@@ -56,14 +58,28 @@
 // rather than fcntl(F_GETLK), which on Linux does not observe flock(2) locks
 // at all and would report every lock free.
 //
+// The link-count check earns its place by counterexample rather than by
+// argument. An earlier form of this list stopped at "is not a symbolic link",
+// and a hard link defeated it completely: lstat reports a hard link as the
+// socket it names, because it is that socket under a second name, so the login
+// session's socket could be linked into a directory that genuinely was the run
+// directory, beside a real token and a lock a live process really held. Every
+// condition above passed on its own terms while the accepted socket was, by
+// inode, the compositor on screen. The run directory defaults to the same
+// filesystem as the session socket, which is what made the link possible.
+//
 // State plainly what this does not achieve: a local user who runs their own
 // proxy socket and holds a lock on their own directory can still present
 // something shaped like a harness. Unforgeable proof is not available to a
 // check that runs as the same user as the thing it is checking, and claiming
-// otherwise is how the previous two forms of this interlock passed review. What
-// IS achieved, and all that is claimed: no declaration can resolve onto the
-// login session's compositor, and no accidental or hand-typed declaration
-// succeeds.
+// otherwise is how the previous forms of this interlock passed review. What IS
+// achieved, and all that is claimed: no declaration can resolve onto the login
+// session's compositor, and no accidental or hand-typed declaration succeeds.
+//
+// That first clause has now been falsified once and repaired once. It is worth
+// reading as a claim under test rather than as a settled property: it holds
+// against every route measured here, and the way it failed before was a route
+// nobody had thought to measure.
 #ifndef ODYSEA_TESTS_ISOLATED_COMPOSITOR_DECLARATION_HPP
 #define ODYSEA_TESTS_ISOLATED_COMPOSITOR_DECLARATION_HPP
 
@@ -218,6 +234,27 @@ inline bool declarationNamesThisRunsCompositor(const std::string& socketPath) {
     // directory pointing straight at the login session's socket.
     struct stat socketStatus = {};
     if (::lstat(socketPath.c_str(), &socketStatus) != 0 || !S_ISSOCK(socketStatus.st_mode)) {
+        return false;
+    }
+
+    // lstat rules out a symbolic link. It does not rule out a hard link, and
+    // that gap defeated every other check in this function: the run directory
+    // defaults to the same tmpfs the login session's socket lives on, so the
+    // session socket can be linked straight into a directory that is genuinely
+    // this run's, alongside a real token and a lock a live process really
+    // holds. Every check then passed on its own terms while the accepted
+    // socket was, by inode, the compositor on screen.
+    //
+    // A socket created by bind(2) has exactly one link, so requiring that is
+    // enough to tell the two apart, and it is one field of the lstat already
+    // performed. It is preferred over comparing the inode against the session
+    // socket's: that comparison answers only for the one socket it names,
+    // while this holds for any socket reached by a second name.
+    //
+    // The check errs toward refusal. Linking a genuine harness socket would
+    // also push its count above one and refuse the run, which costs a gate
+    // that declines rather than a window on somebody's desktop.
+    if (socketStatus.st_nlink != 1) {
         return false;
     }
 

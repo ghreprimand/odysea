@@ -77,6 +77,41 @@ accepts the marker removal and still refuses a repair that also rewords an
 entry under an unchanged heading, and removing either the marker rule or one
 spelling from it turns the accepting case red.
 
+## 2026-08-22 -- A hard link defeated the socket interlock
+
+The interlock that keeps compositor-dependent gates off a session in use
+refused a symbolic link to the login session's socket and accepted a hard link
+to it.
+
+`lstat` was doing the work of ruling out a link, and it rules out only the
+symbolic kind. A hard link is the socket itself under a second name, so `lstat`
+reports a socket, not a link. The run directory defaults to the same filesystem
+the session's socket lives on, which is what makes the link constructible: the
+session socket could be placed inside a directory that genuinely was the run
+directory, beside a token that genuinely matched and a lock a live process
+genuinely held. Every condition passed on its own terms, and the accepted
+socket was, by inode, the compositor on screen. The one property the interlock
+claims to have -- that no declaration resolves onto the login session -- was
+false.
+
+A socket created by `bind` has exactly one link, so requiring a link count of
+one separates the two, and the field is already present in the `lstat` the
+check performs. It is preferred over comparing the declared socket's inode
+against the session socket's, which would answer only for the one socket it
+names while this holds for any socket reached by a second name. The check errs
+toward refusal: linking a genuine harness socket would also raise its count and
+refuse the run, which costs a gate that declines rather than a window on
+somebody's desktop.
+
+Verified: measured in both directions against the real session socket. A hard
+link of it, in a directory shaped exactly as a run directory with a matching
+token and a held lock, is refused; a freshly bound socket in that same
+directory is accepted. A test case builds the same hard link from a socket
+bound elsewhere and reports rather than passes where the two temporary
+directories do not share a filesystem, and deleting the link-count check turns
+that case red and no other. The header now records the link count among what is
+proved, and says plainly that the claim it restores has been falsified once.
+
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things

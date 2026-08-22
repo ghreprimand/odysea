@@ -168,6 +168,7 @@ class IsolatedCompositorDeclarationTest : public QObject {
     void acceptsARunDirectoryWithATokenAndAHeldLock();
     void refusesWhenTheLivenessLockIsFree();
     void refusesASymbolicLinkToAnotherSocket();
+    void refusesAHardLinkToAnotherSocket();
     void refusesEverySpellingOfTheLoginSessionDirectory_data();
     void refusesEverySpellingOfTheLoginSessionDirectory();
     void refusesADirectoryThatIsNotTheDeclaredRunDirectory();
@@ -249,6 +250,59 @@ void IsolatedCompositorDeclarationTest::refusesASymbolicLinkToAnotherSocket() {
     qputenv("ODYSEA_ISOLATED_COMPOSITOR_RUNDIR", runDirectory.path().toUtf8());
 
     // stat() would report a socket here; lstat() reports the link.
+    QVERIFY(!odysea_test::declarationNamesThisRunsCompositor(linkPath.toStdString()));
+}
+
+/// The route lstat does not close. A hard link is not a link as far as lstat is
+/// concerned - it reports the socket itself, because it is the socket itself
+/// under a second name - so every check that examines the declared path or its
+/// directory passes. On the machine this guards, the run directory defaults to
+/// the same filesystem as the login session's socket, which is what makes the
+/// link possible in the first place.
+///
+/// EVERY OTHER CONDITION IS SATISFIED ON PURPOSE, for the reason spelled out in
+/// the login-session case below: the directory really is the declared run
+/// directory, the token matches, and the lock is genuinely held. The link count
+/// is the only thing left that can refuse, so this case cannot pass for an
+/// unrelated reason.
+void IsolatedCompositorDeclarationTest::refusesAHardLinkToAnotherSocket() {
+    QTemporaryDir elsewhere;
+    QTemporaryDir runDirectory;
+    QVERIFY(elsewhere.isValid());
+    QVERIFY(runDirectory.isValid());
+
+    const QString realSocketPath = elsewhere.filePath("wayland-1");
+    const BoundSocket socket(realSocketPath.toStdString());
+    QVERIFY(socket.isBound());
+
+    const QString linkPath = runDirectory.filePath("wayland-1");
+    if (::link(realSocketPath.toUtf8().constData(), linkPath.toUtf8().constData()) != 0) {
+        // Both temporary directories have to share a filesystem for this to be
+        // constructible. Where they do not, the route is not available and the
+        // case has nothing to measure - which is reported rather than passed,
+        // so it can never read as evidence the check was exercised.
+        QSKIP(
+            "the temporary directories are on different filesystems, so no hard link is possible");
+    }
+
+    // The premise of the case: lstat sees a socket, not a link, and it is the
+    // same inode as the socket bound elsewhere.
+    struct stat linkStatus = {};
+    QCOMPARE(::lstat(linkPath.toUtf8().constData(), &linkStatus), 0);
+    QVERIFY(S_ISSOCK(linkStatus.st_mode));
+    QVERIFY(!S_ISLNK(linkStatus.st_mode));
+    QVERIFY(linkStatus.st_nlink > 1);
+
+    writeFile(runDirectory.filePath(QString::fromLatin1(odysea_test::kIsolatedCompositorNonceFile)),
+              QByteArrayLiteral("a-token"));
+    const HeldLock lock(
+        runDirectory.filePath(QString::fromLatin1(odysea_test::kIsolatedCompositorLockFile))
+            .toStdString());
+    QVERIFY(lock.isHeld());
+
+    qputenv("ODYSEA_ISOLATED_COMPOSITOR_NONCE", "a-token");
+    qputenv("ODYSEA_ISOLATED_COMPOSITOR_RUNDIR", runDirectory.path().toUtf8());
+
     QVERIFY(!odysea_test::declarationNamesThisRunsCompositor(linkPath.toStdString()));
 }
 
