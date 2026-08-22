@@ -112,6 +112,84 @@ directories do not share a filesystem, and deleting the link-count check turns
 that case red and no other. The header now records the link count among what is
 proved, and says plainly that the claim it restores has been falsified once.
 
+## 2026-08-22 -- A build directory now has to be the one its preset describes
+
+Two ways of configuring this project look interchangeable and are not.
+`cmake --preset release` applies the pins the preset carries; `cmake -S . -B
+build/release` applies whatever the machine defaults to. With a cache already
+present the difference is invisible, because CMake reuses what the cache holds.
+Once the directory has been wiped there is nothing to reuse, and the bare form
+silently takes the system compiler with every option left at its default. The
+standing practice of wiping both build directories whenever new entries
+register is exactly what makes this reachable, and it is reachable on the runs
+whose numbers get quoted.
+
+The loud direction is not the problem. The release tree pins Clang, and built
+with the system default it fails outright on a warning nobody can misread. The
+quiet direction is: the sanitizer preset pins a different compiler and turns
+the sanitizer on, so a wiped `build/asan` configured bare has the sanitizer
+off. That tree builds, tests, and reports green. Nothing in the run is false
+except what the run is called.
+
+A gate now holds each build directory to the configuration its preset
+describes. The directory is matched to a preset by the path that preset names,
+and every cache variable that preset resolves to must be present in the cache
+with that value -- the compiler, the build type, the prefix path, and the
+sanitizer switch alike. Inheritance is resolved rather than read at one level,
+because every pin here lives on a hidden base preset and a single-level read
+would find nothing pinned anywhere and pass everything. The compiler is
+compared as a located, link-resolved program rather than as text, since a
+preset names a program and a cache records where it was found.
+
+That comparison is only worth as much as the thing it compares against, so the
+preset file is held to a floor from every build directory: each shipped preset
+must pin a compiler and a build type, and at least one must pin the sanitizer
+on. Deleting a pin fails by name instead of quietly making the check vacuous.
+
+A build directory no preset names fails rather than skipping. This project's
+gates do not declare skip return codes -- each one resolves what it checks and
+runs, or states a precondition and fails -- and the precondition here is a
+record of what the directory was meant to be. Configuring elsewhere stays
+possible; quoting a verification result from a directory with no such record
+does not.
+
+The failing direction was reproduced before the gate existed: a wiped
+`build/release` configured bare recorded `/usr/bin/c++` against a pinned
+`clang++` and dropped the prefix path, and the same treatment of `build/asan`
+recorded the sanitizer off, the build type wrong, and the compiler wrong. Both
+are now refused by name, and both correctly configured directories pass.
+
+Verification is by consequence against fixture trees, so nothing is configured
+or built to measure it: the gate reads a preset file and a cache, and fixtures
+present configurations a real tree would take minutes to produce. Twelve
+scenarios cover the two bare cases, a directory differing in exactly one
+pinned value, a pin reached only through inheritance, a compiler spelled as a
+link to the pinned program, both floor removals, an unplaceable directory, an
+unconfigured directory, and an unreadable preset file. Ten mutations of the
+gate were planted and all ten caught, each by its own scenarios; an eleventh
+removed a scenario from the runner list and is caught by a floor on the number
+of results reported.
+
+One defect was introduced and caught during the work rather than shipped. The
+binary directory a preset uses is inherited here, and the template contains the
+preset's own name, so expanding it while walking up the inheritance chain
+substituted the parent's name and resolved `release` to a directory belonging
+to no preset. Every real build directory then read as unplaceable, and the gate
+answered about none of them. It is now expanded once, against the preset being
+resolved, and a mutation restoring the earlier behaviour is among the ten.
+
+Known limits, stated. The gate compares what a cache records, so it cannot see
+a compiler that was replaced on disk after configuration, and it compares
+locations rather than versions: two compilers of different versions at the same
+path are the same program to it. Where a system default is a link to the pinned
+compiler the comparison accepts it, which is the honest answer, since the build
+really was produced by the pinned program; on the machine this was written
+against the default is a separate file and is refused. Registered gates run
+only when the battery is run, so a directory that never runs the battery is
+unaffected by any of it.
+
+---
+
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things
@@ -442,6 +520,7 @@ The reconciled battery accounted for all 66 registered entries: 64 ran and the
 two real-compositor entries declared their policy refusal before rendering.
 Both offscreen OpenGL entries ran against an X context with the Wayland display
 removed; no real-compositor path was invoked.
+
 ## 2026-08-12 -- A filtered gate now has to list what its TestCase defines
 
 One GPU-path entry does not run its whole suite. `shell_visual_validation_rhi`
@@ -1197,6 +1276,7 @@ Known gap: with an empty recorded baseline, the static-analysis comparison
 reports a new diagnostic in the wording meant for a cleared one. The gate still
 fails, so nothing passes that should not; the message is wrong. The self-test
 keeps clear of that path rather than pinning it.
+
 ## 2026-08-09 -- The record is archived in parts before the month closes
 
 The development record had 105 lines of headroom under the 2,000-line ceiling
@@ -1313,6 +1393,7 @@ nothing in the suite makes the kernel refuse one.
 Release and sanitizer suites pass warning-clean with the GPU-path gates run
 against a display, and both binaries completed silent offscreen smoke launches
 on the OpenGL and software paths.
+
 ## 2026-08-09 -- Harden columns ownership and focused-view actions
 
 Column listings now remain under one explicit C++ owner when exposed to QML,

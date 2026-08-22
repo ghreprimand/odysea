@@ -43,6 +43,18 @@ find_package(Threads REQUIRED)
 
 enable_testing()
 
+# Registered first because it says whether the rest of this battery describes
+# the build the project ships. A wiped build directory reconfigured without its
+# preset takes the system defaults, and the quiet form of that -- a sanitizer
+# directory with the sanitizer off -- runs green and reports as a sanitizer
+# pass.
+add_test(
+    NAME build_configuration_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_build_configuration.sh
+        ${CMAKE_BINARY_DIR})
+add_test(
+    NAME build_configuration_guard_self_test
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_build_configuration_selftest.sh)
 add_test(
     NAME public_repository_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_public_repo.sh)

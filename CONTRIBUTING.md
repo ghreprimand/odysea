@@ -58,7 +58,20 @@ than passed over: the index, and the commit history the attribution checks
 read. An archive has neither to check.
 
 No gate declares a skip return code. Each one either resolves a corpus and
-runs, or states a precondition and fails. The prerequisites above are therefore
+runs, or states a precondition and fails. `build_configuration_guard` is the
+reason that rule is worth stating for build directories as well: the two
+presets pin different compilers and different options, so `cmake -S . -B
+build/asan` is not `cmake --preset asan` once the directory has been wiped and
+there is no cache left to inherit from. The bare form takes the system
+defaults, and the quiet form of that failure is a sanitizer directory with the
+sanitizer switched off, which builds, tests, and reports as a sanitizer pass.
+The gate holds each build directory to every cache variable its preset
+resolves to, and holds the preset file itself to pinning a compiler and a build
+type for every preset and a sanitizer for at least one, so the comparison
+cannot be satisfied by deleting what it compares against. A build directory no
+preset names is a failure there, not a skip: configure elsewhere freely, but
+results quoted from such a directory are not results about this project's
+build. The prerequisites above are therefore
 requirements of a checked build and not merely of a developer checkout: `git`
 is needed by the gate self-tests, which build throwaway repositories to
 exercise the behaviour they pin.
