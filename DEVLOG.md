@@ -24,9 +24,59 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
+## 2026-08-22 -- Repair a record published with its conflict unresolved
+
+The record went out with nine unresolved merge-conflict markers in it, left by
+a three-way integration of three entries that each added text at the top of the
+file. No entry was lost and no entry's prose was touched -- the markers fell
+between entries -- but the top of the published record read as a conflicted
+file.
+
+Every gate that exists to protect the record passed it. The archive gate
+compares each entry's heading and body against the form the published branch
+last carried, and the markers changed neither, so it agreed. Worse, once the
+damage was published it became the form every later comparison was made
+against: the gate had adopted the break as its baseline and would have refused
+the repair. The corpus guard scanned the same file for secrets, private paths
+and address syntax, and had no pattern for a marker at all.
+
+Two changes, in opposite directions. The corpus guard now refuses any tracked
+line that begins with a conflict marker, so a commit carrying one is rejected
+before it can be made rather than discovered after it is published. The pattern
+covers the base marker the diff3 and zdiff3 styles add as well as the two sides
+every style writes, requires exactly the seven characters Git emits followed by
+a space or the end of the line, and is anchored at the start of a line. The
+anchor is what lets the check carry no exclusion list: a marker composed inside
+a `printf` argument does not begin its line, so the guard, its own self-test,
+and any fixture that has to build one are all still scannable by it. A rule of
+dashes or equals signs in prose is unaffected.
+
+The archive gate now drops marker lines from an entry's body wherever they
+appear, before comparing. This is narrow on purpose and is not the same
+exemption as the one already made for trailing separators: a marker is not text
+an entry can legitimately be published with, so it must not become part of the
+form the entry is judged against. Only lines that are entirely a marker are
+removed, so the surrounding prose is still compared byte for byte and a genuine
+rewrite is still refused. The pair means a marker cannot enter the record and
+removing one is always permitted.
+
+Repairing the record itself removed the nine marker lines and restored the
+blank line each had displaced. All thirty entries were checked against the form
+the branch published, and against the individual commits the three conflicting
+entries came from, before the change was made: every one is byte-identical.
+Three further headings elsewhere in the record are not preceded by a blank
+line. They predate this and were left alone, because widening a repair to
+tidy published text is how published text stops being reliable.
+
+Verified: the corpus guard refuses the exact nine markers the record carried
+and accepts the repaired file; twelve new self-test scenarios cover all four
+marker spellings, a full conflicted region, a marker in a source file, and five
+near-miss forms that must still be accepted; five mutations of the pattern were
+planted and all five were caught, each by its own named case. The archive gate
+accepts the marker removal and still refuses a repair that also rewords an
+entry under an unchanged heading, and removing either the marker rule or one
+spelling from it turns the accepting case red.
+
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 
 The interlock published yesterday was measured again and let three things
@@ -112,7 +162,7 @@ directions of the value allow-list; a genuine harness run is still accepted end
 to end, so the refusal discriminates rather than closing the path. The
 real-compositor path remains unmeasured on this machine and the contributor
 guide continues to say so.
-=======
+
 ## 2026-08-20 -- Starting a compositor is an obligation to end it
 
 The harness that runs compositor-dependent gates started a compositor and a
@@ -187,8 +237,7 @@ message on a path the general one already covers, so removing it changes no
 result.
 
 ---
->>>>>>> 4c47dbb (Account for every process an isolated compositor run starts)
-=======
+
 ## 2026-08-20 -- Make workspace location follow the focused Miller column
 
 Miller navigation now advances the pane's workspace adapter whenever keyboard
@@ -216,8 +265,7 @@ disabled. The two offscreen RHI probes skipped in both presets, and the two
 real-compositor entries remained excluded under the session-safety policy.
 Repository, formatting, QML, file-length, attribution, and application-smoke
 gates pass.
->>>>>>> 478cf30 (Make Miller focus drive workspace location)
-=======
+
 ## 2026-08-20 -- The filtered RHI gate carries every device-scaling check
 
 The offscreen OpenGL validation entry deliberately filters the device-scaling
@@ -252,7 +300,6 @@ linear filtering passes the same entry. The real-compositor surface remains
 unmeasured: the isolated-compositor harness currently refuses its production
 backend selector before starting a compositor, and no interactive-session
 render is an acceptable substitute.
->>>>>>> d25c142 (Keep protected mask edges and GPU filter coverage)
 
 ## 2026-08-20 -- A declared compositor now has to be one this run created
 

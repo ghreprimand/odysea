@@ -36,6 +36,28 @@ if [[ -n "$sensitive_paths" ]]; then
     failed=1
 fi
 
+# An unresolved merge conflict must never reach the corpus. This is a content
+# check rather than a formatting one: a marker left in tracked text publishes a
+# file that is visibly broken, and it does so in exactly the files a conflicted
+# merge touches most - the record, the roadmap, the contributor guide.
+#
+# No exclusion list. The pattern is anchored at the start of a line and written
+# with repetition counts rather than literal runs, so this guard, its own
+# self-test, and any fixture that has to construct a marker can all be scanned
+# by it: a marker composed inside a `printf` argument does not begin its line.
+# That is what keeps the rule from needing the file-level exclusions the
+# at-sign carve-out was written to avoid.
+#
+# The conflict styles Git can produce are all covered: `diff3` and `zdiff3` add
+# a `|||||||` base section to the two `<<<<<<<` and `>>>>>>>` sides, so the
+# base marker is matched too rather than being left as the one spelling that
+# could pass. Each marker is exactly seven characters and is followed by a
+# space or the end of the line, which is what Git writes; requiring that
+# terminator is what keeps a longer rule of dashes or equals signs in prose
+# from being read as a marker.
+report_matches "an unresolved merge conflict marker is tracked" \
+    guard_corpus_grep -nI -E '^(<{7}|\|{7}|={7}|>{7})([[:space:]]|$)' -- .
+
 # The attribution enforcement sources are excluded from the corpus scans below
 # for the same reason this script is: their subject matter is the shape of a
 # commit identity, so they necessarily contain address syntax and would

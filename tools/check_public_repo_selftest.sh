@@ -59,6 +59,28 @@ build_repository() {
     printf '%s' "$root"
 }
 
+# The same throwaway repository holding one file under a caller-chosen name, so
+# a scenario can put its fixture in the kind of file the case is about instead
+# of always in a shell script.
+build_repository_named() {
+    local name="$1"
+    local file_name="$2"
+    local body="$3"
+
+    local root="$workspace/$name"
+    mkdir -p "$root"
+    git init -q "$root"
+    git -C "$root" config user.name owner
+    git -C "$root" config user.email "$owner_identity"
+    git -C "$root" config commit.gpgsign false
+
+    printf '%s\n' "$body" >"$root/$file_name"
+    git -C "$root" add "$file_name"
+    git -C "$root" -c core.hooksPath=/dev/null commit -q -m 'Add a file'
+
+    printf '%s' "$root"
+}
+
 # Runs the guard inside one throwaway repository and requires it to accept the
 # corpus or to reject it for the address reason specifically. Requiring the
 # reason keeps a scenario from passing because some unrelated check fired.
@@ -233,6 +255,118 @@ if ((empty_corpus_status == 0)) ||
         "$empty_corpus_output" >&2
     status=1
 fi
+
+# --- Unresolved merge conflict markers --------------------------------------
+# The record was once published with nine of these in it, and every gate that
+# existed said the corpus was fine. These scenarios pin both directions of the
+# check that now refuses them.
+#
+# Each marker is composed at run time from a repetition count rather than
+# written out, for the same reason the planted address is: this file is scanned
+# by the guard like any other tracked source, and a literal marker at the start
+# of a line here would make the self-test fail the rule it is demonstrating.
+readonly marker_ours="$(printf '<%.0s' 1 2 3 4 5 6 7)"
+readonly marker_base="$(printf '|%.0s' 1 2 3 4 5 6 7)"
+readonly marker_split="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+readonly marker_theirs="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+readonly marker_message='an unresolved merge conflict marker is tracked'
+
+# Runs the guard and requires the marker reason specifically, so a scenario
+# cannot pass because some unrelated pattern happened to fire on the fixture.
+expect_marker_outcome() {
+    local scenario="$1"
+    local expectation="$2"
+    local root="$3"
+
+    local output=""
+    local exit_status=0
+    output="$(cd "$root" && bash "$guard" 2>&1)" || exit_status=$?
+
+    checked=$((checked + 1))
+    case "$expectation" in
+        accept)
+            if ((exit_status != 0)) || [[ "$output" != *"$success_message"* ]]; then
+                printf 'public_repository_guard_self_test: %s should be accepted, but the guard said: %s\n' \
+                    "$scenario" "$output" >&2
+                status=1
+            fi
+            ;;
+        reject)
+            if ((exit_status == 0)); then
+                printf 'public_repository_guard_self_test: %s should be rejected\n' \
+                    "$scenario" >&2
+                status=1
+            elif [[ "$output" != *"$marker_message"* ]]; then
+                printf 'public_repository_guard_self_test: %s should be rejected for the conflict marker, but the guard said: %s\n' \
+                    "$scenario" "$output" >&2
+                status=1
+            fi
+            ;;
+    esac
+}
+
+# One scenario per marker spelling. The base marker only appears under the
+# diff3 and zdiff3 conflict styles, which is exactly why it is the spelling
+# most likely to be left out of a hand-written pattern.
+expect_marker_outcome conflict_marker_ours reject \
+    "$(build_repository_named marker_ours NOTES.md "${marker_ours} HEAD")"
+
+expect_marker_outcome conflict_marker_base reject \
+    "$(build_repository_named marker_base NOTES.md "${marker_base} merged common ancestors")"
+
+expect_marker_outcome conflict_marker_split reject \
+    "$(build_repository_named marker_split NOTES.md "${marker_split}")"
+
+expect_marker_outcome conflict_marker_theirs reject \
+    "$(build_repository_named marker_theirs NOTES.md "${marker_theirs} topic")"
+
+# The shape the record was actually published in: a full conflicted region
+# inside otherwise ordinary prose.
+expect_marker_outcome conflict_region_in_prose reject \
+    "$(build_repository_named marker_region NOTES.md "# Notes
+
+${marker_ours} HEAD
+one
+${marker_split}
+two
+${marker_theirs} topic")"
+
+# A marker in a source file rather than a document. The check carries no
+# exclusion list, so the file's kind must not matter.
+expect_marker_outcome conflict_marker_in_source reject \
+    "$(build_repository_named marker_source script.sh "${marker_split}")"
+
+# --- The discriminating direction -------------------------------------------
+# A check that fires on anything marker-shaped would be unusable in a project
+# whose prose contains rules and comparisons. These cases must all be accepted,
+# and each isolates one property of the pattern.
+
+# Not at the start of a line. This is the property that lets the guard scan
+# itself and its own fixtures, so if it regresses this file stops being
+# committable and the rule loses the exclusion-free form it was written for.
+expect_marker_outcome marker_not_at_line_start accept \
+    "$(build_repository_named marker_indented NOTES.md "prose mentioning ${marker_split} in passing")"
+
+# Longer than seven. A horizontal rule in prose is an ordinary thing to write
+# and is not what Git emits.
+expect_marker_outcome rule_longer_than_marker accept \
+    "$(build_repository_named marker_long NOTES.md "$(printf '=%.0s' 1 2 3 4 5 6 7 8 9)")"
+
+# Shorter than seven, for the same reason from the other side.
+expect_marker_outcome rule_shorter_than_marker accept \
+    "$(build_repository_named marker_short NOTES.md "$(printf '=%.0s' 1 2 3 4 5 6)")"
+
+# Seven characters but no terminator: the run continues into other text, so the
+# line is prose rather than a marker.
+expect_marker_outcome marker_length_run_without_terminator accept \
+    "$(build_repository_named marker_runon NOTES.md "${marker_split}not-a-marker")"
+
+# A clean document with no marker-shaped text at all, to keep the accepting
+# direction from resting only on near-miss fixtures.
+expect_marker_outcome clean_document accept \
+    "$(build_repository_named marker_clean NOTES.md "# Notes
+
+Ordinary prose with nothing marker-shaped in it.")"
 
 if ((status != 0)); then
     exit "$status"

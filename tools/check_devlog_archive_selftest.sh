@@ -523,6 +523,52 @@ sed -i '/^## 2026-08-08 -- Eighth August entry$/,+2s/^Body text\.$/Body text, re
 expect_rejected "a moved entry whose text was changed under its heading" "$root" \
     "a published entry has been rewritten under an unchanged heading: ## 2026-08-08 -- Eighth August entry"
 
+# --- Repairing a record that was published conflicted -----------------------
+# The record really was published with nine unresolved conflict markers in it,
+# and this gate passed it: the markers changed no heading and no body text
+# around them, and once published they became part of the form every later
+# comparison was made against. The gate then had the damage as its baseline and
+# would have refused the repair.
+#
+# Composed at run time rather than written out, for the same reason the address
+# above is: a line of this file beginning with a marker would be refused by the
+# corpus guard that now bans them.
+readonly marker_ours="$(printf '<%.0s' 1 2 3 4 5 6 7) HEAD"
+readonly marker_split="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+readonly marker_theirs="$(printf '>%.0s' 1 2 3 4 5 6 7) topic"
+
+# Plants a conflicted region in the live record in the shape the real damage
+# took: markers sitting between entries, so each one lands at the tail of the
+# entry above it and no entry's own prose is touched.
+plant_conflict_markers() {
+    local root="$1"
+    sed -i \
+        -e "/^## 2026-08-09 -- Ninth August entry\$/i ${marker_ours}" \
+        -e "/^## 2026-08-08 -- Eighth August entry\$/i ${marker_split}" \
+        "$root/DEVLOG.md"
+    printf '%s\n' "$marker_theirs" >>"$root/DEVLOG.md"
+}
+
+# The repair itself: the markers come out and nothing else changes.
+root="$(build_repository conflicted_record_repaired)"
+plant_conflict_markers "$root"
+publish "$root" "Publish the record while it is conflicted"
+sed -i "/^\(<\{7\}\|=\{7\}\|>\{7\}\)\([ \t]\|\$\)/d" "$root/DEVLOG.md"
+expect_accepted_reporting "markers removed from a record published conflicted" \
+    "$root" "9 entries published in main, 9 compared against their published text"
+
+# And the exemption is only that wide. A repair that also changes a word under
+# an unchanged heading is still a rewrite, so the marker allowance cannot be
+# used as cover for editing published text.
+root="$(build_repository conflicted_record_repaired_and_reworded)"
+plant_conflict_markers "$root"
+publish "$root" "Publish the record while it is conflicted"
+sed -i "/^\(<\{7\}\|=\{7\}\|>\{7\}\)\([ \t]\|\$\)/d" "$root/DEVLOG.md"
+sed -i '/^## 2026-08-09 -- Ninth August entry$/,+2s/^Body text\.$/Body text, revised./' \
+    "$root/DEVLOG.md"
+expect_rejected "a conflicted record repaired and reworded at once" "$root" \
+    "a published entry has been rewritten under an unchanged heading: ## 2026-08-09 -- Ninth August entry"
+
 # A new entry written where nobody reads first. Dated inside the part's own
 # stretch, so every arrangement rule is satisfied and the manifest records it:
 # only never having been published gives it away.

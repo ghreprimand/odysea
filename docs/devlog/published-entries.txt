@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-22 -- Repair a record published with its conflict unresolved
 ## 2026-08-21 -- Compare paths by identity, and prove a harness is alive
 ## 2026-08-20 -- Starting a compositor is an obligation to end it
 ## 2026-08-20 -- Make workspace location follow the focused Miller column

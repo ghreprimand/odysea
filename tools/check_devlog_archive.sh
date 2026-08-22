@@ -429,7 +429,27 @@ fi
 # day it landed.
 #
 # The date is spelled out digit by digit rather than with a repetition count,
-# which not every awk implementation reads as one.
+# which not every awk implementation reads as one. The conflict markers below
+# are spelled out for the same reason, and doing so is safe here because the
+# pattern sits inside an indented awk program: no line of this file begins with
+# a marker, so the corpus guard that bans them can still read this one.
+#
+# Unresolved conflict markers are dropped from a body wherever they appear,
+# which is a different exemption from the trailing-separator one above and
+# needs its own justification. A marker is not text an entry can legitimately
+# be published with; it is damage. Without this, the history-derived baseline
+# compares an entry against the last form it was published in - markers
+# included - so a record that went out conflicted would have the damage
+# adopted as its authoritative text, and the gate protecting the record would
+# refuse every attempt to repair it while agreeing with the break. That is not
+# a hypothetical: the record was published in exactly that state, and this
+# guard passed it.
+#
+# The exemption is narrow on purpose. Only lines that are entirely a marker are
+# removed, so the surrounding entry text is still compared byte for byte and a
+# genuine rewrite is still caught. It permits deleting a marker and nothing
+# else, and the corpus guard refuses any commit that would add one, so the pair
+# means markers cannot enter and removing them is always allowed.
 entry_pairs() {
     awk '
         function flush(   position, joined) {
@@ -451,6 +471,7 @@ entry_pairs() {
             sub(/[ \t]+$/, "", heading)
             next
         }
+        /^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)([ \t]|$)/ { next }
         {
             if (heading != "") {
                 line = $0
