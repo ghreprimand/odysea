@@ -61,6 +61,14 @@ fi
 # The run must still be followed by space or the end of the line; requiring
 # that terminator keeps a marker-shaped run continuing into prose from being
 # read as a marker.
+#
+# One consequence of matching runs of at least seven characters: a Markdown
+# setext heading underlined with seven or more equals signs is a marker-shaped
+# line and is refused, reporting an unresolved conflict for what is a heading.
+# Documentation here is written in ATX style, `^=+$` occurs nowhere in the
+# tracked corpus, and the alternative is leaving the longer marker runs
+# unmatched, so the rule stands as written. It is recorded because the refusal
+# message would otherwise be an inexplicable thing to be told about a heading.
 report_matches "an unresolved merge conflict marker is tracked" \
     guard_corpus_grep -nI -E '^(<{7,}|\|{7,}|={7,}|>{7,})([[:space:]]|$)' -- .
 
