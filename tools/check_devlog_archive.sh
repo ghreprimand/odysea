@@ -51,6 +51,13 @@
 # a clone with no `origin/main`, is judged against itself. What remains is the
 # window between committing on the integration branch and pushing it.
 #
+# HOW BIG THE BOUND HAS TO BE. Everything the comparison demands is an entry
+# the walk found, so the size of the walk is the strength of the check, and a
+# walk that reads less than it read before reports success in the same shape as
+# one that read everything. The count therefore carries a floor, described at
+# the point where it is applied, and naming a baseline at all is a precondition
+# rather than something this gate may pass over.
+#
 # WHAT THIS GATE DOES NOT DO, stated exactly, because the division matters. In
 # a repository, loss and alteration are both mechanically caught - history is
 # the copy of what was published that the comparison needs. In a source tree
@@ -549,6 +556,47 @@ current_pairs() {
     done
 }
 
+# --- A bound that cannot quietly get smaller --------------------------------
+# Everything the walk demands is an entry it found. That makes the size of the
+# walk the whole strength of the check, and nothing compared that size against
+# anything: the count went out on the success line and no rule said it could
+# not fall. A bound that reads less than it read yesterday reports success in
+# exactly the same shape as one that read everything.
+#
+# It falls for ordinary reasons, not only adversarial ones. A baseline ref left
+# behind by a fetch that never ran drops every entry published since; a walk
+# weakened later - a lost `--full-history`, a narrowed pathspec, a shallow
+# clone - drops whatever it can no longer see. In each case the entries that
+# leave the bound become deletable without complaint, and the only trace is a
+# number nobody is comparing.
+#
+# So the count carries a floor. Published entries are never removed from the
+# record, so the number of entries the branch has published only ever grows: a
+# reading below the mark is a statement about the instrument, not about the
+# record.
+#
+# WHY THE FLOOR IS ANCHORED TO AN ENTRY. A bare count would be a claim about
+# every record this script is ever pointed at, including the scenario records
+# the accompanying self-test builds, which publish a handful of entries by
+# design. The floor is a fact about THIS record, so it is conditioned on this
+# record: the anchor is the oldest entry ever published here, it sits in a
+# closed archive month, and published entries are never edited or removed.
+#
+# The anchor cannot go silently absent and take the floor with it. It lives in
+# an archive file rather than the live record, so a walk that stopped finding
+# it would leave it present in an archive and unpublished, which the comparison
+# above refuses by name as a new entry written into that archive. The floor
+# going inert therefore costs a failure elsewhere rather than nothing, and the
+# self-test pins that keeper rather than asserting it here.
+#
+# THE COUNT MAY BE RAISED, NEVER LOWERED, and raised only to a number the
+# baseline branch has already published - not to whatever the working tree
+# holds, or a branch adding entries would fail against a baseline that does not
+# have them yet. Lowering it is the cheapest way to make a shrinking bound look
+# healthy, which is the exact failure this floor exists to catch.
+readonly bound_floor_anchor='## 2026-07-27 -- Initial core and Qt Quick foundation'
+readonly bound_floor_count=112
+
 baseline_ref=""
 if guard_corpus_is_git; then
     # Most authoritative first. `origin/main` is what was actually published,
@@ -569,28 +617,55 @@ if guard_corpus_is_git; then
 fi
 
 if [[ -z "$baseline_ref" ]]; then
-    # Named rather than passed over. A tarball has no history to read, and a
-    # repository whose published branch is not present locally has none either;
-    # in both the manifest is the whole of what can be checked, and a run that
-    # said nothing here would be indistinguishable from one that checked.
-    if guard_corpus_is_git; then
-        printf 'devlog_archive_guard: published history is UNCHECKED: none of origin/main, main, or HEAD resolves\n'
+    # WHEN A SKIP IS ALLOWED, AND WHEN IT IS A FAILURE. Reporting the bound
+    # unchecked is honest, and an honest skip still reads in the summary
+    # exactly like a check that ran: both are one line above a green result.
+    # So the skip is permitted only where there is genuinely nothing to read,
+    # and refused wherever the history it needs is sitting in the tree.
+    #
+    # A tarball has no history: the manifest is the whole of what can be
+    # checked there, and a gate that declined outright would report success
+    # over the source a package build compiles. The same holds for a
+    # repository with no commit in it yet.
+    #
+    # A repository that does have commits is a different case, and it was
+    # being passed over. The candidate names above cover every ordinary
+    # clone, but they are names, and history does not depend on them: renaming
+    # the branch and the remote and then checking out an unborn branch -
+    # `git checkout --orphan` - leaves every commit reachable under other refs
+    # while none of the three candidates resolves. The bound then went
+    # entirely unenforced with the whole record's history present, at exit
+    # zero. Naming a baseline is a precondition of this gate, not something it
+    # may decline: a run that cannot name one has to fail so somebody names
+    # one, rather than publish a green result over an unbounded record.
+    history_exists=0
+    if guard_corpus_is_git &&
+        [[ -n "$(git rev-list --all --max-count=1 2>/dev/null)" ]]; then
+        history_exists=1
+    fi
+
+    if ((history_exists == 1)); then
+        fail "published history is present but no baseline ref could be named: none of origin/main, main, or HEAD resolves, so the record is unbounded"
+    elif guard_corpus_is_git; then
+        printf 'devlog_archive_guard: published history is UNCHECKED: the repository holds no commit to read\n'
     else
         printf 'devlog_archive_guard: published history is UNCHECKED: no Git metadata is available\n'
     fi
 else
     history_published=0
     history_compared=0
+    anchor_published=0
     while IFS=$'\t' read -r kind first second; do
         case "$kind" in
         COUNT)
             history_published="$first"
             history_compared="$second"
             ;;
+        ANCHOR) anchor_published="$first" ;;
         FAIL) fail "$first" ;;
         esac
     done < <(
-        awk -v live="$live_record" '
+        awk -v live="$live_record" -v anchor="$bound_floor_anchor" '
             function next_field(   position, value) {
                 position = index(remainder, "\t")
                 value = substr(remainder, 1, position - 1)
@@ -612,6 +687,10 @@ else
                 if (!(heading in published)) {
                     published[heading] = substr(remainder, position + 1)
                     order[++published_count] = heading
+                    # Whether the floor below applies to this record at all is
+                    # decided by what the walk found, not by what the working
+                    # tree holds: the floor is a claim about the bound.
+                    if (heading == anchor) anchor_published = 1
                 }
                 next
             }
@@ -633,6 +712,7 @@ else
                 for (position = 1; position <= published_count; position++)
                     if (!(order[position] in present))
                         printf "FAIL\ta published entry is present nowhere in the record: %s\n", order[position]
+                printf "ANCHOR\t%d\t\n", anchor_published
                 printf "COUNT\t%d\t%d\n", published_count, compared
             }
         ' < <(
@@ -648,6 +728,21 @@ else
     else
         printf 'devlog_archive_guard: %d entries published in %s, %d compared against their published text\n' \
             "$history_published" "$baseline_ref" "$history_compared"
+    fi
+
+    # The floor on the size of that bound. Which branch was taken is reported
+    # either way: a floor that had quietly stopped applying would otherwise be
+    # indistinguishable from one that passed.
+    if ((anchor_published == 1)); then
+        if ((history_published < bound_floor_count)); then
+            fail "the bound read $history_published published entries in $baseline_ref, fewer than the $bound_floor_count this record had already published; published entries are never removed, so the bound has weakened rather than the record shrinking"
+        else
+            printf 'devlog_archive_guard: the bound holds %d entries against a floor of %d\n' \
+                "$history_published" "$bound_floor_count"
+        fi
+    else
+        printf 'devlog_archive_guard: the entry-count floor does not apply here: %s has never been published in %s\n' \
+            "$bound_floor_anchor" "$baseline_ref"
     fi
 fi
 

@@ -24,6 +24,51 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-26 -- The record's history bound may not shrink or be skipped
+
+Two ways the archive gate's history comparison stopped bounding the record, one
+by getting smaller and one by not running at all. Both were reproduced on the
+unmodified tree before anything was written.
+
+The comparison demands every entry the walk found, so the size of the walk is
+the whole strength of it, and nothing measured that size. Pointing a clone's
+`origin/main` at a commit five entries back — the state a fetch that never ran
+leaves behind — dropped the bound from 112 published entries to 107 at exit
+zero, and an entry published in that gap could then be deleted from both the
+record and the manifest without complaint. The only trace was a number on the
+success line that nothing compared against anything. The bound now carries a
+floor: a reading below a count this record has already published is refused,
+because published entries are never removed and that number can only grow. The
+floor is conditioned on the oldest published entry so that it is a claim about
+this record and not about every record the script is pointed at, and the anchor
+cannot go quietly missing — it sits in an archive file, so a walk that stopped
+finding it leaves it archived and never published, which is already refused by
+name.
+
+Naming a baseline was also optional. The candidate refs cover every ordinary
+clone, but they are names, and history does not depend on names: renaming the
+branch and the remote and then checking out an unborn branch leaves every
+commit reachable under other refs while none of the candidates resolves. In
+that state a full clone carrying 168 commits reported the bound unchecked on
+standard output, exited zero, and accepted a record with a published entry
+deleted from it. A repository that holds commits and cannot name a baseline now
+fails. Reporting the bound unchecked remains available only where there is
+genuinely nothing to read — a source tree with no repository, or a repository
+with no commit yet — because an honest skip and a completed check otherwise
+read identically in a summary.
+
+Verification: the self-test grew from 44 scenarios to 49 and gained a floor on
+its own reported count, so a suite that stops early fails instead of passing
+short. The new scenarios put a record on each side of the count floor, hold the
+guard to saying which side it found, pin the keeper that stops the floor going
+inert, and drive a repository into the unnameable-baseline state with an intact
+record so that only the refusal is under test. Eleven planted mutations were
+each asserted to have changed the file before being run; all eleven were caught,
+none survived, and none went unmeasured. Both reproductions above now fail by
+name, and the shipped record stays green at 112 of 112 compared.
+
+---
+
 ## 2026-08-22 -- Repair a record published with its conflict unresolved
 
 The record went out with nine unresolved merge-conflict markers in it, left by

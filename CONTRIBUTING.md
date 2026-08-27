@@ -487,6 +487,31 @@ a rewrite committed on an integration branch already fast-forwarded past it, in
 a clone with no `origin/main`, is judged against itself. Pushing closes it, and
 nothing in the repository narrows it further.
 
+Naming a baseline is a precondition, not something the guard may decline. Those
+three candidates cover every ordinary clone, but they are names and history
+does not depend on names: renaming the branch and the remote and then checking
+out an unborn branch leaves every commit reachable while none of the three
+resolves. A repository that holds commits and cannot name a baseline fails, so
+that somebody names one. Reporting the bound unchecked stays available only
+where there is genuinely nothing to read — a source tree with no repository, or
+a repository with no commit in it — because an honest skip and a completed
+check otherwise read the same in a summary.
+
+The size of the bound has a floor. Everything the comparison demands is an
+entry the walk found, so the size of that walk is the strength of the check,
+and a walk that reads less than it read before reports success in exactly the
+same shape as one that read everything. It shrinks for ordinary reasons: a
+baseline ref left behind by a fetch that never ran, a narrowed or truncated
+walk. The guard therefore refuses a reading below a count this record has
+already published, since published entries are never removed and the number can
+only grow. That floor is conditioned on the oldest published entry, so it is a
+statement about this record rather than about every record the script is
+pointed at, and the anchor cannot go quietly missing: it lives in an archive
+file, so a walk that stopped finding it would leave it archived and never
+published, which is refused by name. The count may be raised to a number the
+baseline branch has already published. Lowering it is how a shrinking bound is
+made to look healthy, and it is the one edit the rule forbids.
+
 `devlog_archive_guard` enforces all of it: every archive must be linked and
 every link must resolve to a tracked archive file, archive filenames must match
 the month of every entry they contain, the live record must hold nothing older

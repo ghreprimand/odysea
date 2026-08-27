@@ -20,6 +20,14 @@ readonly guard="$script_directory/check_devlog_archive.sh"
 # fixture-local stand-in.
 readonly ordering_baseline_heading='2026-08-11 -- The prohibition is published, not only the mechanism'
 
+# The entry the guard's floor on the size of the published bound is conditioned
+# on, and the number that floor demands once it applies. Written out here for
+# the same reason the heading above is: a self-test that read its boundary out
+# of the code under test would agree with a wrong boundary. The scenarios below
+# build records on both sides of this number.
+readonly bound_floor_anchor_heading='2026-07-27 -- Initial core and Qt Quick foundation'
+readonly bound_floor_count=112
+
 if [[ ! -x "$guard" && ! -f "$guard" ]]; then
     echo "devlog_archive_guard_self_test: guard script is missing" >&2
     exit 1
@@ -37,10 +45,19 @@ readonly sandbox_root="$(mktemp -d)"
 trap 'rm -rf -- "$sandbox_root"' EXIT
 
 failures=0
+reported=0
+
+# The number of scenarios below. Checked against what actually reported at the
+# end, because a suite can stop early - a scenario builder that fails under
+# `set -e`, an edit that removes a case - and a short run whose every result
+# passed is indistinguishable from a complete one. Raise it when scenarios are
+# added; lowering it to make a run green is removing coverage.
+readonly expected_scenarios=49
 
 report() {
     local outcome="$1" scenario="$2"
     printf '%-5s %s\n' "$outcome" "$scenario"
+    reported=$((reported + 1))
     [[ "$outcome" == PASS ]] || failures=$((failures + 1))
 }
 
@@ -210,11 +227,14 @@ expect_accepted_reporting() {
     report PASS "$scenario"
 }
 
-# An unpublished scenario: the branch is unborn, so no candidate ref resolves -
-# not even HEAD - and the guard has to say so rather than passing over it.
+# An unpublished scenario: the repository has been initialised and nothing has
+# been committed to it, so there is no history to read. That is the one state
+# inside a repository where reporting the bound unchecked is honest rather than
+# a pass over readable history, and the guard has to name it rather than
+# passing over it in silence.
 expect_accepted() {
     expect_accepted_reporting "$1" "$2" \
-        "published history is UNCHECKED: none of origin/main, main, or HEAD resolves"
+        "published history is UNCHECKED: the repository holds no commit to read"
 }
 
 expect_rejected() {
@@ -697,6 +717,20 @@ refresh_manifest "$root"
 expect_rejected "an entry dropped where neither main nor origin/main resolves" "$root" \
     "a published entry is present nowhere in the record: ## 2026-08-01 -- First August entry"
 
+# --- History present, no baseline nameable: a failure, not a notice ---------
+# The fallback above covers renaming, because HEAD resolves wherever a commit
+# is checked out. It does not cover an unborn HEAD: check out an orphan branch
+# in the same repository and none of the three candidates resolves while every
+# commit is still reachable under the renamed branch. The record here is intact
+# and every arrangement rule passes, so what this scenario pins is only that
+# the gate refuses to report a green result over a record it did not bound.
+root="$(build_repository history_present_without_a_baseline)"
+publish "$root" "Publish the record"
+git -C "$root" branch -m main trunk
+git -C "$root" checkout --quiet --orphan unborn
+expect_rejected "history present with no baseline ref nameable" "$root" \
+    "published history is present but no baseline ref could be named"
+
 # --- The manifest is a list of headings, not a record file ------------------
 # Read as a record it presents every published entry as one with no body, so
 # every entry that has a body reads as rewritten. Here a commit's record files
@@ -734,6 +768,107 @@ write_live_record "$root" \
 refresh_manifest "$root"
 expect_accepted_reporting "the manifest is not read as a published record file" \
     "$root" "9 entries published in main, 9 compared against their published text"
+
+# --- The bound is not allowed to get smaller --------------------------------
+# The size of the walk is the whole strength of the history comparison, and
+# nothing measured it: a baseline left behind by a fetch that never ran, or a
+# walk narrowed later, reports fewer published entries in the same shape as a
+# healthy run and every entry it can no longer see becomes deletable. The floor
+# is a count the record has already published, conditioned on the anchor entry
+# so that it is a claim about this record rather than about every record this
+# script is pointed at.
+#
+# These scenarios carry the shipped anchor and sit deliberately on both sides
+# of the shipped count.
+
+# Accepts a run that reached the end and said each of the given things.
+expect_accepted_saying() {
+    local scenario="$1" root="$2"
+    shift 2
+    local output exit_status=0
+    output="$(run_guard "$root")" || exit_status=$?
+
+    if ((exit_status != 0)); then
+        report FAIL "$scenario: guard rejected a record it must accept"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    local expected
+    for expected in "$@"; do
+        if [[ "$output" != *"$expected"* ]]; then
+            report FAIL "$scenario: guard did not report what it did"
+            printf '  expected to contain: %s\n' "$expected" >&2
+            printf '  actual: %s\n' "$output" >&2
+            return
+        fi
+    done
+    report PASS "$scenario"
+}
+
+# A scenario record carrying the shipped anchor entry, with as many further
+# July entries as asked for. The filler is dated inside July and below the
+# ordering baseline, where relative order carries no claim, so the only thing
+# it changes is how many entries the record publishes.
+build_anchored_repository() {
+    local name="$1" filler="$2"
+    local root
+    root="$(build_repository "$name")"
+
+    local -a july_entries=("2026-07-31 -- Last July entry")
+    local index=1
+    while ((index <= filler)); do
+        july_entries+=("$(printf '2026-07-%02d -- Filler entry %03d' \
+            $((index % 26 + 1)) "$index")")
+        index=$((index + 1))
+    done
+    july_entries+=("$bound_floor_anchor_heading" "2026-07-01 -- First July entry")
+
+    write_archive "$root/docs/devlog/2026-07.md" "${july_entries[@]}"
+    refresh_manifest "$root"
+    track_everything "$root"
+    printf '%s\n' "$root"
+}
+
+# Above the floor: accepted, and the guard says which side of it the bound is
+# on. Without that line a floor that had stopped applying would read exactly
+# like one that passed.
+root="$(build_anchored_repository bound_above_the_floor 110)"
+publish "$root" "Publish a record larger than the floor"
+expect_accepted_saying "a bound larger than the floor is reported as such" "$root" \
+    "120 entries published in main" \
+    "the bound holds 120 entries against a floor of $bound_floor_count"
+
+# Below it: refused by name. This is the shape every weakening takes - a stale
+# baseline, a narrowed walk, a truncated clone - because each of them ends with
+# the bound holding fewer entries than the record has already published.
+root="$(build_anchored_repository bound_below_the_floor 0)"
+publish "$root" "Publish a record smaller than the floor"
+expect_rejected "a bound holding fewer entries than the record published" "$root" \
+    "the bound read 10 published entries in main, fewer than the $bound_floor_count this record had already published"
+
+# A record that is not this one is not claimed by the floor, and the run says
+# so rather than leaving the reader to infer which branch it took.
+root="$(build_repository bound_floor_not_anchored)"
+publish "$root" "Publish a record that is not this project's"
+expect_accepted_saying "the floor does not apply to a record without the anchor" \
+    "$root" \
+    "the entry-count floor does not apply here: ## $bound_floor_anchor_heading"
+
+# The floor's keeper, measured rather than asserted. The anchor going missing
+# from the published set would switch the floor off, and this is what stops
+# that being free: the anchor lives in an archive file, so a walk that stopped
+# finding it leaves it sitting in an archive having never been published, which
+# is refused by name as a new entry written where nobody reads first.
+root="$(build_repository anchor_present_but_never_published)"
+publish "$root" "Publish the record without the anchor entry"
+write_archive "$root/docs/devlog/2026-07.md" \
+    "2026-07-31 -- Last July entry" \
+    "$bound_floor_anchor_heading" \
+    "2026-07-01 -- First July entry"
+refresh_manifest "$root"
+expect_rejected "the floor's anchor present in an archive but never published" \
+    "$root" \
+    "a new entry was written into docs/devlog/2026-07.md: ## $bound_floor_anchor_heading"
 
 # --- Without repository metadata the guard runs rather than declining -------
 # A copy of the guard is installed in a source tree that has a live record and
@@ -888,10 +1023,15 @@ root="$(build_ordering_repository ordering_baseline_absent \
 expect_rejected "a baseline entry that is not published fails rather than checking nothing" \
     "$root" "the ordering baseline entry is not published, so reading order is unchecked"
 
+if ((reported != expected_scenarios)); then
+    echo "devlog_archive_guard_self_test: $reported scenario(s) reported a result, expected $expected_scenarios" >&2
+    exit 1
+fi
+
 if ((failures == 0)); then
-    echo "devlog_archive_guard_self_test: all scenarios passed"
+    echo "devlog_archive_guard_self_test: all $reported scenarios passed"
     exit 0
 fi
 
-echo "devlog_archive_guard_self_test: $failures scenario(s) failed" >&2
+echo "devlog_archive_guard_self_test: $failures of $reported scenario(s) failed" >&2
 exit 1
