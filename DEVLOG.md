@@ -24,6 +24,53 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-27 -- Visual acceptance distinguishes scaling from device resolution
+
+The visual-foundation matrix now names only the rendering it performs. The
+offscreen software entry with `QT_SCALE_FACTOR=2` is called the scaled-layout
+entry: it exercises logical geometry under doubled scaling while its surface
+still rasterizes at one device pixel per logical pixel. It is not a 2x frame.
+Genuine device-resolution 2x remains unmeasured until a declared, isolated
+compositor can allocate that surface, so the roadmap acceptance item is open.
+
+Everything that can be measured without a compositor is asserted on the 1x
+software path. The layout suite sweeps the narrowest supported window, a wide
+window, every density's live compact breakpoint, and interface-scale extremes.
+Pointer clicks must focus a button, field, and directory view and expose their
+effect-independent focus indicators; a separate keyboard traversal must cycle
+through several surfaces. Reduced motion must zero both effective persistence
+and the shared motion duration without moving chrome. The Off profile must
+zero every effective presentation level while selection, text, and keyboard
+actions remain usable. The contrast matrix measures the beds each semantic role
+actually paints. The software fallback keeps the pipeline disengaged while
+content, controls, and protected wells remain intact. A 2,000-entry listing
+must keep both views virtualized and presentation structure viewport-bounded.
+
+Each measured axis was checked against an isolated fault. Disabling compact
+mode failed the narrow-layout test; freezing the measured width failed the
+scale test; removing click focus and trapping the tab chain failed the pointer
+and keyboard focus tests independently; bypassing the reduced-motion effective
+value failed the motion test; leaving one Off-profile effect nonzero failed the
+effects-off test; removing the high-contrast danger variant failed the measured
+contrast matrix; allowing the pipeline on the software backend failed the
+fallback test; and expanding the list cache to the whole fixture failed the
+large-directory virtualization test. Each fault was removed before the clean
+run. The full suites invoked the guarded compositor launchers; both declined at
+the declaration boundary before Qt created an application. No compositor was
+started and no interactive session was contacted.
+
+The warning-clean release suite passed all 72 registered entries at CTest
+level, including static analysis. The ASan/UBSan suite passed all 71 enabled
+entries with no sanitizer diagnostics; static analysis is disabled in that
+preset. Both suites recorded four skips: the two compositor policy declines
+above and two offscreen-RHI capability skips because no display server was
+advertised. The coverage reconciler accepted the policy declines and rejected
+both batteries because those two capability skips lack a declaration. That
+separate gate-registration gap remains visible rather than being converted to
+green validation evidence.
+
+---
+
 ## 2026-08-27 -- Which battery entries may skip is declared, not discovered
 
 The coverage reconciler judged every skip after it happened, which left the

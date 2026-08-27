@@ -551,9 +551,10 @@ shell scene, so its claims regress loudly instead of visually:
   and entirely inside the window; the chrome strips stack without overlap;
   and no visible label overflows its bounds without eliding.
 - **Focus visibility.** With every effect off, buttons and fields show the
-  accent focus ring against the resting hairline, a focused directory view
-  turns its pane frame stroke to the accent, and tab traversal cycles
-  through the chrome without ever dropping focus.
+  accent focus ring against the resting hairline after pointer focus, a
+  pointer-focused directory view turns its pane frame stroke to the accent,
+  and keyboard tab traversal cycles through the chrome without ever dropping
+  focus.
 - **Reduced motion.** The override zeroes effective persistence and the
   shared motion token while chrome geometry stays byte-stable, and the
   stored preference the controls display is untouched.
@@ -577,9 +578,11 @@ shell scene, so its claims regress loudly instead of visually:
   environment whose grabbed frame does not carry the rendered scene. The
   offscreen platform never allocates a genuine high-density framebuffer —
   under a forced scale factor it reports 2x while rasterizing at 1x — so
-  the automated pixel gate runs at 1x, the layout and geometry assertions
-  run at both scales, and the same suite executed on a windowing system
-  with a real 2x surface exercises every assertion at full density.
+  the automated pixel gate runs at 1x and the software scaled-layout entry
+  checks logical geometry under a doubled scale factor. Neither is genuine
+  2x rendering. The same suite would exercise every assertion at full density
+  on a declared, isolated compositor that allocates a real 2x surface; without
+  that surface, device-resolution 2x remains explicitly unmeasured.
 
 The high-contrast contrast matrix in the appearance tests and the software
 scene-graph fallback suite complete the matrix; the fallback keeps content,
@@ -635,7 +638,7 @@ axes, each of which either exercises the comparisons or reports a visible skip
   and `QT_SCALE_FACTOR=2`, so a windowing system that can allocate a 2x surface
   grabs frames at genuine device resolution and the mask-border, ring, and
   interior sweeps run at full density rather than skipping as they do on the
-  software 2x pass. The gate declares its scale through
+  software scaled-layout pass. The gate declares its scale through
   `ODYSEA_EXPECTED_FRAME_SCALE=2`; the device-resolution test then asserts the
   grabbed frame carries at least twice the logical size, so a run that fell back
   to 1x, or a pipeline that reported a high ratio while rasterizing low, fails

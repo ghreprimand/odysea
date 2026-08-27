@@ -8,9 +8,11 @@
 // and a directory large enough to exercise virtualization neither defeats it
 // nor scales the effect layer's cost with entry count.
 //
-// The suite runs at 1x and, through a second test entry that sets
-// QT_SCALE_FACTOR=2, at 2x; every assertion here is written in logical
-// coordinates so both runs check the same contract.
+// The suite runs at 1x and, through a second software-path entry that sets
+// QT_SCALE_FACTOR=2, with doubled logical scaling. Every assertion here is
+// written in logical coordinates, so that second entry is not evidence of a
+// genuine 2x framebuffer; device-resolution coverage belongs exclusively to
+// the declared real-compositor entry.
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
@@ -202,7 +204,8 @@ Support.ShellTestCase {
         }
     }
 
-    function test_focusIndicatorsSurviveEffectsOff() {
+    function test_pointerFocusIndicatorsSurviveEffectsOff() {
+        requireWindowActivation();
         theme().profile = ShellTheme.Off;
         const layer = child("presentationLayer");
         tryVerify(function () {
@@ -215,7 +218,7 @@ Support.ShellTestCase {
         // The refresh action is always enabled; a disabled control cannot
         // take focus.
         const button = child("refreshButton");
-        button.forceActiveFocus();
+        mouseClick(button, button.width / 2, button.height / 2, Qt.LeftButton);
         tryVerify(function () {
             return button.activeFocus;
         });
@@ -227,7 +230,7 @@ Support.ShellTestCase {
 
         // Field chrome: same contract on the shared line edit.
         const field = child("filterField");
-        field.forceActiveFocus();
+        mouseClick(field, field.width / 2, field.height / 2, Qt.LeftButton);
         tryVerify(function () {
             return field.activeFocus;
         });
@@ -241,7 +244,7 @@ Support.ShellTestCase {
         // View focus: the pane frame's stroke turns accent while a
         // directory view owns focus.
         const list = child("directoryList");
-        list.forceActiveFocus();
+        clickRow(1, Qt.LeftButton, Qt.NoModifier);
         tryVerify(function () {
             return list.activeFocus;
         });
@@ -329,6 +332,12 @@ Support.ShellTestCase {
         resizeShell(1100, 720);
         theme().profile = ShellTheme.Off;
         const layer = child("presentationLayer");
+        compare(theme().effectiveBloomCore, 0);
+        compare(theme().effectiveBloomWide, 0);
+        compare(theme().effectiveScanline, 0);
+        compare(theme().effectiveVignette, 0);
+        compare(theme().effectivePersistence, 0);
+        compare(theme().effectiveDeepField, 0);
         tryVerify(function () {
             return !layer.active;
         });

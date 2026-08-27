@@ -542,8 +542,9 @@ add_test(NAME shell_presentation_fallback COMMAND odysea_presentation_fallback_t
 # under a representative large directory, and device-pixel-ratio behavior.
 # The suite runs twice on the software path — once at 1x and once with
 # QT_SCALE_FACTOR=2 — because every layout and mask assertion is written in
-# logical coordinates and must hold at both scales; a real-compositor entry
-# below runs the device-resolution pixel assertions at a genuine 2x surface.
+# logical coordinates and must hold under both configurations. The latter is
+# scaled-layout coverage, not a 2x framebuffer; only the real-compositor entry
+# below can run the device-resolution assertions on a genuine 2x surface.
 # It uses the shared GPU-gate main so that entry can turn a software fallback
 # into a failure and declare the scale it launched at; every other entry
 # leaves those variables unset and behaves exactly as before.
@@ -561,7 +562,7 @@ target_link_libraries(odysea_validation_tests
 
 add_test(NAME shell_visual_validation COMMAND odysea_validation_tests)
 
-add_test(NAME shell_visual_validation_2x COMMAND odysea_validation_tests)
+add_test(NAME shell_visual_validation_scaled_layout COMMAND odysea_validation_tests)
 
 # The GPU half of the device-pixel gate: the protected-well border sweep
 # needs a real scene-graph backend. The launcher probes for an OpenGL
@@ -602,8 +603,8 @@ set_tests_properties(shell_visual_validation_rhi PROPERTIES
 # The genuine-2x device-resolution gate. The offscreen platform cannot
 # allocate a real high-density framebuffer — under QT_SCALE_FACTOR=2 it reports
 # a ratio of two while rasterizing at 1x — so the offscreen RHI entry above
-# runs the pixel assertions at 1x, and the software 2x pass checks only the
-# logical-coordinate layout. Neither exercises the device-resolution pixel
+# runs the pixel assertions at 1x, and the software scaled-layout pass checks
+# only logical-coordinate layout. Neither exercises the device-resolution pixel
 # comparisons at a true 2x surface. This launcher runs the validation suite on
 # a real compositor with OpenGL RHI forced and QT_SCALE_FACTOR=2, so a windowing
 # system that can allocate a 2x surface grabs frames at genuine device
@@ -721,11 +722,13 @@ set_tests_properties(
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
-# The 2x pass of the validation suite: identical software environment plus
-# the doubled scale factor, so the logical-coordinate layout and mask
-# assertions are checked at a high-density configuration too.
+# The scaled-layout pass of the validation suite: identical software
+# environment plus the doubled scale factor, so logical-coordinate layout and
+# mask assertions are checked under doubled scaling. The offscreen surface
+# still rasterizes at 1x; the name deliberately does not present this entry as
+# genuine device-resolution evidence.
 set_tests_properties(
-    shell_visual_validation_2x
+    shell_visual_validation_scaled_layout
     PROPERTIES ENVIRONMENT
     "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 

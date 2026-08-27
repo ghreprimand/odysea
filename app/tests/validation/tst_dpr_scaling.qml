@@ -16,11 +16,12 @@
 // framebuffer: under QT_SCALE_FACTOR=2 it reports a device pixel ratio of
 // two while rasterizing at 1x, and a grabbed frame is a device-sized
 // canvas that does not carry the scene at device resolution. The pixel
-// assertions therefore gate the real GPU path at 1x, the logical-geometry
-// assertions run at both scales, and the same suite run on a windowing
-// system with a real 2x surface exercises every assertion at full density
-// — the vacuity sentinel in the border sweep rejects any environment that
-// grabs a frame without the rendered scene in it.
+// assertions therefore gate the real GPU path at 1x, while the software
+// scaled-layout entry checks logical geometry under QT_SCALE_FACTOR=2. The
+// same suite can exercise every assertion at full density only on a declared
+// windowing surface that genuinely allocates at 2x — the vacuity sentinel in
+// the border sweep rejects any environment that grabs a frame without the
+// rendered scene in it.
 import QtQuick
 import QtQuick.Window
 import QtTest
