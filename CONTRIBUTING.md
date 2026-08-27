@@ -469,8 +469,28 @@ entry down to and including the baseline named in
 the rule landed. Below it the record holds entries that are genuinely out of
 order, and a rule reaching them would demand that published text be rewritten,
 so it stops there. The limits are stated in the guard rather than implied: it
-cannot see disorder below the baseline, it cannot tell whether a date is
-truthful, and it constrains nothing between entries sharing one date.
+cannot see disorder below the baseline and it constrains nothing between
+entries sharing one date.
+
+Whether a date is truthful is a separate rule, because the ordering check
+cannot answer it: a record where every entry is misdated by the same day is
+perfectly ordered. An entry's heading date must equal the date of the commit
+that added that heading, compared in the commit's own recorded timezone so the
+answer does not change with who runs the check. Twelve entries in this record
+were published carrying a date other than their commit's, and the shape recurs:
+an entry written near midnight is dated in UTC while the commit is recorded in
+local time, so the heading runs a day ahead of the commit that published it.
+Date an entry the day it lands.
+
+That rule reads local history rather than the published branch, which is the
+opposite of every other history check here and is deliberate. A misdated entry
+can only be corrected while it is unpushed, so a check waiting for `origin/main`
+would first report a mistake that is already too late to fix and would then stay
+red forever over text nobody may edit. It is bounded by its own baseline for the
+same reason the ordering rule is. It cannot check an entry that is in no commit
+yet — it names those rather than counting them as agreeing — and it cannot
+detect a clock that was wrong at commit time, since both sides of the comparison
+are things that commit asserts.
 
 `docs/devlog/published-entries.txt` records every published entry heading in
 reading order — the live record first, then each archive most recent first.

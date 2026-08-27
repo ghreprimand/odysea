@@ -28,6 +28,11 @@ readonly ordering_baseline_heading='2026-08-11 -- The prohibition is published, 
 readonly bound_floor_anchor_heading='2026-07-27 -- Initial core and Qt Quick foundation'
 readonly bound_floor_count=112
 
+# The entry the guard's heading-date rule is anchored to. Written out here for
+# the same reason as the two boundaries above: taking it from the code under
+# test would make this file agree with a wrong boundary.
+readonly dating_baseline_heading='2026-08-20 -- A declared compositor now has to be one this run created'
+
 if [[ ! -x "$guard" && ! -f "$guard" ]]; then
     echo "devlog_archive_guard_self_test: guard script is missing" >&2
     exit 1
@@ -52,7 +57,7 @@ reported=0
 # `set -e`, an edit that removes a case - and a short run whose every result
 # passed is indistinguishable from a complete one. Raise it when scenarios are
 # added; lowering it to make a run green is removing coverage.
-readonly expected_scenarios=50
+readonly expected_scenarios=59
 
 report() {
     local outcome="$1" scenario="$2"
@@ -1039,6 +1044,235 @@ root="$(build_ordering_repository ordering_baseline_absent \
     "2026-08-09 -- An entry published before the rule existed")"
 expect_rejected "a baseline entry that is not published fails rather than checking nothing" \
     "$root" "the ordering baseline entry is not published, so reading order is unchecked"
+
+# --- A heading's date is the date its commit was made -----------------------
+# The ordering rule above compares entries against each other, so a record where
+# every entry is misdated by the same day reads as perfectly ordered. These
+# scenarios cover the rule that closes that: a heading's date must equal the
+# date of the commit that added it.
+#
+# Each fixture COMMITS, because a heading added by no commit has no date to be
+# compared against. The commit date is pinned through GIT_AUTHOR_DATE so a
+# scenario means the same thing on any day it is run; a fixture dated "today"
+# would pass for the wrong reason on the day it was written and start failing
+# afterwards.
+
+# Accepts a dating fixture. It cannot reuse expect_accepted_reporting, which
+# asserts the archive and entry counts of the main fixture; these records have a
+# shape of their own. The final report line is still required, so a guard
+# exiting early - before enumeration, before the manifest comparison - cannot be
+# mistaken for one that accepted the record.
+expect_accepted_dating() {
+    local scenario="$1" root="$2" expected="$3"
+    local output exit_status=0
+    output="$(run_guard "$root")" || exit_status=$?
+
+    if ((exit_status != 0)); then
+        report FAIL "$scenario: guard rejected a record it must accept"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    if [[ "$output" != *"matching the manifest"* ]]; then
+        report FAIL "$scenario: guard exited zero without reaching its final report"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    if [[ "$output" != *"$expected"* ]]; then
+        report FAIL "$scenario: guard did not report what it did about heading dates"
+        printf '  expected to contain: %s\n' "$expected" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    report PASS "$scenario"
+}
+
+# Commits with an explicit author date, so a fixture can put a heading and its
+# commit deliberately in or out of agreement.
+publish_dated() {
+    local root="$1" message="$2" when="$3"
+    git -C "$root" add --all
+    GIT_AUTHOR_DATE="$when" GIT_COMMITTER_DATE="$when" git -C "$root" \
+        -c "user.name=Devlog self test" \
+        -c "user.email=$self_test_identity" \
+        -c commit.gpgsign=false \
+        commit --quiet -m "$message"
+}
+
+# A record carrying the real dating baseline, published by a commit whose date
+# agrees with it, plus whatever further entries the scenario names.
+build_dating_repository() {
+    local name="$1"
+    shift
+    local root="$sandbox_root/$name"
+
+    mkdir -p "$root/docs/devlog"
+    write_live_record "$root" docs/devlog/2026-07.md -- \
+        "$dating_baseline_heading" "$ordering_baseline_heading"
+    write_archive "$root/docs/devlog/2026-07.md" "2026-07-31 -- Last July entry"
+    refresh_manifest "$root"
+    git -C "$root" init --quiet -b main
+    git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+    publish_dated "$root" "publish the baseline" "2026-08-20T12:00:00-0500"
+    printf '%s\n' "$root"
+}
+
+# Adds one entry to the top of the live record and commits it on the given day.
+add_dated_entry() {
+    local root="$1" heading="$2" when="$3"
+    local body
+    body="$(printf '\n---\n\n## %s\n\nBody text.\n' "$heading")"
+    # Inserted directly below the index block, which is where a new entry goes.
+    python3 - "$root/DEVLOG.md" "$heading" <<'INSERT'
+import sys
+path, heading = sys.argv[1], sys.argv[2]
+text = open(path).read()
+marker = "\n---\n\n## "
+index = text.index(marker)
+entry = "\n---\n\n## %s\n\nBody text.\n" % heading
+open(path, "w").write(text[:index] + entry + text[index:])
+INSERT
+    refresh_manifest "$root"
+    publish_dated "$root" "publish $heading" "$when"
+}
+
+# The agreeing case. It is a scenario rather than an assumption because every
+# rejection below is only meaningful if the accepting path is reachable.
+root="$(build_dating_repository dating_agrees)"
+add_dated_entry "$root" "2026-08-21 -- An entry dated the day it landed" \
+    "2026-08-21T09:00:00-0500"
+expect_accepted_dating "a heading dated the day its commit was made is accepted" \
+    "$root" "2 heading date(s) compared against the commit that published them"
+
+# The recurrence itself, in the shape it actually took: an entry written near
+# midnight, dated in UTC, committed in local time, so the heading runs one day
+# ahead of its commit.
+root="$(build_dating_repository dating_ahead)"
+add_dated_entry "$root" "2026-08-22 -- An entry dated a day ahead of its commit" \
+    "2026-08-21T23:29:00-0500"
+expect_rejected "a heading dated ahead of its commit is rejected" "$root" \
+    "a heading carries a date its commit does not: ## 2026-08-22 -- An entry dated a day ahead of its commit was added by a commit dated 2026-08-21"
+
+# The same rule in the other direction, so the comparison is not one-sided: an
+# entry carrying a date earlier than the commit that published it.
+root="$(build_dating_repository dating_behind)"
+add_dated_entry "$root" "2026-08-21 -- An entry dated behind its commit" \
+    "2026-08-23T09:00:00-0500"
+expect_rejected "a heading dated behind its commit is rejected" "$root" \
+    "a heading carries a date its commit does not: ## 2026-08-21 -- An entry dated behind its commit was added by a commit dated 2026-08-23"
+
+# The bound. The record already holds twelve entries whose dates disagree with
+# their commits, published entries never move, and a gate demanding they change
+# would be deleted rather than obeyed. An entry BELOW the baseline is therefore
+# left alone even when it disagrees.
+root="$sandbox_root/dating_below_baseline"
+mkdir -p "$root/docs/devlog"
+write_live_record "$root" docs/devlog/2026-07.md -- \
+    "$dating_baseline_heading" \
+    "2026-08-19 -- An entry misdated before the rule existed" \
+    "$ordering_baseline_heading"
+write_archive "$root/docs/devlog/2026-07.md" "2026-07-31 -- Last July entry"
+refresh_manifest "$root"
+git -C "$root" init --quiet -b main
+git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+publish_dated "$root" "publish a record whose older entry is misdated" \
+    "2026-08-20T12:00:00-0500"
+expect_accepted_dating "a misdated entry below the dating baseline is left alone" \
+    "$root" "1 heading date(s) compared against the commit that published them"
+
+# A baseline naming an entry the record does not hold checks nothing. Without
+# this the comparison would run past it to the end of the record and demand a
+# date of every entry the bound exists to exempt.
+root="$sandbox_root/dating_baseline_absent"
+mkdir -p "$root/docs/devlog"
+write_live_record "$root" docs/devlog/2026-07.md -- \
+    "2026-08-21 -- An entry with no dating baseline beneath it" \
+    "$ordering_baseline_heading"
+write_archive "$root/docs/devlog/2026-07.md" "2026-07-31 -- Last July entry"
+refresh_manifest "$root"
+git -C "$root" init --quiet -b main
+git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+publish_dated "$root" "publish a record with no dating baseline" \
+    "2026-08-21T09:00:00-0500"
+expect_accepted_dating "a record with no dating baseline compares nothing and says so" \
+    "$root" "the heading-date rule does not apply here"
+
+# An entry in the record but in no commit has no date to be compared against.
+# It is named as unchecked rather than counted as agreeing, because a silent
+# pass here is indistinguishable from a comparison that succeeded.
+root="$(build_dating_repository dating_uncommitted)"
+python3 - "$root/DEVLOG.md" <<'INSERT'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+marker = "\n---\n\n## "
+index = text.index(marker)
+entry = "\n---\n\n## 2026-08-21 -- An entry that is in no commit yet\n\nBody text.\n"
+open(path, "w").write(text[:index] + entry + text[index:])
+INSERT
+refresh_manifest "$root"
+track_everything "$root"
+expect_accepted_dating "an entry in no commit is named as unchecked, not passed" \
+    "$root" "heading date not yet checkable, as this entry is in no commit: ## 2026-08-21 -- An entry that is in no commit yet"
+
+# A heading can be added by more than one commit -- an entry removed and
+# restored, or moved between files -- and only the OLDEST addition is the one
+# that published it. The walk runs newest-commit-first and overwrites, so the
+# value left standing is the oldest; a walk that kept the first value it saw
+# would date this entry by the commit that restored it and reject a record that
+# is correct. Without this fixture that distinction is invisible, because every
+# other entry here is added exactly once.
+root="$(build_dating_repository dating_readded)"
+add_dated_entry "$root" "2026-08-21 -- An entry removed and later restored" \
+    "2026-08-21T09:00:00-0500"
+python3 - "$root/DEVLOG.md" <<'DROP'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+entry = "\n---\n\n## 2026-08-21 -- An entry removed and later restored\n\nBody text.\n"
+open(path, "w").write(text.replace(entry, "", 1))
+DROP
+refresh_manifest "$root"
+publish_dated "$root" "remove the entry" "2026-08-22T09:00:00-0500"
+add_dated_entry "$root" "2026-08-21 -- An entry removed and later restored" \
+    "2026-08-23T09:00:00-0500"
+expect_accepted_dating "an entry added by two commits is dated by the older one" \
+    "$root" "2 heading date(s) compared against the commit that published them"
+
+# The commit date is read in the commit's OWN recorded timezone, not the
+# reader's. This fixture commits just after midnight at a far eastern offset, so
+# the date the commit records and the date the same instant falls on for a
+# reader further west are different days. Under the shipped comparison the
+# heading agrees on any machine; a comparison that re-rendered the instant in
+# local time would read the day before.
+#
+# Stated limit: this fixture pins the SHIPPED behaviour everywhere, because %as
+# does not depend on the reader. What it cannot promise everywhere is the
+# detection of the opposite implementation, which a reader sitting at the
+# fixture's own offset would not see differ.
+root="$(build_dating_repository dating_commit_timezone)"
+add_dated_entry "$root" "2026-08-21 -- An entry committed just after midnight far east" \
+    "2026-08-21T00:30:00+1200"
+expect_accepted_dating "a heading is compared against the commit's own timezone" \
+    "$root" "2 heading date(s) compared against the commit that published them"
+
+# The floor. Every comparison above holds vacuously over a walk that found no
+# additions: each entry would fall into the uncommitted branch and the section
+# would report success having compared nothing. Reachable when a repository has
+# commits but the record itself has never been committed.
+root="$sandbox_root/dating_nothing_compared"
+mkdir -p "$root/docs/devlog"
+git -C "$root" init --quiet -b main
+git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+printf 'placeholder\n' >"$root/unrelated.txt"
+publish_dated "$root" "a commit that does not touch the record" \
+    "2026-08-20T12:00:00-0500"
+write_live_record "$root" docs/devlog/2026-07.md -- \
+    "$dating_baseline_heading" "$ordering_baseline_heading"
+write_archive "$root/docs/devlog/2026-07.md" "2026-07-31 -- Last July entry"
+refresh_manifest "$root"
+track_everything "$root"
+expect_rejected "a walk that compared no heading date at all fails rather than passing" \
+    "$root" "no heading date was compared against a commit"
 
 if ((reported != expected_scenarios)); then
     echo "devlog_archive_guard_self_test: $reported scenario(s) reported a result, expected $expected_scenarios" >&2

@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-27 -- A heading's date is checked against its commit
 ## 2026-08-27 -- Visual acceptance distinguishes scaling from device resolution
 ## 2026-08-27 -- Which battery entries may skip is declared, not discovered
 ## 2026-08-27 -- The advisory static-analysis set names only what can be acted on

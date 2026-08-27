@@ -24,6 +24,59 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-27 -- A heading's date is checked against its commit
+
+The record's reading-order rule compares entries against each other using the
+dates the headings carry, so it cannot see a wrong date: a record where every
+entry is misdated by the same day is perfectly ordered. That hole was not
+hypothetical. Twelve of this record's entries were published carrying a date
+other than the commit that added them, and the shape recurs -- an entry written
+near midnight is dated in UTC while the commit is recorded in local time, so the
+heading runs a day ahead of its commit. It had been corrected by hand rather
+than by a rule.
+
+`devlog_archive_guard` now compares each heading's date against the date of the
+commit that first added that heading. The comparison uses the author date
+rendered in the commit's own recorded timezone, so it does not change meaning
+when a different reader runs it, and the walk takes the oldest addition rather
+than the newest, so an entry removed and restored, or moved into an archive, is
+still dated by the commit that published it.
+
+This check reads local history, which is the opposite of every other history
+check in the guard and is the point. The others read `origin/main` because it is
+the one ref the commit under test cannot have written. A misdated entry, though,
+is fixable only while it is unpushed: published entries are never edited, so a
+check that waited for the published branch would first fire on text it is
+already too late to correct and would then stay red forever over an entry nobody
+may touch. A permanently red gate over unfixable text is a gate that gets
+deleted. Reading `HEAD` reports the mistake while amending is still allowed.
+
+It is bounded by a baseline entry, for the reason the ordering rule is bounded:
+the twelve existing disagreements stay visible in the record rather than being
+rewritten out of it. Fifteen entries sit at or above the baseline and all
+fifteen agree with their commits. An entry that is in no commit yet is named as
+unchecked rather than counted as agreeing, and a walk that compared nothing at
+all fails rather than reporting success over an unchecked record.
+
+Verified in both directions. The self-test grows from 50 to 59 scenarios, with a
+floor on its own reported count. Eight mutations were planted, each diffed to
+confirm the edit landed before it ran, and each was caught by its own scenarios:
+the comparison removed, the comparison made one-sided, the walk keeping the
+newest addition instead of the oldest, the baseline bound dropped, an uncommitted
+entry silently treated as agreeing, the nothing-compared floor removed, an absent
+baseline comparing the whole record, and the commit date re-rendered in the
+reader's timezone. Two of the eight first survived against fixtures that could
+not tell the difference, and the fixtures that discriminate were added rather
+than the mutations being reported as equivalent.
+
+Known gaps, stated: a clock that was wrong at commit time satisfies the rule,
+because both sides of the comparison are things that commit asserts; nothing
+below the baseline is checked; and the timezone mutation is detected only where
+the reader's offset differs from the fixture's, though the rule itself holds
+everywhere.
+
+---
+
 ## 2026-08-27 -- Visual acceptance distinguishes scaling from device resolution
 
 The visual-foundation matrix now names only the rendering it performs. The

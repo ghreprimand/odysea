@@ -372,6 +372,114 @@ else
     ')
 fi
 
+# --- A heading's date is the date its commit was made -----------------------
+# The ordering check above compares entries against each other using the dates
+# the record carries, and says so: it cannot see a wrong date, because a record
+# where every entry is misdated by the same day is perfectly ordered. That hole
+# is not hypothetical. Twelve of this record's entries were published carrying a
+# date other than their commit's, and the shape recurs -- an entry written near
+# midnight is dated in UTC while the commit is recorded in local time, so the
+# heading runs a day ahead of the commit that published it.
+#
+# The rule is therefore stated against something outside the record: an entry's
+# heading date must equal the date of the commit that first added that heading.
+# `%as` is used rather than a formatted date because it renders the author date
+# in the commit's OWN recorded timezone, so the comparison does not change
+# meaning when a different reader runs it.
+#
+# WHY THIS READS LOCAL HISTORY AND NOT THE PUBLISHED BRANCH. Every other history
+# check here reads `origin/main`, deliberately, because it is the one ref the
+# commit under test cannot have written. This check must do the opposite. A
+# misdated entry is fixable only while it is unpushed -- published entries are
+# never edited -- so a check that waited for `origin/main` would first fire on
+# text it is already too late to correct, and would then stay red forever on an
+# entry nobody is permitted to touch. A permanently red gate over unfixable text
+# is a gate that gets deleted, which is the reasoning the ordering baseline
+# above already carries. Reading `HEAD` reports the mistake while amending is
+# still allowed, which is the only moment the report is worth anything.
+#
+# WHAT IT CANNOT CATCH, exactly:
+#   * An entry that is not committed yet. Its heading has been added to no
+#     commit, so there is no date to compare against; it is counted as unchecked
+#     and named, not passed. A pre-commit run therefore checks the entries
+#     already in history and says how many it compared.
+#   * Any entry published at or below the baseline, for the same reason the
+#     ordering check is bounded: the record already contains twelve of them,
+#     published entries never move, and a gate demanding they change would be
+#     removed rather than obeyed.
+#   * A commit whose own date is wrong. The comparison is between two things the
+#     commit asserts, so a clock set wrong at commit time satisfies it.
+#   * A heading re-added later -- an archive move -- does not confuse it: the
+#     walk runs newest-commit-first and keeps overwriting, so the value left
+#     standing is the OLDEST addition, which is the original publication.
+readonly dating_baseline='## 2026-08-20 -- A declared compositor now has to be one this run created'
+
+if ! guard_corpus_is_git; then
+    printf 'devlog_archive_guard: heading dates are UNCHECKED: no Git metadata is available\n'
+elif [[ -z "$(git rev-list --all --max-count=1 2>/dev/null)" ]]; then
+    printf 'devlog_archive_guard: heading dates are UNCHECKED: the repository holds no commit to read\n'
+elif ! all_headings | grep -Fxq -- "$dating_baseline"; then
+    # A baseline naming nothing bounds nothing, so nothing is compared: without
+    # a place to stop, the loop below would run to the end of the record and
+    # demand a date of every entry the bound exists to exempt.
+    #
+    # This reports rather than fails, for the reason the bound's own anchor
+    # does. The baseline is a published entry, and a published entry that has
+    # gone missing from the record is already refused by name a few checks
+    # below - "a published entry is present nowhere in the record". So the rule
+    # going inert costs a failure elsewhere rather than nothing, and the
+    # self-test pins that keeper rather than this comment asserting it.
+    printf 'devlog_archive_guard: the heading-date rule does not apply here: %s is not published\n' \
+        "$dating_baseline"
+else
+    dates_compared=0
+    while IFS=$'\t' read -r kind first second; do
+        case "$kind" in
+        COMPARED) dates_compared="$first" ;;
+        FAIL) fail "$first" ;;
+        NOTE) printf 'devlog_archive_guard: %s\n' "$first" ;;
+        esac
+    done < <(
+        awk -F'\t' -v baseline="$dating_baseline" '
+            # First stream: every heading addition in local history, newest
+            # commit first. Overwritten rather than kept first-seen, so what
+            # survives is the oldest addition - the commit that published it.
+            /^C\t/ { commit_date = $3; next }
+            /^\+## / { added[substr($0, 2)] = commit_date; next }
+            # Second stream: the record as it reads now, newest entry first.
+            /^H\t/ {
+                heading = $2
+                if (heading in added) {
+                    compared++
+                    heading_date = substr(heading, 4, 10)
+                    if (heading_date != added[heading])
+                        printf "FAIL\ta heading carries a date its commit does not: %s was added by a commit dated %s; date an entry the day it lands, in the same timezone the commit records\n", heading, added[heading]
+                } else {
+                    printf "NOTE\theading date not yet checkable, as this entry is in no commit: %s\n", heading
+                }
+                if (heading == baseline) exit
+            }
+            END { printf "COMPARED\t%d\t\n", compared }
+        ' < <(
+            git log --full-history --format="C%x09%H%x09%as" -p --no-color -- \
+                "$live_record" "$archive_directory" 2>/dev/null
+            all_headings | sed 's/^/H\t/'
+        )
+    )
+
+    # A floor. Every comparison above holds vacuously over a walk that found no
+    # additions at all: each entry would fall into the uncommitted branch and
+    # the section would report success having compared nothing. The baseline is
+    # published - checked above - and it is in history by construction, so it
+    # alone guarantees at least one comparison whenever the walk is working.
+    if ((dates_compared == 0)); then
+        fail "no heading date was compared against a commit, though $dating_baseline is published; the history walk found no entry additions"
+    else
+        printf 'devlog_archive_guard: %d heading date(s) compared against the commit that published them, down to the dating baseline\n' \
+            "$dates_compared"
+    fi
+fi
+
 # --- The manifest and the files agree exactly -------------------------------
 # This is the check that bounds the record from below. Every other check here
 # is satisfied by a record with entries missing from it.
