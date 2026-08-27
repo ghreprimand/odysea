@@ -162,6 +162,13 @@ add_test(
 # python3 is absent it declines by name rather than measuring nothing. That is a
 # genuine toolchain precondition, not a corpus it could have resolved, so it
 # alone carries a skip return code.
+#
+# Every entry that carries this property anywhere in the project must also have
+# a line in tools/skip_declarations.txt saying whether it may refuse and what it
+# requires. The coverage reconciler reads that file beside the live roster and
+# fails on an entry that can skip without one, so the ability to skip is
+# recorded in the same change that grants it rather than discovered on the first
+# run that uses it.
 set_tests_properties(battery_coverage_self_test PROPERTIES SKIP_RETURN_CODE 77)
 if(ODYSEA_ASAN)
     set_tests_properties(static_analysis PROPERTIES DISABLED TRUE)

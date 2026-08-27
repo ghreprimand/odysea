@@ -700,11 +700,12 @@ check watches. A git-less tree skips the corpus guards; a display-less tree
 skips the GPU gates; both still read as a clean pass.
 
 The coverage reconciler closes that. `tools/run_verification_battery.sh`
-captures the registered roster live from `ctest -N`, runs the battery capturing
-per-entry results as JUnit, and accounts for every registered entry: an entry
-that ran, an entry that declared a refusal, a skip that declared none, a silent
-skip, a registered entry missing from the results, and a result absent from the
-roster.
+captures the registered roster live from `ctest --show-only=json-v1`, runs the
+battery capturing per-entry results as JUnit, and accounts for every registered
+entry: an entry that ran, an entry that declared a refusal, an entry that did
+not meet a declared precondition, an entry that did not run and declares no
+skip capability, a skip that declared no refusal, a silent skip, a registered
+entry missing from the results, and a result absent from the roster.
 
 Exactly one shortfall is tolerated, and the distinction it rests on is the one
 the compositor gates already draw. A gate that *cannot* run is missing a
@@ -724,6 +725,28 @@ never a battery.
 That standard has a price, and it is paid deliberately: a machine where the
 offscreen GPU launchers cannot obtain a context does not produce a green
 battery. The answer there is a virtual display, not a wider tolerance.
+
+Every judgement so far is made after a skip has happened, and that left the
+mechanism itself unwatched. An entry could be given `SKIP_RETURN_CODE` in the
+build configuration and the reconciler would meet the fact on the first run
+where it dropped out — and if that skip printed the refusal line, it was
+tolerated from then on without anyone having decided it should be. An honest
+skip and a completed check read identically in a summary, so the defect was
+never the skip mechanism; it was a skip the reconciler did not know existed.
+
+The roster therefore carries each entry's skip return code, taken from the same
+listing that names it, and `tools/skip_declarations.txt` records every entry
+allowed to have one. The two are reconciled before a result is read: an entry
+that can skip without a declaration fails, a declaration naming no registered
+entry fails, a declaration naming an entry that carries no skip return code
+fails so it cannot outlive its mechanism, and a skip return code other than the
+project's own fails so no second convention can appear beside the declared one.
+A declaration records one of two tolerances. `refusal` is the shortfall
+described above. `capability` records a precondition the entry cannot satisfy
+itself, and a skip under it fails with that precondition printed: the skip
+return code still earns its place, because the entry then reports as not-run
+rather than as a broken test and the reconciler is what turns the totals red,
+which is where every other coverage hole in this battery is decided.
 
 The bound is two-sided — an empty roster, an empty results file, and results
 that merely do not exceed the roster all fail — so a stopped counter cannot

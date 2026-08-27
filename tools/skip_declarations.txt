@@ -1,0 +1,41 @@
+# Declared skip capabilities.
+#
+# One line per battery entry that is allowed to exit with the CTest skip code,
+# written as: name<TAB>tolerance<TAB>precondition.
+#
+# The coverage reconciler reads this file together with the live roster. An
+# entry that carries SKIP_RETURN_CODE without a line here fails the
+# reconciliation, and a line here naming an entry that cannot skip fails it
+# too. That is the point of the file: the skip mechanism is not the defect, a
+# skip the reconciler does not know exists is. Adding the property to a new
+# entry now has to be written down, in the same change, where it is read.
+#
+# tolerance is one of:
+#
+#   refusal     The entry may decline, and the decline is accounted rather than
+#               failed. It must print the declared-refusal line
+#               `<name>: DECL -- declined: <reason>` on its own output. This is
+#               for a policy this project enforces, not a capability a machine
+#               lacks: the compositor gates refuse to render an activating
+#               window into a session they were not given to own, and turning
+#               that red would only pressure the next reader into deleting the
+#               refusal.
+#
+#   capability  The entry states a precondition it cannot satisfy itself. A
+#               skip here is a hole in the battery's coverage and FAILS, and
+#               the precondition below is printed with the failure so the
+#               reader is told what to provide rather than being left to
+#               rediscover it. The skip return code still earns its place: the
+#               entry reports as not-run instead of as a broken test, and the
+#               reconciler is what turns the totals red, which is where every
+#               other coverage hole in this battery is decided.
+#
+# Neither tolerance is a budget. Nothing here bounds how many entries may
+# decline; the reconciler's "nothing ran" floor is what refuses a battery that
+# opted out of itself.
+
+battery_coverage_self_test	capability	python3, which parses the JUnit fixtures this self-test is written against
+shell_presentation_rhi	capability	an offscreen OpenGL context: a reachable display server and a driver that can create and make one current
+shell_visual_validation_rhi	capability	an offscreen OpenGL context: a reachable display server and a driver that can create and make one current
+shell_presentation_compositor	refusal	renders an activating window, so it declines every compositor that was not started for the run and proved disposable after it
+shell_visual_validation_compositor_2x	refusal	renders an activating window at a genuine 2x surface, so it declines every compositor that was not started for the run and proved disposable after it

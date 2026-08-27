@@ -6,12 +6,18 @@
 # that should run, run" — a skipped entry keeps the headline at "100% passed",
 # and the executed count can fall by a third without changing a number. This
 # runner adds the missing question: it captures the registered roster live from
-# `ctest -N`, runs the battery capturing per-entry results as JUnit, and
-# reconciles the two so a drop turns the run red. The only shortfall the
-# reconciliation tolerates is an entry that printed a declared refusal —
+# ctest, runs the battery capturing per-entry results as JUnit, and reconciles
+# the two so a drop turns the run red. The only shortfall the reconciliation
+# tolerates is an entry that both declares a refusal in
+# tools/skip_declarations.txt and prints one —
 # `<gate>: DECL -- declined: <reason>` — which is a policy this project
 # enforces rather than a capability the machine lacks. Every other skip,
 # whether it explained itself or not, fails.
+#
+# The roster carries each entry's skip return code alongside its name, so the
+# reconciler can also check the declarations against the configuration before
+# it reads a single result: an entry able to skip without a declaration fails,
+# and so does a declaration that no longer names one.
 #
 # It is a wrapper rather than one more `ctest` entry on purpose. A reconciler
 # registered inside the battery would run in the middle of it under `ctest -j`
@@ -44,6 +50,14 @@ if [[ ! -f "$build_directory/CTestTestfile.cmake" ]]; then
     exit 1
 fi
 
+# The roster is parsed from ctest's JSON listing and the results from JUnit,
+# both with python3. Saying so here turns its absence into one sentence instead
+# of an interpreter error from the middle of a pipeline.
+if ! command -v python3 >/dev/null 2>&1; then
+    printf 'verification_battery: FAIL -- python3 is required to read the roster and the results\n' >&2
+    exit 1
+fi
+
 tool_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workspace="$(mktemp -d)"
 trap 'rm -rf -- "$workspace"' EXIT
@@ -51,19 +65,38 @@ trap 'rm -rf -- "$workspace"' EXIT
 registered_list="$workspace/registered.txt"
 junit_results="$workspace/results.junit.xml"
 
-# The roster, captured live so it can never lag the real suite. `ctest -N`
-# lists without running; the first sed pulls the test name from each
-# "Test #N: name", the second strips the " (Disabled)" annotation ctest appends
-# to a test disabled in the build configuration, so the roster name matches the
-# bare name the JUnit records.
-ctest --test-dir "$build_directory" -N \
-    | sed -n 's/^[[:space:]]*Test[[:space:]]*#[0-9]*:[[:space:]]*//p' \
-    | sed 's/[[:space:]]*(Disabled)[[:space:]]*$//' \
-    >"$registered_list"
-registered_count="$(grep -c . "$registered_list" || true)"
+# The roster, captured live so it can never lag the real suite, and read from
+# the machine-readable listing rather than the human one. `ctest -N` prints
+# names; `--show-only=json-v1` prints names AND per-entry properties, which is
+# where SKIP_RETURN_CODE lives. Taking the roster from there is what lets the
+# reconciler know which entries are able to skip at all, instead of learning it
+# on the first run where one did. It also reports the bare name of a test
+# disabled in the build configuration, where the human listing appends a
+# "(Disabled)" annotation that had to be stripped back off.
+#
+# Each line is the name, plus a tab and the skip return code for an entry that
+# declares one.
+ctest --test-dir "$build_directory" --show-only=json-v1 \
+    | python3 -c '
+import json
+import sys
 
-printf 'verification_battery: %s registered entries at %s\n' \
-    "$registered_count" "$build_directory"
+listing = json.load(sys.stdin)
+for test in listing.get("tests", []):
+    name = test.get("name", "")
+    if not name:
+        continue
+    code = ""
+    for entry in test.get("properties", []):
+        if entry.get("name") == "SKIP_RETURN_CODE":
+            code = str(entry.get("value", "")).strip()
+    sys.stdout.write(name + ("\t" + code if code else "") + "\n")
+' >"$registered_list"
+registered_count="$(grep -c . "$registered_list" || true)"
+skip_capable_count="$(grep -c "$(printf '\t')" "$registered_list" || true)"
+
+printf 'verification_battery: %s registered entries at %s, %s able to skip\n' \
+    "$registered_count" "$build_directory" "$skip_capable_count"
 
 # Run the battery. A test failure must not stop the reconciliation: a run where
 # entries both failed AND silently dropped needs both reported, so the ctest
@@ -75,6 +108,7 @@ set -e
 
 reconcile_status=0
 bash "$tool_directory/check_battery_coverage.sh" "$junit_results" "$registered_list" \
+    "$tool_directory/skip_declarations.txt" \
     || reconcile_status=$?
 
 printf '\nverification_battery: summary\n'

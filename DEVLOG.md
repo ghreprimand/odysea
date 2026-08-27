@@ -24,6 +24,65 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-27 -- Which battery entries may skip is declared, not discovered
+
+The coverage reconciler judged every skip after it happened, which left the
+mechanism itself unwatched. An entry could be given `SKIP_RETURN_CODE` in the
+build configuration and the reconciler would meet that fact for the first time
+on the run where the entry dropped out -- and if that skip printed the refusal
+line, it was tolerated from then on without anyone having decided it should be.
+An honest skip and a completed check read identically in a summary, so the
+defect was never the skip mechanism; it was a skip the reconciler did not know
+existed.
+
+The roster is now taken from `ctest --show-only=json-v1`, which reports
+per-entry properties, so each line carries its skip return code beside its name.
+`tools/skip_declarations.txt` records every entry allowed to have one, and the
+two are reconciled before a single result is read. An entry that can skip
+without a declaration fails. A declaration naming no registered entry fails. A
+declaration naming a registered entry that carries no skip return code fails, so
+a declaration cannot outlive its mechanism. A skip return code other than the
+project's own fails, so no second convention can appear beside the declared one.
+
+A declaration records one of two tolerances. `refusal` is the shortfall the
+reconciler already tolerated: a policy this project enforces, printed as
+`<gate-name>: DECL -- declined: <reason>`, which the two compositor entries use
+to decline a session they were not given to own. `capability` records a
+precondition the entry cannot satisfy itself -- an offscreen OpenGL context, a
+JSON-capable interpreter -- and a skip under it FAILS, with the recorded
+precondition printed beside the failure so the reader is told what to provide.
+The skip return code still earns its place there: the entry reports as not-run
+rather than as a broken test, and the reconciler is what turns the totals red,
+which is where every other coverage hole in this battery is already decided.
+
+A fifth class comes free. An entry that did not run and declares no skip
+capability at all now fails by that name, which covers the skips CTest itself
+invents -- a missing executable, an unsatisfied dependency -- and which no
+output-shaped rule could see.
+
+The practical effect on the two offscreen GPU entries is stated rather than
+softened. Without a display server they are a declared capability failure naming
+the context they need, instead of an unexplained shortfall that a reader had to
+be told to expect. The answer remains a virtual display, not a wider tolerance.
+
+Verified by 26 self-test scenarios, up from 13, with the suite failing by name
+when it reports fewer results than it contains. The load-bearing scenario is the
+one where every result is clean -- nothing skipped, nothing missing, nothing
+unexpected -- and the reconciliation fails anyway because an entry was given the
+ability to skip and nobody wrote it down. Eleven mutations were planted against
+the reconciler, each diffed to confirm the edit landed before it ran, and each
+was caught by its own scenarios: the four static checks removed one at a time,
+an undeclared entry treated as a declared refusal, an unmet precondition
+tolerated, a missing declarations file read as nothing declared, a malformed
+line skipped over, an unknown tolerance accepted, a duplicate declaration
+accepted, and the roster's skip-code column ignored. A twelfth mutation dropping
+a self-test scenario is caught by the reported-count floor.
+
+What this still cannot do is judge whether a recorded precondition is the true
+one. The registry's text is printed with a failure, not tested against it.
+
+---
+
 ## 2026-08-27 -- Conflict markers honour Git's configured size
 
 Git's default conflict marker is seven characters, but its marker size is

@@ -20,9 +20,11 @@ ctest --preset release
 # Full battery with coverage reconciliation (preferred before submitting):
 ./tools/run_verification_battery.sh build/release
 # Runs the battery, then accounts for every registered entry against the live
-# `ctest -N` roster. A silently skipped, missing, or unexpected entry fails it;
-# a skip that names its cause is an allowed, listed opt-out. Plain `ctest` still
-# works for quick iteration but does not reconcile coverage.
+# roster, and the entries able to skip against tools/skip_declarations.txt. A
+# silently skipped, missing, or unexpected entry fails it, as does an entry that
+# can skip without being declared; only a declared refusal is an allowed, listed
+# opt-out. Plain `ctest` still works for quick iteration but does not reconcile
+# coverage.
 
 # Development build with sanitizers:
 cmake --preset asan
@@ -58,7 +60,12 @@ than passed over: the index, and the commit history the attribution checks
 read. An archive has neither to check.
 
 No gate declares a skip return code. Each one either resolves a corpus and
-runs, or states a precondition and fails. `build_configuration_guard` is the
+runs, or states a precondition and fails. The few entries that do carry one are
+listed in `tools/skip_declarations.txt` with the tolerance that applies to them
+and the precondition they need; the coverage reconciler reads that file beside
+the live roster and fails on an entry that can skip without a line in it, so
+the ability to skip is written down in the change that grants it rather than
+found on the first run that uses it. `build_configuration_guard` is the
 reason that rule is worth stating for build directories as well: the two
 presets pin different compilers and different options, so `cmake -S . -B
 build/asan` is not `cmake --preset asan` once the directory has been wiped and
@@ -314,10 +321,11 @@ These are not optional; they are how the project stays safe in C++:
   defining no test function, and a build file with no filtered entry at all.
 - A skipped battery entry must never read as a pass. `battery_coverage_self_test`
   and `run_verification_battery.sh` reconcile every registered entry against the
-  live `ctest -N` roster and classify each one: it ran, it declared a refusal,
-  it skipped without declaring one, it skipped silently, it is missing from the
-  results, or it is in the results without being registered. Only a declared
-  refusal is tolerated — a line of the exact form
+  live roster and classify each one: it ran, it declared a refusal, it did not
+  meet a declared precondition, it did not run and declares no skip capability
+  at all, it skipped without declaring a refusal, it skipped silently, it is
+  missing from the results, or it is in the results without being registered.
+  Only a declared refusal is tolerated — a line of the exact form
   `<gate-name>: DECL -- declined: <reason>`, which the compositor gates print
   when no isolated compositor was declared for the run. Every other shortfall
   fails, including a capability skip that explained itself: an entry that could
@@ -328,6 +336,24 @@ These are not optional; they are how the project stays safe in C++:
   The practical consequence is deliberate: the battery is green only where the
   offscreen GPU gates can obtain a context, so a headless machine needs a
   virtual display rather than a looser gate.
+- The ability to skip is itself declared. Every judgement above is made after a
+  skip has happened, which left the mechanism unwatched: an entry could be given
+  `SKIP_RETURN_CODE` and the reconciler would meet it for the first time on the
+  run where it dropped out. So the roster is taken from
+  `ctest --show-only=json-v1`, which reports per-entry properties, and is checked
+  against `tools/skip_declarations.txt` before a single result is read. An entry
+  that can skip with no line there fails; a line naming an entry that is not
+  registered fails; a line naming a registered entry that carries no skip return
+  code fails, so a declaration cannot outlive its mechanism; and a skip return
+  code other than the project's own fails, so a second convention cannot appear
+  beside the declared one. A line records one of two tolerances. `refusal` is
+  the tolerated shortfall above. `capability` records a precondition the entry
+  cannot satisfy itself — an offscreen OpenGL context, a JSON-capable
+  interpreter — and a skip under it FAILS, with the recorded precondition
+  printed beside the failure so the reader is told what to provide. That is what
+  the skip return code buys there: the entry reports as not-run rather than as a
+  broken test, and the reconciler is what turns the totals red, which is where
+  every other coverage hole in this battery is already decided.
   `ODYSEA_REQUIRE_OFFSCREEN_GL` (offscreen GL) and `ODYSEA_REQUIRE_COMPOSITOR`
   (real compositor) turn the corresponding skips into failures inside the gate
   itself, where the capability is expected. The offscreen GPU launchers name

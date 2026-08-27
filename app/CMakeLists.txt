@@ -461,6 +461,10 @@ add_test(NAME shell_presentation_rhi COMMAND odysea_presentation_rhi_launcher)
 # absorb a momentarily starved frame; this lock removes the largest avoidable
 # source of that contention without serializing the whole suite — the lock is
 # shared only among the GPU gates, so software tests still run alongside them.
+# SKIP_RETURN_CODE is declared, not merely set: this entry has a line in
+# tools/skip_declarations.txt recording it as a capability precondition, and the
+# coverage reconciler fails on an entry that can skip without one. The same
+# applies to every other entry below that carries the property.
 set_tests_properties(shell_presentation_rhi PROPERTIES
     SKIP_RETURN_CODE 77
     RESOURCE_LOCK gpu
