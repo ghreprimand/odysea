@@ -24,6 +24,39 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-26 -- Ambient display variables cannot select a compositor gate
+
+The real-compositor launcher now has a named, non-rendering contract around
+the platform boundary its session interlock enforces. `DISPLAY`,
+`WAYLAND_DISPLAY`, and `QT_QPA_PLATFORM` describe ambient sessions; none of
+them authorises a platform choice. Only a proved isolated-compositor
+declaration may reach the OpenGL probe or the presentation suite.
+
+The contract launches the real binary against three deliberately unreachable
+environments: X11 alone, Wayland alone, and both together. Each run must exit
+with the declaration-refusal status and message before Qt creates an
+application. A capability skip, failure, or run message is rejected even when
+its process status is also 77, so the old environment-selected path cannot be
+mistaken for the required refusal. The endpoints are synthetic and absent;
+the check cannot contact an interactive session.
+
+The durable platform matrix now describes the shipped boundary rather than
+the launcher's first form: isolated Wayland only, no ambient X11 fallback, and
+`ODYSEA_REQUIRE_COMPOSITOR` able to turn a capability failure red without
+overriding a policy refusal.
+
+Verified in both directions. The contract passes all three named cases with
+the interlock intact. A planted platform-selection branch before the
+declaration check makes `ambient_x11`, `ambient_wayland`, and `ambient_mixed`
+all fail by name. The columns ownership gate was also rechecked on the current
+tree: removing `QQmlEngine::setObjectOwnership` makes
+`shell_load_diagnostic` fail at
+`anInvokableColumnListingRemainsCppOwned`, observing JavaScript ownership
+where C++ ownership is required; restoring it returns the gate to green. No
+real-compositor entry was invoked.
+
+---
+
 ## 2026-08-26 -- The record's history bound may not shrink or be skipped
 
 Two ways the archive gate's history comparison stopped bounding the record, one

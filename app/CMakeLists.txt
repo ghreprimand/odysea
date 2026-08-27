@@ -471,13 +471,14 @@ set_tests_properties(shell_presentation_rhi PROPERTIES
 # real compositor's frame lifecycle — first-frame exposure, surface
 # configure/commit, frame-callback pacing — where six frame-grabbing tests
 # were failing undetected. This launcher runs the full presentation suite on
-# the ambient real compositor (Wayland preferred, then X11) with OpenGL RHI
-# forced, and runs the whole suite rather than a named function list, so a
+# a declared isolated Wayland compositor with OpenGL RHI forced, and runs the
+# whole suite rather than a named function list, so a
 # newly added presentation test is exercised on the compositor path
-# automatically. It exits 77 (skip) when no compositor or no usable GL is
-# present, printing the reason; the skip is a hard failure instead when
-# ODYSEA_REQUIRE_COMPOSITOR is set in the environment, which is how the
-# verifying environment refuses to let an unrun gate read as green.
+# automatically. It exits 77 with a declaration refusal when no harness-owned
+# compositor is proved, and with a capability skip when the proved compositor
+# has no usable GL context. The capability skip is a hard failure instead when
+# ODYSEA_REQUIRE_COMPOSITOR is set in the environment; that override never
+# weakens the declaration boundary.
 qt_add_executable(odysea_presentation_compositor_launcher
     tests/tst_presentation_compositor_launcher.cpp)
 
@@ -492,6 +493,18 @@ target_link_libraries(odysea_presentation_compositor_launcher
 add_dependencies(odysea_presentation_compositor_launcher odysea_presentation_tests)
 
 add_test(NAME shell_presentation_compositor COMMAND odysea_presentation_compositor_launcher)
+
+# Non-rendering contract for the platform-selection boundary. It hands the
+# launcher deliberately unreachable X11 and Wayland endpoints and requires a
+# declaration refusal before Qt can connect to either one. This keeps an
+# inherited DISPLAY, WAYLAND_DISPLAY, or QT_QPA_PLATFORM from becoming an
+# opt-out that selects a different platform and skips the fractional-surface
+# assertions on hardware capable of running them.
+add_test(NAME compositor_platform_selection_contract
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_compositor_platform_contract.sh
+        $<TARGET_FILE:odysea_presentation_compositor_launcher>)
+
+set_tests_properties(compositor_platform_selection_contract PROPERTIES TIMEOUT 10)
 
 # Shares the gpu RESOURCE_LOCK with the other two GPU-path gates so no two of
 # them hold a GPU context at once under a parallel run. ODYSEA_REQUIRE_COMPOSITOR

@@ -618,13 +618,18 @@ axes, each of which either exercises the comparisons or reports a visible skip
   `QUICK_TEST_SOURCE_DIR` to the QML it actually runs and requires the two to
   agree exactly, per TestCase the filter names.
 - **Real compositor** (`shell_presentation_compositor`). A launcher runs the
-  full presentation suite on the ambient real compositor — Wayland preferred,
-  X11 as the fallback display server — with OpenGL RHI forced. This is the only
-  gate that exercises the frame comparisons through a compositor's frame
-  lifecycle, which is a distinct path: frame-grabbing tests that pass offscreen
-  can fail there. It runs the whole suite rather than a named function list, so
-  a newly added presentation test is covered on the compositor path without a
-  registration edit.
+  full presentation suite only on the isolated Wayland compositor its harness
+  declared and proved it owns, with OpenGL RHI forced. Ambient `DISPLAY`,
+  `WAYLAND_DISPLAY`, and `QT_QPA_PLATFORM` values never select a platform; the
+  launcher declines before Qt creates an application unless the declaration
+  names the harness socket. A non-rendering contract exercises unreachable
+  ambient X11, Wayland, and mixed endpoints and requires the policy refusal, so
+  restoring environment-based selection fails by name without contacting a
+  session. This is the only gate that exercises the frame comparisons through
+  a compositor's frame lifecycle, which is a distinct path: frame-grabbing
+  tests that pass offscreen can fail there. It runs the whole suite rather than
+  a named function list, so a newly added presentation test is covered on the
+  compositor path without a registration edit.
 - **Genuine-2x device resolution** (`shell_visual_validation_compositor_2x`).
   The same real-compositor launcher runs the validation suite with OpenGL RHI
   and `QT_SCALE_FACTOR=2`, so a windowing system that can allocate a 2x surface
@@ -644,22 +649,20 @@ axes, each of which either exercises the comparisons or reports a visible skip
 
 Which combinations are required versus best-effort:
 
-- **Required where available: a real compositor plus OpenGL RHI.** The
-  compositor gate skips with exit code 77 and a printed reason when no
-  compositor is advertised or no OpenGL context is usable, so a machine that
-  cannot render the gate is visibly skipped, distinguishable at a glance from a
-  pass. Setting `ODYSEA_REQUIRE_COMPOSITOR` turns that skip into a failure,
-  which is how an environment that is expected to have a compositor refuses to
-  let an unrun gate read as green.
+- **Required where available: an isolated Wayland compositor plus OpenGL RHI.**
+  A missing or unproved harness declaration is a policy refusal with exit code
+  77, not permission to fall back to an ambient display. Once a proved
+  compositor is selected, an unusable OpenGL context is a capability skip with
+  a printed reason. Setting `ODYSEA_REQUIRE_COMPOSITOR` turns that inability
+  into a failure where the capability is expected; it deliberately does not
+  override a declaration refusal.
 - **A compositor that actually presents the window.** Whether real frames
   materialized is decided by the suite's vacuity sentinels, not by the
   launcher: a standalone window grab succeeds even where a compositor withholds
   frame callbacks from a background surface, so no launcher-side probe can
-  predict the suite's throttled grabs. An interactive session or a
-  nested/virtual output presents frames and the comparisons run; a background
-  window under a compositor that has gone quiet (a locked screen, an inactive
-  output) trips the sentinels and fails loudly rather than passing over empty
-  frames.
+  predict the suite's throttled grabs. A harness-owned presenting output runs
+  the comparisons; a background window under a compositor that has gone quiet
+  trips the sentinels and fails loudly rather than passing over empty frames.
 - **Best-effort for paced timing and fractional scaling: a virtual or headless
   compositor.** A virtual output composites each grab completely, so it runs
   the frame comparisons, but it renders at a 1:1 buffer ratio and does not
