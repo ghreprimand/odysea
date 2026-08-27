@@ -52,7 +52,7 @@ reported=0
 # `set -e`, an edit that removes a case - and a short run whose every result
 # passed is indistinguishable from a complete one. Raise it when scenarios are
 # added; lowering it to make a run green is removing coverage.
-readonly expected_scenarios=49
+readonly expected_scenarios=50
 
 report() {
     local outcome="$1" scenario="$2"
@@ -556,6 +556,9 @@ expect_rejected "a moved entry whose text was changed under its heading" "$root"
 readonly marker_ours="$(printf '<%.0s' 1 2 3 4 5 6 7) HEAD"
 readonly marker_split="$(printf '=%.0s' 1 2 3 4 5 6 7)"
 readonly marker_theirs="$(printf '>%.0s' 1 2 3 4 5 6 7) topic"
+readonly marker_ours_nine="$(printf '<%.0s' 1 2 3 4 5 6 7 8 9) HEAD"
+readonly marker_split_nine="$(printf '=%.0s' 1 2 3 4 5 6 7 8 9)"
+readonly marker_theirs_nine="$(printf '>%.0s' 1 2 3 4 5 6 7 8 9) topic"
 
 # Plants a conflicted region in the live record in the shape the real damage
 # took: markers sitting between entries, so each one lands at the tail of the
@@ -575,6 +578,20 @@ plant_conflict_markers "$root"
 publish "$root" "Publish the record while it is conflicted"
 sed -i "/^\(<\{7\}\|=\{7\}\|>\{7\}\)\([ \t]\|\$\)/d" "$root/DEVLOG.md"
 expect_accepted_reporting "markers removed from a record published conflicted" \
+    "$root" "9 entries published in main, 9 compared against their published text"
+
+# Git may emit a non-default marker size. The history baseline holds these
+# nine-character marker lines after publication, so the current form can pass
+# only when the archive matcher removes the same lines before comparison.
+root="$(build_repository nine_character_conflicted_record_repaired)"
+sed -i \
+    -e "/^## 2026-08-09 -- Ninth August entry\$/i ${marker_ours_nine}" \
+    -e "/^## 2026-08-08 -- Eighth August entry\$/i ${marker_split_nine}" \
+    "$root/DEVLOG.md"
+printf '%s\n' "$marker_theirs_nine" >>"$root/DEVLOG.md"
+publish "$root" "Publish the record with nine-character markers"
+sed -i "/^\(<\{7,\}\|=\{7,\}\|>\{7,\}\)\([ \t]\|\$\)/d" "$root/DEVLOG.md"
+expect_accepted_reporting "nine-character markers removed from a record published conflicted" \
     "$root" "9 entries published in main, 9 compared against their published text"
 
 # And the exemption is only that wide. A repair that also changes a word under

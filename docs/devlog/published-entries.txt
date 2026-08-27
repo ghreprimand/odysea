@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-27 -- Conflict markers honour Git's configured size
 ## 2026-08-26 -- Ambient display variables cannot select a compositor gate
 ## 2026-08-26 -- The record's history bound may not shrink or be skipped
 ## 2026-08-22 -- Repair a record published with its conflict unresolved

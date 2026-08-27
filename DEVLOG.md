@@ -24,6 +24,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-27 -- Conflict markers honour Git's configured size
+
+Git's default conflict marker is seven characters, but its marker size is
+configurable. The earlier record's claim that Git emits exactly seven
+characters was wrong. Both record-protection guards now recognize every marker
+run of seven or more characters: the corpus guard refuses it before it can be
+published, and the archive guard removes it from a previously published body
+before comparing that body against history. The two rules move together so a
+non-default marker cannot enter the record and then make its own repair look
+like a rewrite.
+
+The archive parser accepts a space or tab before a marker label, or the end of
+the line, and its whitespace set is a strict subset of the corpus guard's. It
+drops an entire marker line, including a label, so that relation is
+load-bearing: the broader corpus ban is what prevents label text from becoming
+invisible to the history comparison. The corpus check retains its line-start
+anchor and no file-level exclusions for Git-text files. As with any text scan,
+Git-binary files and a first-line UTF-8 BOM sit outside that anchor's reach;
+neither form is in the tracked corpus.
+
+Verification adds a complete nine-character conflict region to the corpus
+guard self-test and a nine-character published-record repair to the archive
+guard self-test. Mutating either guard back to an exact seven-character run
+makes its respective new case fail while the other guard remains unchanged.
+
+---
+
 ## 2026-08-26 -- Ambient display variables cannot select a compositor gate
 
 The real-compositor launcher now has a named, non-rendering contract around

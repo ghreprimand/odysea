@@ -269,6 +269,10 @@ readonly marker_ours="$(printf '<%.0s' 1 2 3 4 5 6 7)"
 readonly marker_base="$(printf '|%.0s' 1 2 3 4 5 6 7)"
 readonly marker_split="$(printf '=%.0s' 1 2 3 4 5 6 7)"
 readonly marker_theirs="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+readonly marker_ours_nine="$(printf '<%.0s' 1 2 3 4 5 6 7 8 9)"
+readonly marker_base_nine="$(printf '|%.0s' 1 2 3 4 5 6 7 8 9)"
+readonly marker_split_nine="$(printf '=%.0s' 1 2 3 4 5 6 7 8 9)"
+readonly marker_theirs_nine="$(printf '>%.0s' 1 2 3 4 5 6 7 8 9)"
 readonly marker_message='an unresolved merge conflict marker is tracked'
 
 # Runs the guard and requires the marker reason specifically, so a scenario
@@ -331,6 +335,20 @@ ${marker_split}
 two
 ${marker_theirs} topic")"
 
+# Git's marker size is configurable. This complete nine-character region is
+# the regression case: reducing the guard back to an exact seven-character
+# match leaves every marker in it undetected.
+expect_marker_outcome conflict_region_with_nine_character_markers reject \
+    "$(build_repository_named marker_region_nine NOTES.md "# Notes
+
+${marker_ours_nine} HEAD
+one
+${marker_base_nine} merged common ancestors
+base
+${marker_split_nine}
+two
+${marker_theirs_nine} topic")"
+
 # A marker in a source file rather than a document. The check carries no
 # exclusion list, so the file's kind must not matter.
 expect_marker_outcome conflict_marker_in_source reject \
@@ -346,11 +364,6 @@ expect_marker_outcome conflict_marker_in_source reject \
 # committable and the rule loses the exclusion-free form it was written for.
 expect_marker_outcome marker_not_at_line_start accept \
     "$(build_repository_named marker_indented NOTES.md "prose mentioning ${marker_split} in passing")"
-
-# Longer than seven. A horizontal rule in prose is an ordinary thing to write
-# and is not what Git emits.
-expect_marker_outcome rule_longer_than_marker accept \
-    "$(build_repository_named marker_long NOTES.md "$(printf '=%.0s' 1 2 3 4 5 6 7 8 9)")"
 
 # Shorter than seven, for the same reason from the other side.
 expect_marker_outcome rule_shorter_than_marker accept \
