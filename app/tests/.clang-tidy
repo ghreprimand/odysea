@@ -6,8 +6,17 @@
 # removes the case from the run while leaving the file compiling and the suite
 # green, so the advice is not merely noisy here but actively unsafe.
 #
-# This exclusion is scoped to this directory. The same check stays enabled for
-# application and core sources, where its advice is sound.
+# readability-function-cognitive-complexity is removed for a different reason.
+# The metric measures branching and nesting, and a test function is supposed to
+# be a long straight line of arrange, act, and assert; scoring one says nothing
+# about whether the code under test is hard to follow, which is the only
+# question the check was added to answer. Sixty-seven of its seventy-four
+# occurrences across the tree were test functions, and they were the reason the
+# seven that name real project code were hard to see at all.
+#
+# Both exclusions are scoped to this directory. The same checks stay enabled for
+# application and core sources, where their advice is sound.
 InheritParentConfig: true
 Checks: >
-  -readability-convert-member-functions-to-static
+  -readability-convert-member-functions-to-static,
+  -readability-function-cognitive-complexity

@@ -22,7 +22,7 @@ DirectoryWatchService::~DirectoryWatchService() {
 void DirectoryWatchService::replace(std::filesystem::path directory, std::uint64_t token) {
     bool stopped = false;
     {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         requestedDirectory_ = directory;
         requestedToken_ = token;
         stopped = stopping_;
@@ -54,7 +54,7 @@ void DirectoryWatchService::replace(std::filesystem::path directory, std::uint64
 
 void DirectoryWatchService::stop() {
     {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         if (stopping_) {
             return;
         }
@@ -77,7 +77,7 @@ void DirectoryWatchService::run() {
         std::filesystem::path requestedDirectory;
         std::uint64_t requestedToken = 0;
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             if (stopping_) {
                 return;
             }
@@ -163,7 +163,7 @@ void DirectoryWatchService::run() {
         }
 
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             if (stopping_) {
                 return;
             }

@@ -68,7 +68,7 @@ class Gate {
 
     void open() {
         {
-            const std::lock_guard<std::mutex> lock(mutex_);
+            const std::scoped_lock lock(mutex_);
             open_ = true;
         }
         opened_.notify_all();
@@ -91,7 +91,7 @@ class FakeProducer : public odysea::core::ThumbnailProducer {
         static_cast<void>(source);
         static_cast<void>(size);
         {
-            const std::lock_guard<std::mutex> lock(mutex_);
+            const std::scoped_lock lock(mutex_);
             ++calls_;
         }
         if (gate_ != nullptr) {
@@ -105,7 +105,7 @@ class FakeProducer : public odysea::core::ThumbnailProducer {
     }
 
     [[nodiscard]] std::size_t calls() const {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return calls_;
     }
 
@@ -124,7 +124,7 @@ class FakeStore : public odysea::core::ThumbnailStore {
   public:
     std::optional<StoredThumbnail> load(const ThumbnailKey& key, std::error_code& error) override {
         static_cast<void>(error);
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         ++loads_;
         const auto found = planted_.find(key.uri);
         if (found == planted_.end()) {
@@ -137,17 +137,17 @@ class FakeStore : public odysea::core::ThumbnailStore {
               std::error_code& error) override {
         static_cast<void>(image);
         static_cast<void>(error);
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         saved_.push_back(key);
     }
 
     void plant(const std::string& uri, StoredThumbnail stored) {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         planted_.insert_or_assign(uri, std::move(stored));
     }
 
     [[nodiscard]] std::vector<ThumbnailKey> saved() const {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return saved_;
     }
 
@@ -162,17 +162,17 @@ class FakeStore : public odysea::core::ThumbnailStore {
 class Recorder {
   public:
     void record(ThumbnailResult result) {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         results_.push_back(std::move(result));
     }
 
     [[nodiscard]] std::vector<ThumbnailResult> results() const {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return results_;
     }
 
     [[nodiscard]] std::size_t count() const {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return results_.size();
     }
 
@@ -568,7 +568,7 @@ void test_destruction_while_working_delivers_nothing_afterwards() {
                 producer, store,
                 [observation](ThumbnailResult result) {
                     static_cast<void>(result);
-                    const std::lock_guard<std::mutex> lock(observation->mutex);
+                    const std::scoped_lock lock(observation->mutex);
                     if (observation->closed) {
                         observation->delivered_after_close = true;
                     }
@@ -587,7 +587,7 @@ void test_destruction_while_working_delivers_nothing_afterwards() {
         }
 
         {
-            const std::lock_guard<std::mutex> lock(observation->mutex);
+            const std::scoped_lock lock(observation->mutex);
             observation->closed = true;
             late_delivery = late_delivery || observation->delivered_after_close;
         }

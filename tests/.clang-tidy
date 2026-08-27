@@ -1,0 +1,18 @@
+# Static-analysis policy for the core test translation units.
+#
+# Inherits the repository policy and removes one check whose answer is not worth
+# reading here. readability-function-cognitive-complexity measures branching and
+# nesting, and a test function is supposed to be a long straight line of
+# arrange, act, and assert; scoring one says nothing about whether the code
+# under test is hard to follow, which is the only question the check was added
+# to answer. Sixty-seven of its seventy-four occurrences across the tree were
+# test functions, and they were the reason the seven that name real project code
+# were hard to see at all.
+#
+# The exclusion is scoped to this directory. The check stays enabled for
+# application and core sources, where its advice is sound. The Qt test
+# directory carries its own file, which additionally excludes a check that is
+# actively unsafe there.
+InheritParentConfig: true
+Checks: >
+  -readability-function-cognitive-complexity

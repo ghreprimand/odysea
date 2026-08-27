@@ -54,6 +54,42 @@ if [[ ! -f "$build_directory/compile_commands.json" ]]; then
 fi
 
 readonly baseline_file="$repository_root/tools/clang_tidy_baseline.txt"
+readonly policy_file="$repository_root/.clang-tidy"
+
+# The set of checks promoted to errors is read from the policy rather than
+# repeated here. It was repeated here, and the two drifted the moment a check
+# was promoted: the gate still failed on the new fatal diagnostic, but it
+# printed the failing translation unit with none of its diagnostics under it,
+# because the hard-coded pattern did not know the check existed. A gate that
+# names the file and withholds the reason sends its reader to read the whole
+# file.
+#
+# Each entry is a clang-tidy check glob; only the trailing star has meaning, so
+# it becomes the character class that matches the rest of a check name.
+if [[ ! -f "$policy_file" ]]; then
+    printf 'static_analysis: the check policy at %s is missing\n' "$policy_file" >&2
+    exit 1
+fi
+fatal_check_pattern="$(
+    sed -n "s/^WarningsAsErrors:[[:space:]]*['\"]\(.*\)['\"][[:space:]]*$/\1/p" \
+        "$policy_file" |
+        tr ',' '\n' |
+        sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
+        grep -v '^$' |
+        sed 's/[*]$/[a-z0-9-]*/' |
+        paste -sd '|' - || true
+)"
+readonly fatal_check_pattern
+
+# A gate that could not read its own fatal set must not run. With an empty
+# pattern the alternation below matches every diagnostic, so a single advisory
+# line would be reprinted as though it were fatal, and the failure above would
+# be explained by the wrong list entirely.
+if [[ -z "$fatal_check_pattern" ]]; then
+    printf 'static_analysis: no check is promoted to an error in %s\n' "$policy_file" >&2
+    printf '  The gate reads its fatal set from that line; without it there is nothing to enforce.\n' >&2
+    exit 1
+fi
 
 tidy_binary="${ODYSEA_CLANG_TIDY:-}"
 if [[ -z "$tidy_binary" ]]; then
@@ -165,7 +201,7 @@ if ((${#failed_units[@]} > 0)); then
     for unit in "${failed_units[@]}"; do
         printf '  %s\n' "$unit" >&2
     done
-    grep -E '(error|warning): .*\[(bugprone-|cppcoreguidelines-owning-memory|cppcoreguidelines-no-malloc|clang-analyzer-)' \
+    grep -E "(error|warning): .*\[($fatal_check_pattern)" \
         "$raw_output" | sed "s|^${repository_root}/||" | sort -u >&2 || true
     status=1
 fi

@@ -40,7 +40,7 @@ ThumbnailService::ThumbnailService(ThumbnailProducer& producer, ThumbnailStore& 
 ThumbnailService::~ThumbnailService() {
     deliver_results_.store(false, std::memory_order_release);
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         shutdown_ = true;
         pending_.clear();
         visible_queue_.clear();
@@ -55,14 +55,14 @@ ThumbnailService::~ThumbnailService() {
 }
 
 std::uint64_t ThumbnailService::begin_generation() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return next_generation_++;
 }
 
 void ThumbnailService::request(fs::path source, ThumbnailKey key, std::uint64_t generation,
                                ThumbnailPriority priority) {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_ || generation < cancelled_before_) {
             return;
         }
@@ -100,7 +100,7 @@ void ThumbnailService::request(fs::path source, ThumbnailKey key, std::uint64_t 
 }
 
 void ThumbnailService::release(const ThumbnailKey& key, std::uint64_t generation) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto entry = pending_.find(key);
     if (entry == pending_.end()) {
         return;
@@ -119,7 +119,7 @@ void ThumbnailService::release(const ThumbnailKey& key, std::uint64_t generation
 
 void ThumbnailService::cancel_before(std::uint64_t generation) {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         cancelled_before_ = std::max(cancelled_before_, generation);
 
         for (auto entry = pending_.begin(); entry != pending_.end();) {
@@ -139,7 +139,7 @@ void ThumbnailService::cancel_before(std::uint64_t generation) {
 }
 
 void ThumbnailService::invalidate(const ThumbnailKey& key) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto cached = cache_.find(key);
     if (cached != cache_.end()) {
         cached_bytes_ -= cached->second.image->byte_cost();
@@ -153,7 +153,7 @@ void ThumbnailService::invalidate(const ThumbnailKey& key) {
 
 void ThumbnailService::invalidate_source(const fs::path& source) {
     const std::string uri = file_uri(source);
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
 
     for (auto entry = cache_.begin(); entry != cache_.end();) {
         if (entry->first.uri == uri) {
@@ -177,7 +177,7 @@ void ThumbnailService::wait_idle() {
 }
 
 std::size_t ThumbnailService::cached_bytes() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return cached_bytes_;
 }
 
@@ -241,7 +241,7 @@ std::vector<ThumbnailResult> ThumbnailService::finish(const Pending& claimed,
                                                       std::error_code error, bool from_cache) {
     std::vector<ThumbnailResult> results;
 
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     --running_;
 
     const auto entry = pending_.find(claimed.key);
@@ -319,7 +319,7 @@ void ThumbnailService::remember_failure(const ThumbnailKey& key, std::error_code
 }
 
 std::shared_ptr<const ThumbnailImage> ThumbnailService::recall(const ThumbnailKey& key) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto cached = cache_.find(key);
     if (cached == cache_.end()) {
         return nullptr;
@@ -352,7 +352,7 @@ void ThumbnailService::run() {
         // the handler while a lock is held.
         std::error_code remembered;
         {
-            const std::lock_guard<std::mutex> lock(mutex_);
+            const std::scoped_lock lock(mutex_);
             const auto refused = failures_.find(claimed->key);
             if (refused != failures_.end()) {
                 remembered = refused->second;

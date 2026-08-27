@@ -26,7 +26,7 @@ namespace {
 class ScanRecorder {
   public:
     void record_batch(std::vector<Entry> entries) {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         ++batch_count_;
         batch_thread_ = std::this_thread::get_id();
         for (Entry& entry : entries) {
@@ -36,7 +36,7 @@ class ScanRecorder {
 
     void record_completion(ScanSummary summary) {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             summary_ = std::move(summary);
         }
         finished_.notify_all();
@@ -49,22 +49,22 @@ class ScanRecorder {
     }
 
     [[nodiscard]] ScanSummary summary() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return summary_.value_or(ScanSummary{});
     }
 
     [[nodiscard]] std::vector<std::string> names() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return names_;
     }
 
     [[nodiscard]] std::size_t batch_count() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return batch_count_;
     }
 
     [[nodiscard]] std::thread::id batch_thread() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return batch_thread_;
     }
 
@@ -194,7 +194,7 @@ void test_a_new_request_cancels_the_one_in_flight() {
         scanner.start(request_for(tree.root() / "second", second_recorder, 8));
     check(second_token > first_token, "each request receives a fresh token");
     {
-        const std::lock_guard<std::mutex> guard(gate_mutex);
+        const std::scoped_lock guard(gate_mutex);
         released = true;
     }
     gate.notify_all();
@@ -242,7 +242,7 @@ void test_explicit_cancel_stops_a_scan() {
 
     scanner.cancel();
     {
-        const std::lock_guard<std::mutex> guard(gate_mutex);
+        const std::scoped_lock guard(gate_mutex);
         released = true;
     }
     gate.notify_all();

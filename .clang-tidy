@@ -1,5 +1,28 @@
 # OdySea static-analysis policy. Focus: memory safety and modern C++ hygiene.
 # Enforces a subset of the C++ Core Guidelines plus clang's own analyzer.
+#
+# Two categories are disabled rather than held against the advisory baseline,
+# because an advisory diagnostic nobody will ever act on is not a finding, it is
+# cover for the next one. The recorded set exists so a genuinely new diagnostic
+# is visible in it; several hundred permanent entries make that impossible, and
+# a reader who has learned to scroll past the recorded set has learned to scroll
+# past a new one too.
+#
+#   cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+#       Requires a checked accessor for every subscript. This project subscripts
+#       deliberately, after the index has been established by the code that
+#       produced it, and in paths where a second bounds check per element is
+#       real cost. The class of defect it describes is covered by controls that
+#       do not depend on a style rule: clang's own analyzer and the whole
+#       bugprone family are errors here rather than advisories, and the entire
+#       test suite runs under AddressSanitizer, which reports an out-of-bounds
+#       access as a fault at the point it happens rather than as a suggestion.
+#
+# A category is promoted to an error once the tree is clean of it, so it cannot
+# return as one more advisory line. modernize-use-scoped-lock is the first:
+# std::scoped_lock is a strict superset of std::lock_guard, so there is no case
+# where the older spelling is the right answer, and leaving it advisory would
+# have meant re-establishing the same clean state on every future review.
 Checks: >
   bugprone-*,
   cppcoreguidelines-*,
@@ -10,6 +33,7 @@ Checks: >
   -modernize-use-trailing-return-type,
   -readability-identifier-length,
   -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -readability-magic-numbers
 
-WarningsAsErrors: 'bugprone-*,cppcoreguidelines-owning-memory,cppcoreguidelines-no-malloc,clang-analyzer-*'
+WarningsAsErrors: 'bugprone-*,cppcoreguidelines-owning-memory,cppcoreguidelines-no-malloc,clang-analyzer-*,modernize-use-scoped-lock'

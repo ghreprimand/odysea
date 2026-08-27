@@ -74,7 +74,7 @@ class ScanWorker {
     /// completed receive no further callbacks.
     ~ScanWorker() {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             shutdown_ = true;
             cancelled_through_.store(next_token_, std::memory_order_relaxed);
             deliver_callbacks_.store(false, std::memory_order_relaxed);
@@ -93,7 +93,7 @@ class ScanWorker {
     std::uint64_t start(Request request) {
         std::uint64_t token = 0;
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             if (shutdown_) {
                 return 0;
             }
@@ -115,7 +115,7 @@ class ScanWorker {
     /// Cancel the request in flight and anything queued behind it.
     void cancel() {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             cancelled_through_.store(next_token_, std::memory_order_relaxed);
             if (pending_.has_value()) {
                 superseded_.emplace_back(std::move(*pending_), pending_token_);
@@ -181,7 +181,7 @@ class ScanWorker {
             if (token != 0) {
                 execute_.run(std::move(request), token);
                 {
-                    const std::lock_guard<std::mutex> guard(mutex_);
+                    const std::scoped_lock guard(mutex_);
                     busy_ = false;
                 }
             }

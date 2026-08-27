@@ -77,13 +77,13 @@ std::string payload(std::size_t bytes) {
 class UsageRecorder {
   public:
     void record_progress(UsageProgress progress) {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         reports_.push_back(std::move(progress));
     }
 
     void record_completion(UsageSummary summary) {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             summary_ = std::move(summary);
         }
         finished_.notify_all();
@@ -95,12 +95,12 @@ class UsageRecorder {
     }
 
     [[nodiscard]] UsageSummary summary() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return summary_.value_or(UsageSummary{});
     }
 
     [[nodiscard]] std::vector<UsageProgress> reports() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return reports_;
     }
 

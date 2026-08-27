@@ -63,6 +63,11 @@ trap 'rm -rf -- "$workspace"' EXIT
 status=0
 checked=0
 
+# When non-empty, scenarios use this policy body instead of the repository's.
+# Only the fatal-set floor needs it; every other scenario must analyse under the
+# policy the project actually ships.
+policy_override=""
+
 # A translation unit clang-tidy has nothing to say about.
 readonly clean_source='int addOne(int value) { return value + 1; }
 '
@@ -86,6 +91,21 @@ readonly advisory_source='int classify(int value) {
 '
 readonly advisory_check='readability-braces-around-statements'
 
+# A check the policy promotes from advisory to error. It is fatal for the same
+# reason the malloc source is, but through a check that was promoted rather than
+# one that always was, which is what the gate's fatal-set derivation has to
+# notice. Kept out of the advisory comparison entirely: it must fail the gate
+# before any baseline is consulted.
+readonly promoted_source='#include <mutex>
+
+std::mutex gate;
+
+void hold() {
+    const std::lock_guard<std::mutex> guard(gate);
+}
+'
+readonly promoted_check='modernize-use-scoped-lock'
+
 report() {
     local outcome="$1" description="$2"
     if [[ "$outcome" == "pass" ]]; then
@@ -100,8 +120,8 @@ report() {
 # then requires the stated outcome and message.
 #
 # The baseline body is written verbatim; the literal string "absent" leaves the
-# baseline file out entirely. Sources are named "stem=clean", "stem=fatal", or
-# "stem=advisory".
+# baseline file out entirely. Sources are named "stem=clean", "stem=fatal",
+# "stem=advisory", or "stem=promoted".
 expect_verdict() {
     local description="$1"
     local expectation="$2"
@@ -115,7 +135,11 @@ expect_verdict() {
     mkdir -p "$sandbox/tools"
     git -C "$sandbox" init -q
     git -C "$sandbox" config core.hooksPath /dev/null
-    cp "$policy" "$sandbox/.clang-tidy"
+    if [[ -n "$policy_override" ]]; then
+        printf '%s' "$policy_override" >"$sandbox/.clang-tidy"
+    else
+        cp "$policy" "$sandbox/.clang-tidy"
+    fi
 
     if [[ "$baseline_body" != "absent" ]]; then
         printf '%s' "$baseline_body" >"$sandbox/tools/clang_tidy_baseline.txt"
@@ -129,6 +153,7 @@ expect_verdict() {
         kind="${specification##*=}"
         case "$kind" in
             fatal) printf '%s' "$fatal_source" >"$sandbox/$stem.cpp" ;;
+            promoted) printf '%s' "$promoted_source" >"$sandbox/$stem.cpp" ;;
             advisory) printf '%s' "$advisory_source" >"$sandbox/$stem.cpp" ;;
             *) printf '%s' "$clean_source" >"$sandbox/$stem.cpp" ;;
         esac
@@ -241,6 +266,22 @@ expect_verdict "a recorded diagnostic that no longer occurs is rejected" \
     reject "no longer occurs" \
     "$advisory_baseline" "clean=clean"
 
+# The fatal set is read from the policy, not repeated in the gate. A check the
+# policy promotes must therefore be fatal here without the gate having been
+# taught its name, which is the drift that made a promotion print a failing unit
+# with nothing under it.
+expect_verdict "a check promoted to an error in the policy is fatal" \
+    reject "reported fatal diagnostics" \
+    "$empty_baseline" "locked=promoted"
+
+# And the diagnostic itself is printed, not merely the unit that produced it.
+# This is the assertion that fails when the fatal set is hard-coded and a newly
+# promoted check is missing from it: the gate still rejects, so only the
+# presence of the reason tells the two apart.
+expect_verdict "a promoted check's diagnostic is named in the failure" \
+    reject "$promoted_check" \
+    "$empty_baseline" "locked=promoted"
+
 expect_verdict "a missing baseline is rejected" \
     reject "is missing" \
     absent "clean=clean"
@@ -250,6 +291,29 @@ expect_verdict "a missing baseline is rejected" \
 expect_verdict "a corpus holding no translation unit is refused rather than passed" \
     reject "no translation unit" \
     "$empty_baseline"
+
+# The floor under the derived fatal set. With no check promoted, the pattern the
+# gate builds is empty, and an empty alternation matches every diagnostic: the
+# gate would reprint an advisory line as a fatal one and explain a failure with
+# the wrong list. Refusing to run is the only honest answer, because the gate
+# cannot know what it is meant to enforce.
+policy_override='Checks: >
+  readability-*
+'
+expect_verdict "a policy that promotes no check to an error is refused" \
+    reject "no check is promoted to an error" \
+    "$empty_baseline" "advisory=advisory"
+policy_override=""
+
+# The scenario count is checked against the number this file is written to
+# contain. A scenario that stopped running would otherwise leave a smaller suite
+# printing the same success sentence.
+readonly expected_scenarios=13
+if ((checked != expected_scenarios)); then
+    printf 'static_analysis_self_test: ran %d scenario(s), expected %d\n' \
+        "$checked" "$expected_scenarios" >&2
+    status=1
+fi
 
 if ((status != 0)); then
     printf 'static_analysis_self_test: failed\n' >&2

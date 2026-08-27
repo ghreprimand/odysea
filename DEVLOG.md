@@ -83,6 +83,51 @@ one. The registry's text is printed with a failure, not tested against it.
 
 ---
 
+## 2026-08-27 -- The advisory static-analysis set names only what can be acted on
+
+The recorded advisory set had grown to 297 diagnostics across 103 file-and-check
+entries. The ratchet still reported drift correctly, but a reader meeting three
+hundred permanent lines learns to scroll past the recorded set, and that is the
+same motion that scrolls past a new one. Three categories accounted for 183 of
+the 297, and each is answered differently.
+
+`modernize-use-scoped-lock` is now fixed rather than recorded. All 55
+occurrences were single-mutex `std::lock_guard` declarations across eight files
+in `core/`, `app/`, and both test suites; `std::scoped_lock` is a strict
+superset, so no call site had a reason to keep the older spelling. The check is
+promoted to `WarningsAsErrors`, which is what stops the tree drifting back one
+advisory line at a time.
+
+`cppcoreguidelines-pro-bounds-avoid-unchecked-container-access` is disabled with
+its reasoning recorded in `.clang-tidy`. It requires a checked accessor for
+every subscript; this project subscripts after the index has been established by
+the code that produced it, and in paths where a second bounds check per element
+is real cost. The defect class it describes is covered by controls that do not
+depend on a style rule: the whole bugprone family and clang's own analyzer are
+errors here rather than advisories, and the entire suite runs under
+AddressSanitizer, which reports an out-of-bounds access where it happens.
+
+`readability-function-cognitive-complexity` is disabled for test translation
+units alone, through a directory-scoped configuration beside the existing one in
+`app/tests/`. The metric measures branching and nesting; a test function is
+meant to be a long straight line of arrange, act, and assert. Sixty-seven of its
+seventy-four occurrences were test functions, and they were why the seven naming
+real project code were hard to see. It stays enabled for `app/` and `core/`.
+
+The recorded set is now 114 diagnostics across 74 entries, and every one of them
+sits in code where the advice can be taken. Verified in both directions: the
+full release build is warning-clean after the lock refactor, the suite is green,
+and a planted `std::lock_guard` in `core/src/thumbnail_service.cpp` makes
+`static_analysis` fail as an error naming the file and the check, where before
+the promotion it would have been absorbed into an advisory count.
+
+Known gap: the ratchet's identity is still the count per file and check, so a
+diagnostic removed and another of the same check added in the same file leaves
+the count unchanged and is not reported. Reducing the set shrinks that window
+but does not close it.
+
+---
+
 ## 2026-08-27 -- Conflict markers honour Git's configured size
 
 Git's default conflict marker is seven characters, but its marker size is

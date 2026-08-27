@@ -67,17 +67,17 @@ class RecordingProducer final : public odysea::core::ThumbnailProducer {
     }
 
     [[nodiscard]] int calls() const {
-        const std::lock_guard lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return calls_;
     }
 
     [[nodiscard]] int finished() const {
-        const std::lock_guard lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         return finished_;
     }
 
     void releaseFirst() {
-        const std::lock_guard lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         firstReleased_ = true;
         changed_.notify_all();
     }

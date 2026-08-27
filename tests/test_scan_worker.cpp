@@ -34,22 +34,22 @@ class Harness {
     explicit Harness(int blocking_id) : blocking_id_(blocking_id) {}
 
     [[nodiscard]] std::vector<int> executed() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return executed_;
     }
 
     [[nodiscard]] std::vector<int> abandoned() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return abandoned_;
     }
 
     [[nodiscard]] std::vector<std::uint64_t> tokens() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return tokens_;
     }
 
     [[nodiscard]] std::thread::id execution_thread() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return execution_thread_;
     }
 
@@ -61,7 +61,7 @@ class Harness {
 
     void release() {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             released_ = true;
         }
         gate_.notify_all();
@@ -69,7 +69,7 @@ class Harness {
 
     /// Whether the running job saw its own token reported as cancelled.
     [[nodiscard]] bool observed_cancellation() {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         return observed_cancellation_;
     }
 
@@ -79,7 +79,7 @@ class Harness {
 
     void run(Job job, std::uint64_t token) {
         {
-            const std::lock_guard<std::mutex> guard(mutex_);
+            const std::scoped_lock guard(mutex_);
             executed_.push_back(job.id);
             tokens_.push_back(token);
             execution_thread_ = std::this_thread::get_id();
@@ -94,12 +94,12 @@ class Harness {
         gate_.wait_for(guard, 10s, [this] { return released_; });
         guard.unlock();
         const bool cancelled = worker_->cancelled(token);
-        const std::lock_guard<std::mutex> record(mutex_);
+        const std::scoped_lock record(mutex_);
         observed_cancellation_ = cancelled;
     }
 
     void abandon(const Job& job, std::uint64_t token) {
-        const std::lock_guard<std::mutex> guard(mutex_);
+        const std::scoped_lock guard(mutex_);
         abandoned_.push_back(job.id);
         tokens_.push_back(token);
     }
