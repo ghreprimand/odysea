@@ -38,9 +38,10 @@ class FuzzyFindModel : public QAbstractListModel {
         qulonglong characterComparisons READ characterComparisons NOTIFY instrumentationChanged)
 
   public:
-    // QAbstractItemModel roles are intentionally unscoped integer keys.
-    // NOLINTNEXTLINE(cppcoreguidelines-use-enum-class)
-    enum Roles : std::uint16_t {
+    // QAbstractItemModel roles are intentionally unscoped integer keys. The
+    // QML type registry requires its built-in int spelling at this boundary.
+    // NOLINTNEXTLINE(cppcoreguidelines-use-enum-class,performance-enum-size)
+    enum Roles : int {
         NameRole = Qt::UserRole + 1,
         PathRole,
         RelativePathRole,

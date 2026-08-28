@@ -25,6 +25,22 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- QML-facing model roles use the type the registry understands
+
+The fuzzy-find, Miller-columns, and storage-usage adapters exposed their item
+roles through registered enums backed by a fixed-width standard-library type.
+The runtime engine still resolved the enum keys and values, but the generated
+QML type descriptions named a type the declarative registry could not resolve.
+Those app-layer enums now use built-in `int`, matching the integer role API and
+leaving every Qt-free core type unchanged.
+
+A linked-module test imports the production QML module and reads the first and
+last role values from all three types. A separate storage contract rejects a
+non-`int` backing type, so the generated type descriptions cannot drift back to
+an unresolved alias while runtime enum visibility continues to pass.
+
+---
+
 ## 2026-08-28 -- Accent presets keep file meaning stable
 
 Tideglass, Beacon, Ember, Orchid, and Verdant now select a live shell accent.

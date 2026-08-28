@@ -10,7 +10,6 @@
 #include <QString>
 #include <QtQml/qqmlregistration.h>
 
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -34,9 +33,10 @@ class MillerColumnsModel : public QAbstractListModel {
     Q_PROPERTY(int sortMode READ sortMode WRITE setSortMode NOTIFY sortModeChanged)
 
   public:
-    // QAbstractItemModel roles are intentionally unscoped integer keys.
-    // NOLINTNEXTLINE(cppcoreguidelines-use-enum-class)
-    enum Roles : std::uint16_t {
+    // QAbstractItemModel roles are intentionally unscoped integer keys. The
+    // QML type registry requires its built-in int spelling at this boundary.
+    // NOLINTNEXTLINE(cppcoreguidelines-use-enum-class,performance-enum-size)
+    enum Roles : int {
         ListingModelRole = Qt::UserRole + 1,
         PathRole,
         TitleRole,

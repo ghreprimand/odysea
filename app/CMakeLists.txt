@@ -265,6 +265,17 @@ target_link_libraries(odysea_fuzzy_find_model_tests
 
 add_test(NAME app_fuzzy_find_model COMMAND odysea_fuzzy_find_model_tests)
 
+qt_add_executable(odysea_qml_enum_registration_tests
+    tests/tst_qml_enum_registration.cpp)
+
+target_link_libraries(odysea_qml_enum_registration_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Qml Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_qml_enum_registration COMMAND odysea_qml_enum_registration_tests)
+
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic
 # qmltestrunner cannot do that: it would only ever see the source directory.
