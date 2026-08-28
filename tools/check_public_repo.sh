@@ -266,6 +266,144 @@ report_matches "comparative positioning within a field is tracked" \
     '((file[- ]manager|application|product|tool)s?[- ](landscape|market|ecosystem)|occupies the (gap|space|middle|niche|ground)|the middle ground|tends? to (sit|fall|land|cluster) +(at|in|into)\b|two extremes|\bas +[a-z]+ +as any +[a-z-]+( +[a-z-]+)? +(file managers?|applications?|tools?|programs?|implementations?))' \
     -- "${self_excluding_pathspec[@]}"
 
+# Every rule above keys on framing: a survey sentence, a placement verb, a
+# section heading. Strip the framing and keep the list, and all of them go
+# quiet - which is the wrong way round, because the framing is the part a
+# writer would drop and the list of names is the part they would keep. The two
+# rules below read the shape of the list itself. Neither knows a single name.
+#
+# The first is the label. A bullet introduced by a class of this project's own
+# category - a qualified or plural "file manager", "explorer", or "browser" -
+# is dividing a field into groups, and there is no other reason to write it:
+# every legitimate sentence here is about this one program, in the singular.
+# The singular bare form is therefore permitted and only the qualified or
+# plural label is refused. The label has to be closed, by emphasis marks or by
+# a colon or dash, so that an ordinary sentence running through the same words
+# is not read as a heading for a group.
+prose_category_label_re="((([A-Za-z][A-Za-z0-9/-]*[[:space:]]+){1,3}(file[ -]managers?|explorers?|browsers?))|file[ -]managers|explorers|browsers)"
+prose_emphasis_re='(\*\*|__|\*|_)'
+report_matches "a list item is labelled as a class of file manager" \
+    guard_corpus_grep -nI -iE \
+    "^[[:space:]]*([-*+]|[0-9]+[.)])[[:space:]]+(${prose_emphasis_re}[[:space:]]*${prose_category_label_re}[[:space:]]*${prose_emphasis_re}|${prose_category_label_re}[[:space:]]*[:—–-])" \
+    -- "${self_excluding_pathspec[@]}"
+
+# The second is the enumeration. "A, B, C. Fast, but limited" is a survey of
+# other work whatever A, B and C turn out to be, so the rule counts the shape
+# and never resolves the names: three or more comma-separated items on one
+# line, inside a block that also states a limitation.
+#
+# The limitation word usually sits on a later line of the same bullet, so the
+# scan is block-scoped rather than line-scoped. A block is broken by a blank
+# line, a heading, or the start of another list item, which keeps two adjacent
+# and unrelated paragraphs from being read as one.
+#
+# The list also has to be the whole clause. A survey names its group and
+# stops - the names end the sentence, or the line, and the assessment follows
+# after. Correct prose here does the opposite: it names three inputs and then
+# says what they do, so the list is the subject of a verb and the sentence
+# runs on. That is the difference between "Right-click, Menu, and Shift+F10
+# open the same shared context actions" and a group of names terminated by a
+# full stop, and it is the reason the run must be closed by a sentence break
+# or the end of the line. Without that condition the design document's own
+# input list is reported, which is correct prose and would have to be worked
+# around.
+#
+# The thresholds were measured against this corpus rather than chosen. Letting
+# an item be any lowercase word reported five lines of correct prose, two of
+# them in published record entries that can no longer be edited. Requiring
+# three items with two capitalised still reported the design document's input
+# list. The pair below is the widest reading that reports nothing at all:
+# three capitalised items, or four items of which at least two are
+# capitalised. It reports both halves of the enumeration that prompted it.
+#
+# The awk program is run on its own with its exit status read, and it reports
+# how many lines it examined. A pattern that fails to compile prints nothing,
+# and nothing is indistinguishable from a clean corpus once the failure has
+# been swallowed.
+block_enumeration_program='
+BEGIN {
+    capitalised = "[A-Z][A-Za-z0-9_+'"'"'-]*( [A-Z][A-Za-z0-9_+'"'"'-]*)*( \\([^)]*\\))?"
+    lowercase = "[a-z][A-Za-z0-9_+-]*( \\([^)]*\\))?"
+    item = "(" capitalised "|" lowercase ")"
+    separator = ",[ \t]*(and |or )?"
+    closing = "([.;][ \t]+[A-Z]|[.;]?[ \t]*$)"
+    enumeration = item separator item separator item "(" separator item ")*" closing
+    limitation = "(^|[^A-Za-z])(but|though|however|yet|whereas|constrained|tied to|limited|restricted)([^A-Za-z]|$)"
+}
+function count_items(run, capitals_only,   fields, index_, total) {
+    total = 0
+    for (index_ = split(run, fields, ","); index_ > 0; index_--) {
+        sub(/^[ \t]*(and |or )?/, "", fields[index_])
+        if (!capitals_only || fields[index_] ~ /^[A-Z]/) total++
+    }
+    return total
+}
+function end_block() {
+    if (enumeration_reference != "" && block_states_a_limitation) {
+        print enumeration_reference ":" enumeration_text
+    }
+    enumeration_reference = ""
+    enumeration_text = ""
+    block_states_a_limitation = 0
+}
+{
+    scanned++
+    split($0, prefix, ":")
+    path = prefix[1]
+    line_number = prefix[2]
+    text = substr($0, length(path) + length(line_number) + 3)
+
+    if (path != current_path) {
+        end_block()
+        current_path = path
+    }
+    if (text ~ /^[ \t]*$/ || text ~ /^[ \t]*#/ ||
+        text ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/) {
+        end_block()
+    }
+    if (text ~ limitation) {
+        block_states_a_limitation = 1
+    }
+    if (enumeration_reference == "" && match(text, enumeration)) {
+        run = substr(text, RSTART, RLENGTH)
+        capitals = count_items(run, 1)
+        if (capitals >= 3 || (count_items(run, 0) >= 4 && capitals >= 2)) {
+            enumeration_reference = path ":" line_number
+            enumeration_text = text
+        }
+    }
+}
+END {
+    end_block()
+    print "guard_scanned_lines=" scanned + 0
+}
+'
+if ! block_scan_output="$(
+    guard_corpus_grep -nI -E '^' -- "${self_excluding_pathspec[@]}" |
+        awk "$block_enumeration_program"
+)"; then
+    printf 'public_repository_guard: the block enumeration scan failed to run, so no block was judged\n' >&2
+    failed=1
+    block_scan_output="guard_scanned_lines=0"
+fi
+
+scanned_prose_lines="$(
+    printf '%s\n' "$block_scan_output" | sed -n 's/^guard_scanned_lines=//p'
+)"
+if [[ ! "$scanned_prose_lines" =~ ^[0-9]+$ ]] || ((scanned_prose_lines == 0)); then
+    printf 'public_repository_guard: the block enumeration scan examined no corpus line\n' >&2
+    failed=1
+fi
+
+block_enumeration_matches="$(
+    printf '%s\n' "$block_scan_output" | grep -v '^guard_scanned_lines=' || true
+)"
+if [[ -n "$block_enumeration_matches" ]]; then
+    printf 'public_repository_guard: an enumeration of named items is qualified by a limitation\n%s\n' \
+        "$block_enumeration_matches" >&2
+    failed=1
+fi
+
 # A section that exists to credit other work, to survey it, or to place this
 # project relative to it. The heading is the whole signal: the words below are
 # unremarkable in running prose - one of them appears in this repository as an

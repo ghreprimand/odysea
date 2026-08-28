@@ -25,6 +25,59 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- A group survey is refused by its shape, not by its framing
+
+Every category rule shipped so far keys on framing: a survey sentence, a
+placement verb, a crediting heading. Delete the framing and keep the labelled
+groups and the names under them, and the same claim is made in fewer words and
+passes every rule. That was measured directly against the remediated corpus:
+two labelled groups, seven names, a stated weakness for each, appended to the
+design overview and staged, accepted at exit zero with the summary line
+unchanged. The framing is the part a writer drops; the list is the part they
+keep.
+
+Two rules now read the shape of the list itself, and neither knows a name. The
+first is the label. A list item introduced by a class of this project's own
+category — qualified or plural — divides a field into groups, and there is no
+other reason to write it, because every legitimate sentence here is about this
+one program. Singular self-reference is therefore permitted and only the
+qualified or plural form is refused, and the label must be closed by emphasis
+marks or by a colon or dash so that a sentence running through the same words
+is not read as a heading.
+
+The second is the enumeration: three or more comma-separated names on one line,
+inside a block that also states a limitation. The limitation usually sits on a
+later line of the same item, so the scan is block-scoped, and a block is broken
+by a blank line, a heading, another list item, or the end of a file. The list
+must also be the whole clause — closed by a sentence break or the end of the
+line — because a survey names its group and stops, while correct prose names
+three inputs and then says what they do.
+
+The thresholds were measured against the tracked corpus rather than chosen.
+Letting an item be any lowercase word reported five lines of correct prose, two
+of them in published record entries that can no longer be edited. Requiring
+three items with two of them capitalised still reported the design overview's
+own input list. Three capitalised items, or four items of which at least two
+are capitalised, reports nothing across the corpus and reports both halves of
+the enumeration that prompted the rule. Both rules also fire independently on
+the historical text this project has since rewritten: three of its items by the
+label, two by the enumeration, before any framing rule is consulted.
+
+The block scanner runs on its own with its exit status read, and reports how
+many lines it examined, because a pattern that fails to compile prints nothing
+and nothing is indistinguishable from a clean corpus. Self-test 60 to 80
+scenarios with the floor raised alongside; 21 mutations planted and diffed, 20
+caught by name, 1 equivalent and recorded. Six of those mutations first survived
+because the fixture that should have caught them carried a list the rule never
+matched, so the condition under test was never reached; the fixtures were
+rewritten to carry a matching list, not the rule relaxed to reach them.
+
+Every planted name in the self-test is invented: a real one written into the
+file whose purpose is to suppress it would publish exactly what the rule exists
+to keep out.
+
+---
+
 ## 2026-08-28 -- The public record describes this project in its own terms
 
 The design overview opened with a survey of a field, a named list of projects in

@@ -463,6 +463,12 @@ falls short. Write every feature from the requirement it satisfies.
   set in the gap — and it makes the same claim. Describe what OdySea does and
   what is out of scope, in its own terms.
 
+- Do not label a group and list its members. A list item introduced by a class
+  of this project's own category, in a qualified or plural form, is a survey
+  with the survey sentence deleted; so is a run of names on one line followed
+  by what the group cannot do. Both shapes are refused without any name being
+  known, because the label and the list carry the claim on their own.
+
 `public_repository_guard` enforces the category rather than a list of
 instances, and deliberately so: a tracked list of names would publish those
 names in the file written to suppress them, and would also disclose that the
@@ -480,6 +486,16 @@ read is a specification statement, and it is meant to keep working. What is
 refused is the enumerated peer group — a qualifier such as "most" or "existing"
 in front of the project category — because there is no way to write that except
 as a statement about a set of peers.
+
+The two shape rules are held to the same standard, and their thresholds were
+measured against the tracked corpus rather than chosen. A group label is
+recognised only when it is closed, by emphasis marks or by a colon or dash, so
+a sentence running through the same words is not read as a heading. A run of
+names is recognised only when it is the whole clause — ending the sentence or
+the line — and when the block around it states a limitation, so ordinary prose
+that names three inputs and then says what they do keeps passing. Singular
+self-reference is permitted throughout: every legitimate sentence here is about
+this one program.
 
 ## Engineering record
 

@@ -670,6 +670,196 @@ expect_reason_outcome engineering_trade_off_prose accept "$positioning_message" 
         "The publication interval grows with the listing, so the cost sits
 between a single batch and one signal per row.")"
 
+# --- A group survey with the framing removed --------------------------------
+# Every rule above this point keys on framing. Delete the survey sentence, the
+# placement verb and the section heading, keep the labelled groups and the
+# names, and the same claim is made in fewer words. These scenarios pin the two
+# rules that read the shape of the list instead of the words around it.
+#
+# The names below are invented. A real one written into the file whose visible
+# purpose is to suppress it would publish that name in tracked text, which is
+# the outcome the rules exist to prevent; the shape is what is under test and
+# the shape does not need a real name to be reproduced.
+readonly class_label_message='a list item is labelled as a class of file manager'
+readonly enumeration_message='an enumeration of named items is qualified by a limitation'
+
+# The label, on its own. No enumeration and no limitation, so only the label
+# rule can fire.
+expect_reason_outcome bold_class_label reject "$class_label_message" \
+    "$(build_repository_named label_bold NOTES.md \
+        "# Notes
+
+- **Ambient file mana""gers** — a group with its own conventions.")"
+
+expect_reason_outcome italic_class_label reject "$class_label_message" \
+    "$(build_repository_named label_italic NOTES.md \
+        "# Notes
+
+- *Desktop explo""rers* — a group with its own conventions.")"
+
+expect_reason_outcome plain_label_closed_by_a_colon reject "$class_label_message" \
+    "$(build_repository_named label_colon NOTES.md \
+        "# Notes
+
+- Graphical file brow""sers: a group with its own conventions.")"
+
+expect_reason_outcome bare_plural_class_label reject "$class_label_message" \
+    "$(build_repository_named label_plural NOTES.md \
+        "# Notes
+
+- **File mana""gers** — a group with its own conventions.")"
+
+# The discriminating direction for the label rule. A bullet about this program
+# is singular and must keep passing, and so must a sentence that runs through
+# the same words without closing a label.
+expect_reason_outcome singular_self_reference_label accept "$class_label_message" \
+    "$(build_repository_named label_singular NOTES.md \
+        "# Notes
+
+- **File manager** — the application this repository builds.")"
+
+expect_reason_outcome sentence_running_through_the_category accept "$class_label_message" \
+    "$(build_repository_named label_sentence NOTES.md \
+        "# Notes
+
+- The graphical file manager loads a directory off the main thread.")"
+
+# The enumeration, on its own. No label, so only the enumeration rule can fire.
+expect_reason_outcome three_named_items_and_a_limitation reject "$enumeration_message" \
+    "$(build_repository_named enumeration_three NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane. Fast and complete, but limited to one screen.")"
+
+expect_reason_outcome four_items_two_of_them_named reject "$enumeration_message" \
+    "$(build_repository_named enumeration_four NOTES.md \
+        "# Notes
+
+- Aure""lia, sprig, tanner, Corv""ane Deck. Quick, but constrained by the grid.")"
+
+# The limitation usually sits further down the same bullet than the names do,
+# which is why the scan is block-scoped. This fixture separates them by a line.
+expect_reason_outcome limitation_on_a_later_line reject "$enumeration_message" \
+    "$(build_repository_named enumeration_wrapped NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane. Feature-complete and well integrated with
+  their desktop environments, but tied to those environments' conventions.")"
+
+# The discriminating directions for the enumeration rule. Each fixture below
+# carries a list the rule does match, so that what separates it from a refusal
+# is the one condition the scenario is named for. A fixture whose list the rule
+# never matches at all would pass whatever the guard did to the rest of the
+# condition, and four of these started life that way.
+expect_reason_outcome enumeration_without_a_limitation accept "$enumeration_message" \
+    "$(build_repository_named enumeration_plain NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane. These are the three sample directories.")"
+
+# A block ends at a blank line, at the next list item, at a heading, and at the
+# end of a file. Each of the four fixtures below states its limitation just past
+# one of those boundaries and nowhere else, so a boundary that stops being
+# honoured attaches the limitation to the list and the scenario fails.
+expect_reason_outcome limitation_after_a_blank_line accept "$enumeration_message" \
+    "$(build_repository_named enumeration_split NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane.
+
+- The scan is bounded, but the bound is configurable.")"
+
+expect_reason_outcome limitation_in_the_next_list_item accept "$enumeration_message" \
+    "$(build_repository_named enumeration_next_item NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane.
+- The scan is bounded, but the bound is configurable.")"
+
+expect_reason_outcome limitation_below_a_heading accept "$enumeration_message" \
+    "$(build_repository_named enumeration_heading NOTES.md \
+        "# Notes
+
+Aure""lia, Bas""tion, Corv""ane.
+## Bounds
+The scan is bounded, but the bound is configurable.")"
+
+enumeration_across_files_root="$workspace/enumeration-across-files"
+mkdir -p "$enumeration_across_files_root"
+git init -q "$enumeration_across_files_root"
+git -C "$enumeration_across_files_root" config user.name owner
+git -C "$enumeration_across_files_root" config user.email "$owner_identity"
+git -C "$enumeration_across_files_root" config commit.gpgsign false
+printf 'Aure%s.\n' \
+    "lia, Bas""tion, Corv""ane" >"$enumeration_across_files_root/A-NOTES.md"
+printf 'The scan is bounded, but the bound is configurable.\n' \
+    >"$enumeration_across_files_root/B-NOTES.md"
+git -C "$enumeration_across_files_root" add A-NOTES.md B-NOTES.md
+git -C "$enumeration_across_files_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add two files'
+
+expect_reason_outcome limitation_in_the_next_file accept "$enumeration_message" \
+    "$enumeration_across_files_root"
+
+# The thresholds, from below. An ordinary comma list of this project's own
+# operations closes its clause and sits beside a limitation, so only the count
+# of capitalised items keeps it out of the report.
+expect_reason_outcome ordinary_comma_list_of_operations accept "$enumeration_message" \
+    "$(build_repository_named enumeration_operations NOTES.md \
+        "# Notes
+
+The reversible operations are copy, move, rename, and trash. The history is
+bounded, but a reversal can still fail.")"
+
+expect_reason_outcome three_items_two_of_them_capitalised accept "$enumeration_message" \
+    "$(build_repository_named enumeration_columns NOTES.md \
+        "# Notes
+
+The columns are Name, Size, and date. Their order is configurable, but the
+default is by name.")"
+
+# The legitimate hit the closing condition was measured against. This is the
+# real design document's shape: three capitalised input names that are the
+# subject of a verb, in a paragraph that also carries a limitation word. The
+# sentence runs on past the list, so the list is not the whole clause and the
+# line is not reported.
+expect_reason_outcome input_names_in_correct_prose accept "$enumeration_message" \
+    "$(build_repository_named enumeration_inputs NOTES.md \
+        "# Notes
+
+Right-click, Menu, and Shift+F10 open the same shared context actions, but a
+keyboard request anchors to the current delegate instead.")"
+
+# The two historical shapes, side by side. The first carries the scaffolding
+# and is refused by the rules that read framing; the second is the same claim
+# with the scaffolding deleted, and is refused only by the two rules above.
+# Both assertions on the second fixture name a different rule, so reverting
+# either one alone fails its own scenario and leaves the other standing.
+readonly framing_stripped_survey="# Notes
+
+- **Ambient file mana""gers** — Aure""lia, Bas""tion, Corv""ane
+  (Skiff""wright). Feature-complete and well integrated with their desktop
+  environments, but tied to those environments' conventions.
+- **Terminal file mana""gers** — Nym""bus, sprig, tanner, Tallow""mere. Extremely
+  fast and keyboard-driven, but constrained by the terminal grid and text-only
+  rendering."
+
+expect_reason_outcome group_survey_with_scaffolding reject "$heading_message" \
+    "$(build_repository_named survey_scaffolded NOTES.md \
+        "# Notes
+
+## Position""ing
+
+$framing_stripped_survey")"
+
+expect_reason_outcome framing_stripped_survey_label reject "$class_label_message" \
+    "$(build_repository_named survey_stripped_label NOTES.md \
+        "$framing_stripped_survey")"
+
+expect_reason_outcome framing_stripped_survey_enumeration reject "$enumeration_message" \
+    "$(build_repository_named survey_stripped_enumeration NOTES.md \
+        "$framing_stripped_survey")"
+
 # --- The tracked dependency citations, as they actually stand ---------------
 # The strongest accepting case available: the real tracked files that cite
 # upstream dependencies, copied verbatim into a throwaway repository and put to
@@ -718,7 +908,7 @@ fi
 
 # A floor on the suite's own reporting. A scenario that stops running leaves
 # the remaining ones green, and the summary line below would still be printed.
-readonly expected_scenarios=60
+readonly expected_scenarios=80
 if ((checked != expected_scenarios)); then
     printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
         "$checked" "$expected_scenarios" >&2
