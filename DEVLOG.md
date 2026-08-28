@@ -25,6 +25,63 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- Two residuals in the category rules, and one exemption
+
+The serial comma is optional in English, and omitting it defeated the
+enumeration rule outright. Without the comma before the final conjunction the
+last two names merge into a single item that begins with a lowercase word, so
+it stops counting as a name and the run falls below the threshold. One
+character, in the more common of the two styles. The conjunction is now a join
+in the pattern and a boundary in the count, and both spellings are pinned.
+
+Counting had to absorb that without inflating anything. A comma immediately
+followed by the conjunction is two boundaries in a row and leaves an empty
+field between them, and counting that field pushes every three-item list with a
+serial comma over the four-item threshold — which is correct prose being
+reported for its punctuation. Empty fields are skipped, and the case is a
+fixture rather than a comment.
+
+The second residual was a live published line. A decision attributed to a peer
+implementation named by its standing, rather than by its name, passed every
+rule: the existing phrase requires a desktop or terminal token in the middle,
+and the line wraps between the qualifier and its noun, so the half that
+survives on one line matches nothing. The qualifier now carries the rule on its
+own. Calling an implementation established, mainstream, conventional,
+comparable or popular is a claim about where it sits among others, and that
+narrow set is the point — "other" and "another" are ordinary English here, used
+in interoperability statements about what other software can read, in the
+policy's own description of what it forbids, and in the license text. Widening
+the noun phrase to admit them reports six lines of correct prose, three of them
+in published entries. The narrow set reports exactly one line across the whole
+corpus, and that line is the instance.
+
+That line is in the archived record, where entries are never reworded, so the
+rule would stand permanently red over text nobody may edit — and a permanently
+red gate is one that gets deleted. The correction is published above as a new
+dated entry stating the specification that actually fixes the escaping, and the
+archived line is exempted by its exact text. The cost is recorded rather than
+hidden: the exemption necessarily writes the refused phrase into the guard,
+which is the one file the corpus scan excludes. Two floors keep it from
+becoming a habit. It must still match something wherever the record exists, so
+it cannot outlive its subject, and it is one exact line rather than a pattern,
+so a longer line containing it is still reported.
+
+Self-test 80 to 95 scenarios with the floor raised; 15 mutations planted and
+diffed, 15 caught. Three first survived on fixtures that could not discriminate
+— a merged final item is invisible when three capitalised names already meet
+the threshold, and a record that reports something either way cannot tell an
+exact exemption from a widened one. The fixtures were rewritten until each
+mutation had a scenario that could only fail for it.
+
+The enumeration gap that remains is unchanged and worth restating plainly: the
+guard refuses the labelled-group idiom and the qualified enumeration, and it
+does not refuse a prose enumeration of lowercase names. Loosening the item
+shape to reach that form reports 484 lines across 105 files, so there is no
+narrowed position to retreat to, and the rule stays where the measurement puts
+it.
+
+---
+
 ## 2026-08-28 -- What fixes the thumbnail cache file name
 
 The thumbnail cache is a shared resource, and its file name is not an internal
@@ -53,6 +110,9 @@ Validity remains a separate question from naming. A digest carries no collision
 guarantee, so a stored thumbnail is accepted only when the source URI recorded
 inside it matches, the recorded modification time matches, and the file is
 readable; a name alone is never treated as proof.
+
+---
+
 ## 2026-08-28 -- QML-facing model roles use the type the registry understands
 
 The fuzzy-find, Miller-columns, and storage-usage adapters exposed their item
@@ -66,6 +126,9 @@ A linked-module test imports the production QML module and reads the first and
 last role values from all three types. A separate storage contract rejects a
 non-`int` backing type, so the generated type descriptions cannot drift back to
 an unresolved alias while runtime enum visibility continues to pass.
+
+---
+
 ## 2026-08-28 -- Action-bar compaction measures its full row
 
 The action bar now derives its labeled compact breakpoint from an independent

@@ -469,6 +469,14 @@ falls short. Write every feature from the requirement it satisfies.
   by what the group cannot do. Both shapes are refused without any name being
   known, because the label and the list carry the claim on their own.
 
+- Do not attribute a decision to a peer named by its standing. Calling an
+  implementation established, mainstream, conventional, comparable or popular
+  is a claim about where it sits among others, and a decision presented as
+  taken from one is a derivation whether or not that peer is named. Cite the
+  specification, the measurement, or the requirement that actually settles the
+  question — those are stronger reasons anyway, because they say why the answer
+  is what it is.
+
 `public_repository_guard` enforces the category rather than a list of
 instances, and deliberately so: a tracked list of names would publish those
 names in the file written to suppress them, and would also disclose that the
@@ -486,6 +494,16 @@ read is a specification statement, and it is meant to keep working. What is
 refused is the enumerated peer group — a qualifier such as "most" or "existing"
 in front of the project category — because there is no way to write that except
 as a statement about a set of peers.
+
+The standing rule carries one recorded exemption. A single line in the archived
+record attributes a decision to a peer implementation, and published entries are
+never reworded, so the rule would stand permanently red over text nobody may
+edit. The correction is published as a new dated entry instead and that one
+archived line is exempted by its exact text, under two floors: the exemption
+fails the guard if the record no longer contains the line, so it cannot outlive
+its subject, and it matches one exact line rather than a pattern, so it cannot
+quietly widen. A longer line containing it, or any other line in the same file,
+is still reported.
 
 The two shape rules are held to the same standard, and their thresholds were
 measured against the tracked corpus rather than chosen. A group label is

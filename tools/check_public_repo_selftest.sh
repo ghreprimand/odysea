@@ -860,6 +860,174 @@ expect_reason_outcome framing_stripped_survey_enumeration reject "$enumeration_m
     "$(build_repository_named survey_stripped_enumeration NOTES.md \
         "$framing_stripped_survey")"
 
+# --- The serial comma, which is optional in English -------------------------
+# Omitting the comma before the final conjunction merges the last two items
+# into one, and a merged item beginning with a lowercase conjunction stops
+# counting as a name. One character is the difference, and the omitted form is
+# the more common of the two styles, so both spellings are pinned.
+expect_reason_outcome enumeration_with_a_serial_comma reject "$enumeration_message" \
+    "$(build_repository_named enumeration_serial NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane, and Nem""ora. Capable, but bound to one grid.")"
+
+expect_reason_outcome enumeration_without_a_serial_comma reject "$enumeration_message" \
+    "$(build_repository_named enumeration_no_serial NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane and Nem""ora. Capable, but bound to one grid.")"
+
+# Three capitalised names satisfy the threshold on their own, so a merged final
+# item is invisible in that shape: the count is what has to notice the missing
+# comma. This fixture puts two lowercase names in the middle, where the four
+# item total is the only thing that carries it over the threshold, and the
+# fourth item exists only if the conjunction is counted as a boundary.
+expect_reason_outcome four_items_without_a_serial_comma reject "$enumeration_message" \
+    "$(build_repository_named enumeration_four_no_serial NOTES.md \
+        "# Notes
+
+- Aure""lia, sprig, tanner and Nem""ora. Quick, but constrained by the grid.")"
+
+expect_reason_outcome enumeration_joined_by_or reject "$enumeration_message" \
+    "$(build_repository_named enumeration_or NOTES.md \
+        "# Notes
+
+- Aure""lia, Bas""tion, Corv""ane or Nem""ora. Capable, but bound to one grid.")"
+
+# The counting has to survive the serial comma without inflating the total. A
+# comma immediately followed by the conjunction is two boundaries in a row, and
+# an empty field between them would push a three-item list over the four-item
+# threshold - which is correct prose being reported for its punctuation.
+expect_reason_outcome three_items_with_a_serial_comma accept "$enumeration_message" \
+    "$(build_repository_named enumeration_serial_three NOTES.md \
+        "# Notes
+
+The columns are Name, Size, and date. Their order is configurable, but the
+default is by name.")"
+
+# --- A peer named by its standing rather than by its name -------------------
+# The qualifier carries the claim: calling an implementation established or
+# mainstream places it among peers. The narrow qualifier set is what keeps
+# ordinary prose usable, so both directions are pinned.
+readonly peer_standing_message='a decision is attributed to a peer implementation'
+readonly exemption_floor_message='the archived line this rule exempts is no longer in the record'
+
+expect_reason_outcome decision_taken_from_a_peer reject "$peer_standing_message" \
+    "$(build_repository_named peer_standing_taken NOTES.md \
+        "The escaping is pinned by an establi""shed implementa""tion.")"
+
+expect_reason_outcome behaviour_matched_to_a_peer reject "$peer_standing_message" \
+    "$(build_repository_named peer_standing_matched NOTES.md \
+        "The palette filters rows as mainstr""eam applica""tions do.")"
+
+# The wrapping case, which is the reason this rule exists. The derivation verb
+# is on the line above and the qualifier and its noun sit together below, so a
+# line-oriented rule anchored on the verb sees neither half.
+expect_reason_outcome peer_standing_across_a_wrapped_line reject "$peer_standing_message" \
+    "$(build_repository_named peer_standing_wrapped NOTES.md \
+        "The escaping is therefore pinned by expectations taken from an
+establi""shed implementa""tion rather than from this one.")"
+
+# The discriminating direction. Interoperability prose says what other software
+# can read, and it is a specification statement this repository has to be able
+# to write. "Other" and "another" are deliberately outside the qualifier set.
+expect_reason_outcome interoperability_prose_about_other_software accept "$peer_standing_message" \
+    "$(build_repository_named peer_standing_interop NOTES.md \
+        "A divergent escaping would produce a private cache that no other
+application can find.")"
+
+expect_reason_outcome policy_prose_naming_what_it_forbids accept "$peer_standing_message" \
+    "$(build_repository_named peer_standing_policy NOTES.md \
+        "Do not identify another project of the same kind, and do not present a
+decision as measured against another application.")"
+
+# The exemption floor. One archived line is excused by its exact text because
+# published entries cannot be reworded; the floor fails when the record is
+# present and that line is not, so the exemption cannot outlive its subject.
+exemption_present_root="$workspace/exemption-present"
+mkdir -p "$exemption_present_root/docs/devlog"
+git init -q "$exemption_present_root"
+git -C "$exemption_present_root" config user.name owner
+git -C "$exemption_present_root" config user.email "$owner_identity"
+git -C "$exemption_present_root" config commit.gpgsign false
+printf 'The escaping is therefore pinned by expectations taken from an\n%s\n' \
+    "establi""shed implementa""tion rather than from this one." \
+    >"$exemption_present_root/docs/devlog/2026-07.md"
+git -C "$exemption_present_root" add docs/devlog/2026-07.md
+git -C "$exemption_present_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add an archived record'
+
+expect_reason_outcome archived_line_is_exempted accept "$peer_standing_message" \
+    "$exemption_present_root"
+
+# The exemption excuses one exact line, not the file it sits in and not any
+# line resembling it. This record holds the exempted line, a longer line that
+# contains it, and an unrelated attribution - and the last two must both be
+# reported while the first stays excused.
+exemption_scope_root="$workspace/exemption-scope"
+mkdir -p "$exemption_scope_root/docs/devlog"
+git init -q "$exemption_scope_root"
+git -C "$exemption_scope_root" config user.name owner
+git -C "$exemption_scope_root" config user.email "$owner_identity"
+git -C "$exemption_scope_root" config commit.gpgsign false
+{
+    printf 'The escaping is therefore pinned by expectations taken from an\n'
+    printf '%s\n' "establi""shed implementa""tion rather than from this one."
+    printf 'Note that the %s\n' \
+        "establi""shed implementa""tion rather than from this one."
+    printf 'The palette filters rows as %s do.\n' "mainstr""eam applica""tions"
+} >"$exemption_scope_root/docs/devlog/2026-07.md"
+git -C "$exemption_scope_root" add docs/devlog/2026-07.md
+git -C "$exemption_scope_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add an archived record'
+
+expect_reason_outcome exemption_covers_one_exact_line reject "$peer_standing_message" \
+    "$exemption_scope_root"
+
+# The longer line on its own. In the record above it is reported alongside an
+# unrelated attribution, so that record cannot tell an exemption widened to a
+# substring from one held to the exact line - something is reported either way.
+# Here the exempted line and a line containing it are all there is, so the only
+# way the guard can stay silent is by excusing text it was never given.
+exemption_substring_root="$workspace/exemption-substring"
+mkdir -p "$exemption_substring_root/docs/devlog"
+git init -q "$exemption_substring_root"
+git -C "$exemption_substring_root" config user.name owner
+git -C "$exemption_substring_root" config user.email "$owner_identity"
+git -C "$exemption_substring_root" config commit.gpgsign false
+{
+    printf '%s\n' "establi""shed implementa""tion rather than from this one."
+    printf 'Note that the %s\n' \
+        "establi""shed implementa""tion rather than from this one."
+} >"$exemption_substring_root/docs/devlog/2026-07.md"
+git -C "$exemption_substring_root" add docs/devlog/2026-07.md
+git -C "$exemption_substring_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add an archived record'
+
+expect_reason_outcome exemption_does_not_cover_a_longer_line reject "$peer_standing_message" \
+    "$exemption_substring_root"
+
+exemption_absent_root="$workspace/exemption-absent"
+mkdir -p "$exemption_absent_root/docs/devlog"
+git init -q "$exemption_absent_root"
+git -C "$exemption_absent_root" config user.name owner
+git -C "$exemption_absent_root" config user.email "$owner_identity"
+git -C "$exemption_absent_root" config commit.gpgsign false
+printf 'An archived entry with nothing in it for the exemption to excuse.\n' \
+    >"$exemption_absent_root/docs/devlog/2026-07.md"
+git -C "$exemption_absent_root" add docs/devlog/2026-07.md
+git -C "$exemption_absent_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add an archived record'
+
+expect_reason_outcome exemption_without_its_subject reject "$exemption_floor_message" \
+    "$exemption_absent_root"
+
+# The same absence without any archived record at all must stay acceptable, or
+# every fixture in this file would fail for want of a file it never had.
+expect_reason_outcome no_archived_record_at_all accept "$exemption_floor_message" \
+    "$(build_repository_named exemption_no_record NOTES.md \
+        "Ordinary prose with no archived record beside it.")"
+
 # --- The tracked dependency citations, as they actually stand ---------------
 # The strongest accepting case available: the real tracked files that cite
 # upstream dependencies, copied verbatim into a throwaway repository and put to
@@ -908,7 +1076,7 @@ fi
 
 # A floor on the suite's own reporting. A scenario that stops running leaves
 # the remaining ones green, and the summary line below would still be printed.
-readonly expected_scenarios=80
+readonly expected_scenarios=95
 if ((checked != expected_scenarios)); then
     printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
         "$checked" "$expected_scenarios" >&2

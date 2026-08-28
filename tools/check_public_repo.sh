@@ -252,6 +252,80 @@ report_matches "derivative or comparative framing is tracked" \
     '(inspired by|inspiration (from|for)|takes? (its )?cues? from|borrowed from|lifted from|cribbed from|ported from|a port of|modell?ed (on|after)|patterned after|in the style of|re-?implementation|re-?implements|drop-in (clone|replacement)|feature parity with|prior art|competitors?\b|(competing|rival) (projects?|applications?|implementations?|file managers?)|\bfork of\b|(unlike|similar to|compared to|compared with|better than|worse than|nicer than|cleaner than|faster than) +(other|another|existing|most|many|comparable|competing|rival|third-party)\b|\bas (do )?(other|most|many) +[a-z-]+ +(file managers?|projects?|applications?|tools?|implementations?)|\b(most|many|other|another|existing|mainstream|popular|established|conventional|competing|rival|comparable) +([a-z-]+ +)?file managers?\b|\b(other|established|existing|mainstream) +(desktop|terminal) +(implementations?|applications?)\b)' \
     -- "${self_excluding_pathspec[@]}"
 
+# A peer implementation named by its standing rather than by its name. The rule
+# above reaches this shape only through the spelling
+# "<qualifier> <desktop|terminal> <implementation>", and a line wrapped between
+# the qualifier and the noun leaves the rest of the phrase alone on a line the
+# rule cannot match. One published line in this repository is exactly that: the
+# qualifier and its noun sit together, the derivation verb is on the line above,
+# and the corpus scan reported nothing.
+#
+# The qualifier set is what does the work, and it is deliberately narrower than
+# the one above. "Other" and "another" are ordinary English and appear in
+# correct prose here - interoperability statements about what other software can
+# read, the policy's own description of what it forbids, and the license text -
+# so widening the noun phrase to admit them reports six lines of correct prose,
+# three of them in published entries that can no longer be edited. The words
+# below have no such use: calling an implementation established, mainstream,
+# conventional, comparable or popular is a claim about its standing among peers,
+# which is the claim this rule exists to refuse. Measured over the corpus the
+# narrow set reports exactly one line, and that line is the live instance.
+peer_standing_re='\b(established|mainstream|conventional|comparable|popular) +(([a-z-]+) +)?(implementations?|applications?|programs?|tools?|projects?)\b'
+
+# That one line is in the published archive, where entries are immutable by
+# rule: it cannot be reworded, so the rule would stand red over text nobody may
+# edit, and a permanently red gate is one that gets deleted. The correction is
+# published as a new dated entry instead, and the archived line is exempted
+# here by its exact text.
+#
+# The cost is stated rather than hidden. Recording the exemption necessarily
+# writes the refused phrase into this file, and this file is the one the corpus
+# scan excludes, so the phrase lives in the only place it cannot be caught. The
+# alternative is a rule that provably misses a live published instance, which
+# is worse. Two floors keep the exemption from becoming a habit: it must still
+# match something, so it cannot outlive the text it excuses, and it is a single
+# exact line rather than a pattern, so it cannot quietly widen. Anything else
+# the rule finds is reported.
+exempt_published_line='established implementation rather than from this one.'
+
+peer_standing_scan="$(
+    guard_corpus_grep -nI -iE "$peer_standing_re" \
+        -- "${self_excluding_pathspec[@]}" 2>/dev/null || true
+)"
+exempted_published_matches=0
+peer_standing_matches=""
+while IFS= read -r match_line; do
+    [[ -n "$match_line" ]] || continue
+    match_path="${match_line%%:*}"
+    match_text="${match_line#*:}"
+    match_text="${match_text#*:}"
+    if [[ "$match_path" == docs/devlog/* &&
+        "$match_text" == "$exempt_published_line" ]]; then
+        exempted_published_matches=$((exempted_published_matches + 1))
+        continue
+    fi
+    peer_standing_matches+="${match_line}"$'\n'
+done <<<"$peer_standing_scan"
+
+# The floor applies wherever the archived record exists. A corpus with no
+# archive holds nothing for the exemption to excuse - that is every throwaway
+# fixture the accompanying self-test builds - and demanding the line there
+# would fail the guard for the absence of a file the corpus never claimed to
+# have. Where the archive is present the line must be too, so the exemption
+# cannot outlive the text it was written for.
+archived_record_paths="$(
+    guard_corpus_list 'docs/devlog/*' | tr '\0' '\n' | grep -c . || true
+)"
+if ((archived_record_paths > 0 && exempted_published_matches == 0)); then
+    printf 'public_repository_guard: the archived line this rule exempts is no longer in the record, so the exemption excuses nothing\n' >&2
+    failed=1
+fi
+if [[ -n "$peer_standing_matches" ]]; then
+    printf 'public_repository_guard: a decision is attributed to a peer implementation\n%s' \
+        "$peer_standing_matches" >&2
+    failed=1
+fi
+
 # Placing this project within a field. The rule above catches a sentence that
 # names or characterises a peer; this one catches the paragraph that needs no
 # peer at all - a survey of a field, a gap identified inside it, and this
@@ -326,14 +400,22 @@ BEGIN {
     lowercase = "[a-z][A-Za-z0-9_+-]*( \\([^)]*\\))?"
     item = "(" capitalised "|" lowercase ")"
     separator = ",[ \t]*(and |or )?"
+    conjunction = "[ \t]+(and|or)[ \t]+"
+    join = "(" separator "|" conjunction ")"
     closing = "([.;][ \t]+[A-Z]|[.;]?[ \t]*$)"
-    enumeration = item separator item separator item "(" separator item ")*" closing
+    enumeration = item separator item join item "(" join item ")*" closing
     limitation = "(^|[^A-Za-z])(but|though|however|yet|whereas|constrained|tied to|limited|restricted)([^A-Za-z]|$)"
+    item_boundary = ",|[ \t]+(and|or)[ \t]+"
 }
 function count_items(run, capitals_only,   fields, index_, total) {
     total = 0
-    for (index_ = split(run, fields, ","); index_ > 0; index_--) {
+    for (index_ = split(run, fields, item_boundary); index_ > 0; index_--) {
         sub(/^[ \t]*(and |or )?/, "", fields[index_])
+        # A comma immediately followed by the conjunction splits twice and
+        # leaves an empty field between them. Counting it would inflate the
+        # item total by one for every serial comma in the run, which is the
+        # difference between a three-item list and the four-item threshold.
+        if (fields[index_] ~ /^[ \t]*$/) continue
         if (!capitals_only || fields[index_] ~ /^[A-Z]/) total++
     }
     return total
