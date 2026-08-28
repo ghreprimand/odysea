@@ -25,6 +25,95 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- Tracked text describes this project and no other
+
+Tracked text states what OdySea does, why, how it was verified, and where it
+falls short. It does not identify another project of the same kind, and it does
+not present a decision as taken from, measured against, or in contest with one.
+Upstream dependencies are the opposite case: a toolkit, a build system, a
+compiler, a bundled typeface and its license are named as dependencies because
+a reader needs to know what the build requires.
+
+`public_repository_guard` now enforces that category. The rule it enforces is
+the category itself, never a list of instances. A tracked deny-list of names
+would publish those names in the file written to suppress them, and would also
+disclose that the suppression exists; hashing the list fixes neither, because a
+short known name falls to a wordlist and the list's presence is itself the
+signal. The only name the guard carries is this repository's own forge owner,
+which is the one owner a tracked hosted-source reference may name.
+
+Three rules. A hosted-source reference is a forge host followed by a separator
+and an owner; any owner but this repository's own is refused. Derivative and
+rivalry framing is a curated phrase set, each phrase stating a relationship to
+another project rather than a property of this one. A section heading whose
+subject is crediting or surveying other work is refused; `Attribution` is
+deliberately outside that set, because commit attribution is a policy this
+repository documents under that name.
+
+The tuning matters more than the patterns, because a check that reports correct
+prose is one contributors learn to route around. Three candidate rules were
+measured against the tracked corpus and cut back:
+
+- A bare two-component path-shaped token was dropped entirely. The corpus holds
+  eighty-three distinct ones, and they are overwhelmingly real paths and
+  either-or prose: build directory names, a branch and its remote, a pair of
+  keys, a pair of view modes. Nothing distinguishes those from an owner and a
+  repository, so nothing is matched. The hosted-source forms are.
+- A weak comparative is matched only in the construction that makes it a
+  comparison, with the comparative word immediately governing a set this
+  project is being placed within or against. On its own it is ordinary
+  engineering prose: a watch is incremental rather than polling, a load is
+  quicker than the linear scan it replaced.
+- The category noun is not matched at all on its own. Thumbnail cache
+  interoperability is defined by what the surrounding desktop produces, and
+  saying so is a specification statement that the record and two core sources
+  already make.
+
+Two scoping decisions are stated rather than left implicit. The vendored
+dependency tree is excluded, because the files there are an upstream's own
+provenance and license text reproduced verbatim as its terms require; that is a
+path scope, and the identical text one directory outside it is still refused.
+And the search is line-oriented, so a phrase broken across a wrapped line is
+not matched — a gap in the pattern rather than in the rule.
+
+The own-owner filter earned a floor of its own. Its first form used a delimiter
+that collides with the alternation inside the expression it carries. The filter
+failed to compile, printed nothing, and the surrounding pipeline ended in a
+tolerated failure, so a corpus that had never been judged reported as clean.
+The filter now runs on its own with its exit status read, and a filter that
+cannot compile fails the guard by name instead of passing silently.
+
+The self-test grew from twenty-five scenarios to fifty-one and gained a floor
+on its own count, so a scenario that stops reporting fails the suite by name
+rather than leaving the rest green. Every planted violation is assembled from
+adjacent string literals at run time, for the same reason the at-sign and the
+conflict markers are: the file is scanned by the guard like any other tracked
+source, and a literal violation in it would need exactly the file-level
+exclusion this guard is built to avoid. The strongest accepting scenario copies
+the real tracked files that cite dependencies — the readme, the contributor
+guide, the stack notes, and the bundled typeface's license and provenance —
+into a throwaway repository and requires the guard to accept them unchanged. A
+paraphrase would only have proved that the rules accept a paraphrase, so the
+fixture carries a floor on how many of those files it found.
+
+Twenty mutations were planted, each diffed before it ran so a failed edit could
+not read as a survivor. Nineteen were caught, naming the scenario that caught
+them; one survived and is equivalent. Removing the filter's failure floor while
+the filter still compiles changes nothing observable, because the floor is only
+reachable together with an expression that fails — the paired mutation, which
+breaks both, is caught. The rest cover each rule silently disabled, each rule
+widened until it reports correct prose, the owner constant emptied, the
+separator loosened until a bare host reads as a repository, the path scope
+turned into a name pardon, a scenario stopped, and the dependency fixture
+losing a file.
+
+The known gap is deliberate. The guard enforces a category, so a name that
+appears without a hosted-source reference, without derivative framing, and
+without a crediting heading is not detected. Closing that would mean tracking
+the names, which is the outcome the rule exists to prevent.
+
+---
+
 ## 2026-08-28 -- Give the live development record room before the ceiling
 
 The live development record was approaching its tracked-file line ceiling. Its

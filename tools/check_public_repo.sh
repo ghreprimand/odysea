@@ -157,6 +157,108 @@ report_matches "process-adjacent operator phrasing is tracked" \
     "\\boperator'?s? (approval|approved|asked|decision|instruction|request|review)" \
     -- "${self_excluding_pathspec[@]}"
 
+# --- Third-party project references and derivative framing ------------------
+#
+# Tracked text describes this project's own behaviour, decisions, verification,
+# and gaps. It does not identify another project of the same kind, and it does
+# not present a decision as taken from, measured against, or in contest with
+# one. Upstream dependencies are the opposite case: a toolkit, a build system,
+# a compiler, a bundled typeface and its license are cited as dependencies,
+# and naming them is required rather than avoided.
+#
+# The rules below enforce that category without enumerating instances. A
+# deny-list of specific names would publish those names in a tracked file and
+# would additionally advertise that the suppression exists; hashing them fixes
+# neither, because a short known name falls to a wordlist. Nothing here names a
+# project. The one name below is this repository's own forge owner, which is
+# the single owner a tracked forge reference may carry.
+own_forge_owner='ghreprimand'
+
+# Without an owner the removal step below would strip the host and path prefix
+# from every reference and the scan would permit all of them. That is the shape
+# of a check that has stopped running, so it is refused rather than assumed.
+if [[ -z "$own_forge_owner" ]]; then
+    printf 'public_repository_guard: no forge owner is configured, so every forge reference would be permitted\n' >&2
+    failed=1
+fi
+
+# A hosted-source reference is a host followed by an owner. The separator is
+# required, which is what keeps the account-scoped no-reply domain - a bare
+# host with nothing after it - from reading as a repository reference.
+forge_host_re='((github|gitlab|codeberg|bitbucket|sourceforge|launchpad|gitee|savannah)\.(com|org|net|io|dev|gnu\.org)|(git\.)?sr\.ht)'
+forge_reference_re="${forge_host_re}[/:][A-Za-z0-9_.-]+"
+own_forge_reference_re="${forge_host_re}[/:]${own_forge_owner}\\b"
+
+# The vendored dependency tree is excluded because the files in it are the
+# upstream's own provenance and license text, reproduced verbatim as their
+# terms require. That is a stated limit, not a general exemption: a reference
+# reaches that tree only by importing a dependency, and it is reviewed there
+# as part of the import.
+#
+# The line is scanned again with this repository's own references removed, for
+# the same reason the at-sign carve-out rescans: a third-party reference
+# sharing a line with our own must still be reported.
+#
+# The removal step is run on its own and its exit status is read, rather than
+# being buried in a pipeline ending in `|| true`. A filter that fails to
+# compile prints nothing, and nothing is indistinguishable from a clean corpus
+# once the failure has been swallowed - which is how a delimiter collision in
+# this very expression first passed for a green run.
+forge_scan="$(
+    guard_corpus_grep -nI -E "$forge_reference_re" \
+        -- "${self_excluding_pathspec[@]}" '!app/third_party/*' 2>/dev/null || true
+)"
+if ! forge_scan_without_own="$(
+    printf '%s' "$forge_scan" | sed -E "s#${own_forge_reference_re}##g"
+)"; then
+    printf 'public_repository_guard: the own-owner forge filter failed to run, so no reference was judged\n' >&2
+    failed=1
+    forge_scan_without_own=""
+fi
+third_party_forge_matches="$(
+    printf '%s' "$forge_scan_without_own" | grep -E "$forge_reference_re" || true
+)"
+if [[ -n "$third_party_forge_matches" ]]; then
+    printf 'public_repository_guard: a third-party hosted-source reference is tracked\n%s\n' \
+        "$third_party_forge_matches" >&2
+    failed=1
+fi
+
+# Derivative and rivalry framing. Every phrase here states a relationship to
+# another project rather than a property of this one, which is why the set can
+# be matched anywhere in tracked text without a scope.
+#
+# The weak comparatives are the reason this rule is written the way it is.
+# "unlike", "compared to" and "similar to" all have ordinary technical uses in
+# prose about this project's own behaviour, and the category noun is worse: the
+# thumbnail cache is interoperable precisely because its escaping matches what
+# other desktop file managers produce, and saying so is a specification
+# statement. Matching either on its own would report correct prose several
+# times over, and a check that reports correct prose is one people route
+# around. So a weak comparative is matched only in the construction that makes
+# it a comparison - the comparative immediately governing a set this project is
+# being placed within or against.
+#
+# One limitation, stated rather than hidden: the search is line-oriented, so a
+# phrase broken across a wrapped line is not matched. Wrapping cannot be
+# relied on to hide anything, because the phrase has to survive an edit to stay
+# wrapped, but it is a gap in the pattern rather than in the rule.
+report_matches "derivative or comparative framing is tracked" \
+    guard_corpus_grep -nI -iE \
+    '(inspired by|inspiration (from|for)|takes? (its )?cues? from|borrowed from|lifted from|cribbed from|ported from|a port of|modell?ed (on|after)|patterned after|in the style of|re-?implementation|re-?implements|drop-in replacement|feature parity with|prior art|competitors?\b|(competing|rival) (projects?|applications?|implementations?|file managers?)|\bfork of\b|(unlike|similar to|compared to|compared with|better than|worse than|nicer than|cleaner than|faster than) +(other|another|existing|most|many|comparable|competing|rival|third-party)\b|\bas (do )?(other|most|many) +[a-z-]+ +(file managers?|projects?|applications?|tools?|implementations?))' \
+    -- "${self_excluding_pathspec[@]}"
+
+# A section that exists to credit or to survey other work. The heading is the
+# whole signal: the words below are unremarkable in running prose - one of them
+# appears in this repository as an ordinary verb - and only become a survey of
+# other projects when they head a section. "Attribution" is deliberately absent
+# because commit attribution is a policy this project documents under that
+# name.
+report_matches "a credits or prior-work section heading is tracked" \
+    guard_corpus_grep -nI -iE \
+    '^#{1,6}[[:space:]]+(credits?|acknowledge?ments?|inspirations?|thanks|related (projects?|work)|see also|alternatives|prior work|prior art|comparisons?)[[:space:]]*$' \
+    -- "${self_excluding_pathspec[@]}"
+
 # Attribution must use the account-scoped GitHub no-reply form
 # <numeric-account-id>+<login>@users.noreply.github.com. Requiring the numeric
 # account prefix is what makes the check meaningful: a bare local part such as

@@ -418,8 +418,10 @@ release artifact as published material.
 - Keep `public_repository_guard` green. It rejects tracked secret-file names,
   private-key and common token signatures, personal home paths, private-network
   references, internal workflow narration, unsafe commit attribution,
-  `Co-Authored-By` trailers, and at-signs in tracked text. Public clone links use
-  HTTPS so email-like syntax is unnecessary.
+  `Co-Authored-By` trailers, at-signs in tracked text, hosted-source references
+  to an owner other than this repository's, derivative or rivalry framing, and
+  a section heading whose subject is crediting or surveying other work. Public
+  clone links use HTTPS so email-like syntax is unnecessary.
 - The at-sign ban is lifted for shell expansion syntax, which cannot be written
   without it: the array-at subscript inside a parameter expansion, the braced
   positional form, and the bare positional form, which covers both the quoted
@@ -435,6 +437,41 @@ release artifact as published material.
   `public_repository_guard_self_test` holds both directions, since an
   unexercised carve-out would let the guard keep reporting success after the
   exception had swallowed the rule.
+
+### Write about this project, not about others
+
+Tracked text — commits, the record, documentation, code comments, test names,
+and fixtures — states what OdySea does, why, how it was verified, and where it
+falls short. Write every feature from the requirement it satisfies.
+
+- Do not identify another project of the same kind, a derivative of one, or the
+  accounts behind either. Reading other open-source work is a normal way to
+  learn a problem; the decision that comes out of it is this project's own and
+  is written that way.
+- Do not present a decision as taken from, measured against, or in contest with
+  another project, and do not add a section that credits or surveys other work.
+- Cite upstream dependencies freely. A toolkit, a build system, a compiler, a
+  bundled typeface and its license are named because a reader needs to know
+  what the build requires, and their license terms are honoured in full.
+- A hosted-source reference may name only this repository's own owner. The
+  vendored dependency tree is the one exception, because the files there are an
+  upstream's own provenance and license text reproduced verbatim as its terms
+  require; the identical text one directory outside that tree is refused.
+
+`public_repository_guard` enforces the category rather than a list of
+instances, and deliberately so: a tracked list of names would publish those
+names in the file written to suppress them, and would also disclose that the
+suppression exists. Hashing such a list fixes neither, because a short known
+name falls to a wordlist. The consequence is a stated gap — a name carried
+without a hosted-source reference, without derivative framing, and without a
+crediting heading is not detected, so the rule is yours to keep, not only the
+guard's.
+
+Weak comparatives are ordinary engineering prose and stay usable. The guard
+matches a comparative only where it immediately governs a set this project is
+being placed within or against, and it does not match the category noun at all:
+saying that the thumbnail cache escapes paths the way the surrounding desktop
+does is a specification statement, and it is meant to keep working.
 
 ## Engineering record
 

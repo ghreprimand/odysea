@@ -381,8 +381,288 @@ expect_marker_outcome clean_document accept \
 
 Ordinary prose with nothing marker-shaped in it.")"
 
+# --- Third-party project references and derivative framing ------------------
+# Tracked text describes this project's own behaviour. It must not identify
+# another project of the same kind, and it must not present a decision as taken
+# from or measured against one. Upstream dependencies are the opposite case and
+# must keep passing, so both directions are pinned here.
+#
+# Every planted phrase is assembled from adjacent string literals rather than
+# written out. This file is scanned by the guard like any other tracked source,
+# and a literal violation here would have to be excused by a file-level
+# exclusion - the same exclusion the at-sign carve-out above was written to
+# avoid. The accepted fixtures are written literally, because the rules permit
+# them: this file's own tracked form is part of what it demonstrates.
+readonly forge_host="git""hub.com"
+readonly other_forge_host="git""lab.com"
+readonly third_party_slug="someone/some-other-thing"
+
+readonly forge_message='a third-party hosted-source reference is tracked'
+readonly framing_message='derivative or comparative framing is tracked'
+readonly heading_message='a credits or prior-work section heading is tracked'
+
+# Runs the guard in one throwaway repository and requires either acceptance or
+# rejection for a named reason. Requiring the reason is what stops a scenario
+# passing because an unrelated rule fired on the fixture.
+expect_reason_outcome() {
+    local scenario="$1"
+    local expectation="$2"
+    local reason="$3"
+    local root="$4"
+
+    local output=""
+    local exit_status=0
+    output="$(cd "$root" && bash "$guard" 2>&1)" || exit_status=$?
+
+    checked=$((checked + 1))
+    case "$expectation" in
+        accept)
+            if ((exit_status != 0)) || [[ "$output" != *"$success_message"* ]]; then
+                printf 'public_repository_guard_self_test: %s should be accepted, but the guard said: %s\n' \
+                    "$scenario" "$output" >&2
+                status=1
+            fi
+            ;;
+        reject)
+            if ((exit_status == 0)); then
+                printf 'public_repository_guard_self_test: %s should be rejected\n' \
+                    "$scenario" >&2
+                status=1
+            elif [[ "$output" != *"$reason"* ]]; then
+                printf 'public_repository_guard_self_test: %s should be rejected for "%s", but the guard said: %s\n' \
+                    "$scenario" "$reason" "$output" >&2
+                status=1
+            fi
+            ;;
+    esac
+}
+
+# A throwaway repository holding files at caller-chosen paths, so a scenario
+# can put its fixture inside the vendored dependency tree and prove the scope
+# is a path scope rather than a blanket pardon.
+build_repository_at_paths() {
+    local name="$1"
+    shift
+
+    local root="$workspace/$name"
+    mkdir -p "$root"
+    git init -q "$root"
+    git -C "$root" config user.name owner
+    git -C "$root" config user.email "$owner_identity"
+    git -C "$root" config commit.gpgsign false
+
+    while (($# > 1)); do
+        local file_path="$1"
+        local body="$2"
+        shift 2
+        mkdir -p "$root/$(dirname "$file_path")"
+        printf '%s\n' "$body" >"$root/$file_path"
+        git -C "$root" add "$file_path"
+    done
+
+    git -C "$root" -c core.hooksPath=/dev/null commit -q -m 'Add files'
+    printf '%s' "$root"
+}
+
+# The hosted-source rule. Both reference spellings, and a second forge host, so
+# the rule is not resting on one vendor's domain.
+expect_reason_outcome forge_url_reference reject "$forge_message" \
+    "$(build_repository_named forge_url NOTES.md \
+        "Details live at https://${forge_host}/${third_party_slug}.")"
+
+expect_reason_outcome forge_scp_reference reject "$forge_message" \
+    "$(build_repository_named forge_scp NOTES.md \
+        "Cloned from ${forge_host}:${third_party_slug}.git")"
+
+expect_reason_outcome second_forge_host reject "$forge_message" \
+    "$(build_repository_named forge_second NOTES.md \
+        "Details live at https://${other_forge_host}/${third_party_slug}.")"
+
+# This repository's own owner is the one owner a reference may carry, which is
+# what keeps the installation instructions committable.
+expect_reason_outcome own_owner_reference accept "$forge_message" \
+    "$(build_repository_named forge_own NOTES.md \
+        "Clone https://${forge_host}/ghreprimand/odysea.git and build it.")"
+
+# Our own reference sharing a line with a third-party one. A filter that
+# stopped at the first permitted match, or that pardoned the whole line once
+# one appeared, would miss this.
+expect_reason_outcome third_party_beside_own reject "$forge_message" \
+    "$(build_repository_named forge_beside NOTES.md \
+        "Clone https://${forge_host}/ghreprimand/odysea.git; see also https://${forge_host}/${third_party_slug}.")"
+
+# The account-scoped no-reply domain is a bare host with no owner after it, and
+# it appears throughout the attribution policy. Requiring the separator is what
+# keeps that from reading as a repository reference.
+expect_reason_outcome noreply_domain_is_not_a_reference accept "$forge_message" \
+    "$(build_repository_named forge_noreply NOTES.md \
+        "Attribution uses the account-scoped users.noreply.${forge_host} form.")"
+
+# The vendored dependency tree carries the upstream's own provenance and
+# license text, reproduced as its terms require, so a reference there passes.
+expect_reason_outcome vendored_dependency_reference accept "$forge_message" \
+    "$(build_repository_at_paths forge_vendored \
+        app/third_party/typeface/LICENSE.txt \
+        "Upstream project: https://${forge_host}/${third_party_slug}")"
+
+# The same text one directory outside that tree is still refused, which is what
+# makes the exclusion a path scope instead of a general exemption.
+expect_reason_outcome reference_outside_vendored_tree reject "$forge_message" \
+    "$(build_repository_at_paths forge_outside \
+        app/third_party_notes.md \
+        "Upstream project: https://${forge_host}/${third_party_slug}")"
+
+# Derivative framing: a decision presented as taken from somewhere else.
+expect_reason_outcome derivation_phrase reject "$framing_message" \
+    "$(build_repository_named framing_derivation NOTES.md \
+        "The outline treatment was inspir""ed by an earlier design.")"
+
+expect_reason_outcome provenance_phrase reject "$framing_message" \
+    "$(build_repository_named framing_provenance NOTES.md \
+        "The undo journal was port""ed from an earlier implementation.")"
+
+# Rivalry framing: a relationship of contest or descent rather than a property
+# of this project.
+expect_reason_outcome descent_phrase reject "$framing_message" \
+    "$(build_repository_named framing_descent NOTES.md \
+        "This shell began as a fork ""of an earlier browser.")"
+
+expect_reason_outcome rivalry_noun reject "$framing_message" \
+    "$(build_repository_named framing_rivalry NOTES.md \
+        "No competi""tor ships this transfer behaviour.")"
+
+expect_reason_outcome survey_phrase reject "$framing_message" \
+    "$(build_repository_named framing_survey NOTES.md \
+        "The prior ""art for bulk rename is uneven.")"
+
+expect_reason_outcome parity_phrase reject "$framing_message" \
+    "$(build_repository_named framing_parity NOTES.md \
+        "The archive surface reaches feature pari""ty with what is already available.")"
+
+# The comparative construction: the comparison word immediately governing a
+# set this project is being placed against.
+expect_reason_outcome comparative_construction reject "$framing_message" \
+    "$(build_repository_named framing_comparative NOTES.md \
+        "Directory loads are faster th""an most existing implementations.")"
+
+expect_reason_outcome comparative_unlike reject "$framing_message" \
+    "$(build_repository_named framing_unlike NOTES.md \
+        "Unlike ""other file managers, the trash path is transactional.")"
+
+# --- The discriminating direction -------------------------------------------
+# These must all be accepted. A rule that reported them would be reporting
+# correct prose, and a rule that reports correct prose is one people route
+# around rather than obey.
+
+# A weak comparative used about this project's own behaviour.
+expect_reason_outcome weak_comparative_in_technical_prose accept "$framing_message" \
+    "$(build_repository_named framing_weak NOTES.md \
+        "The watch is incremental, unlike the polling approach it replaced.
+Directory loads are faster than the linear scan they replaced.
+Selection behaves compared to the anchor rather than the cursor.")"
+
+# The category noun in a specification statement. Cache interoperability is
+# defined by what the surrounding desktop produces, and saying so is required.
+expect_reason_outcome interoperability_statement accept "$framing_message" \
+    "$(build_repository_named framing_interop NOTES.md \
+        "The escaping matches what other desktop file managers produce, because
+a cache no other application can find is not an interoperable one.")"
+
+# Dependency names are cited, not avoided.
+expect_reason_outcome dependency_citation accept "$framing_message" \
+    "$(build_repository_named framing_dependency NOTES.md \
+        "Built with CMake and Ninja against Qt 6, compiled by Clang or GCC, and
+bundling one typeface under its own open font license.")"
+
+# The heading rule. The words below are unremarkable in running prose and only
+# become a survey of other work when they head a section.
+expect_reason_outcome credits_heading reject "$heading_message" \
+    "$(build_repository_named heading_credits NOTES.md \
+        "# Notes
+
+## Credi""ts")"
+
+expect_reason_outcome acknowledgements_heading reject "$heading_message" \
+    "$(build_repository_named heading_acknowledgements NOTES.md \
+        "# Notes
+
+## Acknowledge""ments")"
+
+expect_reason_outcome related_work_heading reject "$heading_message" \
+    "$(build_repository_named heading_related NOTES.md \
+        "# Notes
+
+### Related ""work")"
+
+# The same word as an ordinary verb in running prose. This exact use is in the
+# tracked corpus, so a rule matching the bare word would refuse it.
+expect_reason_outcome heading_word_in_running_prose accept "$heading_message" \
+    "$(build_repository_named heading_prose NOTES.md \
+        "The assertion must hold on a surface this test credits.")"
+
+# Commit attribution is a policy this project documents under that name, so the
+# heading is deliberately outside the rule.
+expect_reason_outcome attribution_heading_is_permitted accept "$heading_message" \
+    "$(build_repository_named heading_attribution NOTES.md \
+        "# Notes
+
+## Attribution
+
+Commits carry the repository owner's account-scoped no-reply identity.")"
+
+# --- The tracked dependency citations, as they actually stand ---------------
+# The strongest accepting case available: the real tracked files that cite
+# upstream dependencies, copied verbatim into a throwaway repository and put to
+# the guard. A paraphrase would only prove the rules accept a paraphrase.
+dependency_corpus_root="$workspace/dependency-corpus"
+mkdir -p "$dependency_corpus_root"
+git init -q "$dependency_corpus_root"
+git -C "$dependency_corpus_root" config user.name owner
+git -C "$dependency_corpus_root" config user.email "$owner_identity"
+git -C "$dependency_corpus_root" config commit.gpgsign false
+
+readonly repository_root="$(cd "$tools_directory/.." && pwd -P)"
+dependency_files_copied=0
+for relative_path in \
+    README.md \
+    CONTRIBUTING.md \
+    docs/STACK.md \
+    app/third_party/victor-mono/OFL.txt \
+    app/third_party/victor-mono/README.md; do
+    [[ -f "$repository_root/$relative_path" ]] || continue
+    mkdir -p "$dependency_corpus_root/$(dirname "$relative_path")"
+    cp "$repository_root/$relative_path" "$dependency_corpus_root/$relative_path"
+    git -C "$dependency_corpus_root" add "$relative_path"
+    dependency_files_copied=$((dependency_files_copied + 1))
+done
+git -C "$dependency_corpus_root" -c core.hooksPath=/dev/null \
+    commit -q -m 'Add the tracked dependency citations'
+
+# A floor on the fixture itself. If those files are renamed the copy loop
+# silently produces an empty corpus, and an empty corpus passes every rule
+# above without reading a dependency citation at all.
+readonly expected_dependency_files=5
+checked=$((checked + 1))
+if ((dependency_files_copied != expected_dependency_files)); then
+    printf 'public_repository_guard_self_test: %d dependency-citation file(s) were copied, expected %d; the fixture no longer holds what it names\n' \
+        "$dependency_files_copied" "$expected_dependency_files" >&2
+    status=1
+fi
+
+expect_reason_outcome tracked_dependency_citations accept "$forge_message" \
+    "$dependency_corpus_root"
+
 if ((status != 0)); then
     exit "$status"
+fi
+
+# A floor on the suite's own reporting. A scenario that stops running leaves
+# the remaining ones green, and the summary line below would still be printed.
+readonly expected_scenarios=51
+if ((checked != expected_scenarios)); then
+    printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
+        "$checked" "$expected_scenarios" >&2
+    exit 1
 fi
 
 printf 'public_repository_guard_self_test: %d scenarios are enforced\n' \
