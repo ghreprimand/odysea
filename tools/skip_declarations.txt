@@ -13,22 +13,26 @@
 # tolerance is one of:
 #
 #   refusal     The entry may decline, and the decline is accounted rather than
-#               failed. It must print the declared-refusal line
-#               `<name>: DECL -- declined: <reason>` on its own output. This is
-#               for a policy this project enforces, not a capability a machine
-#               lacks: the compositor gates refuse to render an activating
-#               window into a session they were not given to own, and turning
-#               that red would only pressure the next reader into deleting the
-#               refusal.
+#               failed. It must print both the declared-refusal line
+#               `<name>: DECL -- declined: <reason>` and the matching proof
+#               `<name>: REFUSAL-PROOF -- isolated-compositor interlock rejected
+#               the session before renderer setup`. This is for a policy this
+#               project enforces, not a capability a machine lacks: the
+#               compositor gates refuse to render an activating window into a
+#               session they were not given to own. A bare DECL cannot turn a
+#               GPU capability hole into an accounted refusal.
 #
 #   capability  The entry states a precondition it cannot satisfy itself. A
 #               skip here is a hole in the battery's coverage and FAILS, and
 #               the precondition below is printed with the failure so the
 #               reader is told what to provide rather than being left to
-#               rediscover it. The skip return code still earns its place: the
-#               entry reports as not-run instead of as a broken test, and the
-#               reconciler is what turns the totals red, which is where every
-#               other coverage hole in this battery is decided.
+#               rediscover it. A warning also names a captured first line that
+#               shares no significant token with the precondition; this is a
+#               partial wrong-pointer check, not semantic proof. The skip return
+#               code still earns its place: the entry reports as not-run instead
+#               of as a broken test, and the reconciler is what turns the totals
+#               red, which is where every other coverage hole in this battery is
+#               decided.
 #
 # Neither tolerance is a budget. Nothing here bounds how many entries may
 # decline; the reconciler's "nothing ran" floor is what refuses a battery that

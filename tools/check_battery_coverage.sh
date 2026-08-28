@@ -18,9 +18,12 @@
 #   ran           status run: the entry executed (passed or failed; a failure
 #                 is ctest's to report, but the entry did run).
 #   declined      status notrun, declared in the registry with tolerance
-#                 `refusal`, and carrying a DECLARED REFUSAL on the entry's own
-#                 output: a line of the exact form
+#                 `refusal`, and carrying a DECLARED REFUSAL plus a proof that
+#                 the isolated-compositor policy boundary, rather than an
+#                 unavailable renderer, produced it. Its own output must carry
+#                 both exact forms
 #                     <gate-name>: DECL -- declined: <reason>
+#                    <gate-name>: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup
 #                 This is the only tolerated shortfall, and it is tolerated
 #                 because it is a policy the project enforces rather than a
 #                 capability the machine is missing. The compositor gates
@@ -33,16 +36,15 @@
 #                 `capability`. FAILS, and prints the precondition the registry
 #                 records, so the reader is told what to provide instead of
 #                 having to rediscover it from the entry's own text.
-#   UNDECLARED    status notrun with output that carries no such line. A
-#                 capability skip — "no display server reachable", "another run
-#                 holds the lock" — lands here and FAILS. This is deliberate
-#                 and is the tight half of the classification: an entry that
-#                 could not run is a hole in the battery's coverage, and the
-#                 reconciler exists to turn a hole red. Accepting any skip that
-#                 printed something would let one `echo` reopen the whole
-#                 failure class this gate was built to close.
+#   UNPROVEN      status notrun declared as a refusal but missing either the
+#                 declaration or matching interlock proof. FAILS. A capability
+#                 skip — "no display server reachable", "another run holds the
+#                 lock" — lands here when relabelled as a refusal. This is the
+#                 tight half of the classification: an entry that could not run
+#                 is a hole in the battery's coverage, and the reconciler exists
+#                 to turn a hole red. A bare DECL `echo` cannot reopen it.
 #   SILENT skip   status notrun with nothing on either stream. Fails, and is
-#                 reported separately from UNDECLARED so a log says which of
+#                 reported separately from UNPROVEN so a log says which of
 #                 the two happened.
 #   MISSING       registered but absent from the results — deselected or
 #                 vanished. Fails.
@@ -54,8 +56,8 @@
 # Everything above judges a skip after it has happened. That left the mechanism
 # itself unwatched: an entry could be given SKIP_RETURN_CODE in the build
 # configuration and the reconciler would learn of it only on the first run
-# where it actually skipped — and if that skip printed the refusal line, it was
-# tolerated from then on without anyone deciding it should be. An honest skip
+# where it actually skipped — and if that skip printed a bare refusal line, it
+# was tolerated from then on without anyone deciding it should be. An honest skip
 # and a completed check read identically in a summary, so the defect was never
 # the skip mechanism; it was a skip the reconciler did not know existed.
 #
@@ -74,14 +76,16 @@
 #     dependency that did not run — and which no output-shaped rule can see.
 #
 # WHAT THIS CANNOT CATCH, stated plainly:
-#   * It cannot judge whether a declared refusal was warranted. A gate that
-#     prints the DECL line while being merely unable to run is accepted here.
-#     What keeps that honest is elsewhere: the refusal and the inability are
-#     separate exit paths in the gate itself, with different text, and
-#     ODYSEA_REQUIRE_COMPOSITOR turns the inability red without touching the
-#     refusal.
-#   * It cannot judge whether a recorded precondition is the true one. The
-#     registry's text is printed with a failure, not tested against it.
+#   * It cannot judge whether an interlock refusal was warranted. It does,
+#     however, require the refusal path to prove that the interlock produced
+#     it. A bare DECL line cannot change an unavailable renderer into an
+#     accounted policy refusal. The refusal and inability remain separate exit
+#     paths in the gate itself, and ODYSEA_REQUIRE_COMPOSITOR turns inability
+#     red without touching an interlock refusal.
+#   * It cannot prove that a recorded precondition is the true one. It warns
+#     when the recorded precondition and the entry's first reported line have
+#     no significant token in common; that catches a wrong pointer, but is
+#     deliberately partial rather than a claim of semantic agreement.
 #   * It does not bound how many entries may decline, only that each one says
 #     so. A tree where every entry declined still fails, but through the
 #     "nothing ran" floor rather than through a decline budget.
@@ -139,10 +143,26 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-# The declared-refusal form, anchored at the start of a line. A gate name, the
-# DECL token, and a non-empty reason: nothing else is accepted, so a skip
-# cannot buy tolerance by printing arbitrary text.
-DECLINE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+: DECL -- declined: *\S", re.MULTILINE)
+# A policy refusal is not an arbitrary DECL line. The declaration and following
+# proof share a gate name, and the proof is emitted only by the
+# isolated-compositor interlock path before the launcher can prepare a renderer.
+# This separates that policy boundary from a GPU gate that never acquired an
+# OpenGL context.
+DECLINE_PATTERN = re.compile(
+    r"^(?P<gate>[A-Za-z0-9_.-]+): DECL -- declined: *\S", re.MULTILINE)
+REFUSAL_PROOF_PATTERN = re.compile(
+    r"^(?P<gate>[A-Za-z0-9_.-]+): REFUSAL-PROOF -- "
+    r"isolated-compositor interlock rejected the session before renderer setup$",
+    re.MULTILINE)
+
+# A precondition check cannot establish semantic equivalence, but words shorter
+# than three characters and connective prose do not help a reader distinguish
+# a declared requirement from an unrelated report.
+SIGNIFICANT_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,}")
+INSIGNIFICANT_TOKENS = frozenset({
+    "and", "are", "but", "can", "could", "for", "from", "has", "have",
+    "into", "its", "not", "that", "the", "this", "was", "with",
+})
 
 # The one skip return code this project uses. A second convention would be a
 # second mechanism to keep honest, so the roster is required to agree with it.
@@ -250,7 +270,8 @@ except ET.ParseError as error:
 ran = []
 declined = []          # (name, the declared refusal line)
 unmet = []             # (name, precondition, first captured line)
-undeclared_skips = []  # (name, first captured line)
+precondition_warnings = []  # (name, precondition, first captured line)
+unproven_refusals = []  # (name, first captured line)
 undeclared_notrun = [] # (name, first captured line)
 silent_skips = []
 disabled = []          # intentionally disabled in the build configuration
@@ -260,6 +281,28 @@ seen = set()
 
 def first_line(text):
     return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
+def significant_tokens(text):
+    return {
+        token.lower()
+        for token in SIGNIFICANT_TOKEN_PATTERN.findall(text)
+        if token.lower() not in INSIGNIFICANT_TOKENS
+    }
+
+
+def declared_refusal(captured):
+    declaration = DECLINE_PATTERN.search(captured)
+    if declaration is None:
+        return "", False
+    proof = REFUSAL_PROOF_PATTERN.search(captured)
+    if (proof is None or proof.group("gate") != declaration.group("gate")
+            or proof.start() <= declaration.end()):
+        return "", False
+    line_end = captured.find("\n", declaration.start())
+    line = captured[declaration.start():] if line_end < 0 \
+        else captured[declaration.start():line_end]
+    return line.strip(), True
 
 
 for testcase in tree.iter("testcase"):
@@ -290,16 +333,16 @@ for testcase in tree.iter("testcase"):
             # missing executable or an unsatisfied dependency as not-run too.
             undeclared_notrun.append((name, first_line(captured)))
         elif tolerance == "capability":
-            unmet.append((name, precondition, first_line(captured)))
+            said = first_line(captured)
+            unmet.append((name, precondition, said))
+            if not significant_tokens(precondition) & significant_tokens(said):
+                precondition_warnings.append((name, precondition, said))
         else:
-            declaration = DECLINE_PATTERN.search(captured)
-            if declaration is not None:
-                line_end = captured.find("\n", declaration.start())
-                line = captured[declaration.start():] if line_end < 0 \
-                    else captured[declaration.start():line_end]
-                declined.append((name, line.strip()))
+            declaration, has_proof = declared_refusal(captured)
+            if has_proof:
+                declined.append((name, declaration))
             elif captured:
-                undeclared_skips.append((name, first_line(captured)))
+                unproven_refusals.append((name, first_line(captured)))
             else:
                 silent_skips.append(name)
     else:
@@ -324,14 +367,21 @@ if unmet:
         print(f"    - {name}: declared to require {precondition}")
         if said:
             print(f"      said: {said}")
+if precondition_warnings:
+    print(f"  WARNING precondition reports that do not resemble their declarations: "
+          f"{len(precondition_warnings)}")
+    for name, precondition, said in sorted(precondition_warnings):
+        print(f"    - {name}: declared precondition does not resemble what the entry reported")
+        print(f"      declared: {precondition}")
+        print(f"      said: {said or '(no captured output)'}")
 if undeclared_notrun:
     print(f"  UNDECLARED not-run: {len(undeclared_notrun)}")
     for name, said in sorted(undeclared_notrun):
         print(f"    - {name}: did not run and declares no skip capability; said: {said}")
-if undeclared_skips:
-    print(f"  UNDECLARED skips: {len(undeclared_skips)}")
-    for name, said in sorted(undeclared_skips):
-        print(f"    - {name}: skipped without a declared refusal; said: {said}")
+if unproven_refusals:
+    print(f"  UNPROVEN refusals: {len(unproven_refusals)}")
+    for name, said in sorted(unproven_refusals):
+        print(f"    - {name}: declaration did not carry an interlock proof; said: {said}")
 if disabled:
     print(f"  disabled   : {len(disabled)}")
     for name in sorted(disabled):
@@ -354,8 +404,8 @@ if unmet:
     problems.append(f"{len(unmet)} unmet declared precondition(s)")
 if undeclared_notrun:
     problems.append(f"{len(undeclared_notrun)} not-run entr(ies) with no declared skip capability")
-if undeclared_skips:
-    problems.append(f"{len(undeclared_skips)} skip(s) without a declared refusal")
+if unproven_refusals:
+    problems.append(f"{len(unproven_refusals)} unproven declared refusal(s)")
 if silent_skips:
     problems.append(f"{len(silent_skips)} silent skip(s)")
 if missing:

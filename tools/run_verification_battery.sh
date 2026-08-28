@@ -9,9 +9,9 @@
 # ctest, runs the battery capturing per-entry results as JUnit, and reconciles
 # the two so a drop turns the run red. The only shortfall the reconciliation
 # tolerates is an entry that both declares a refusal in
-# tools/skip_declarations.txt and prints one —
-# `<gate>: DECL -- declined: <reason>` — which is a policy this project
-# enforces rather than a capability the machine lacks. Every other skip,
+# tools/skip_declarations.txt and prints the declaration plus its matching
+# isolated-compositor interlock proof. A bare `<gate>: DECL -- declined: ...`
+# line is not enough. Every other skip,
 # whether it explained itself or not, fails.
 #
 # The roster carries each entry's skip return code alongside its name, so the
@@ -130,4 +130,4 @@ if [[ "$ctest_status" -ne 0 || "$reconcile_status" -ne 0 ]]; then
     exit 1
 fi
 
-printf 'verification_battery: PASS -- every registered entry ran or declared a refusal\n'
+printf 'verification_battery: PASS -- every registered entry ran or proved an interlock refusal\n'

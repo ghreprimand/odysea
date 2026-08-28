@@ -24,6 +24,35 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- A bare refusal line cannot turn a GPU gap green
+
+The battery reconciler previously trusted a registry entry's `refusal`
+tolerance and a syntactically valid `DECL -- declined` line independently. An
+RHI entry that could not create an OpenGL context could therefore be relabelled
+as a refusal and print that line, turning the same missing GPU coverage into an
+accounted pass.
+
+A refusal now needs a matched pair from the entry's captured output: its
+declaration and an `REFUSAL-PROOF` line from the isolated-compositor interlock,
+with the same gate name. The compositor launchers emit that proof when the
+interlock rejects a session before renderer setup; the platform-selection
+contract checks it. A GPU launcher that cannot create a context never reaches
+that policy boundary, so changing only its registry tolerance and output leaves
+an unproven refusal that fails the reconciler.
+
+Capability failures also compare the declaration's precondition with the
+entry's captured first line. No shared significant token produces a visible
+warning that the declared precondition does not resemble what the entry
+reported. This is deliberately partial: token overlap can expose an unrelated
+pointer, but cannot establish that two descriptions mean the same thing.
+
+The reconciler self-test now has 30 scenarios. It rejects the bare-RHI refusal
+fixture and a compositor proof copied under another gate name, while a matched
+interlock refusal still passes. It also checks the partial precondition warning
+and retains the foreign skip-code rejection.
+
+---
+
 ## 2026-08-28 -- The static-analysis baseline records what was said, not only how often
 
 The advisory half of static analysis was held to a recorded count per file and

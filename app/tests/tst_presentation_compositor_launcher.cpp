@@ -244,6 +244,8 @@ bool usableOpenGlContext(const QByteArray& platform) {
 [[noreturn]] void declineSession(const char* reason) {
     const QByteArray message =
         QByteArrayLiteral("compositor-gate: DECL -- declined: ") + reason +
+        "\ncompositor-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session "
+        "before renderer setup\n"
         "\nThis gate renders an activating window and can leave a compositor it does not own "
         "with input focus on a surface nobody is looking at, so it runs only against a Wayland "
         "compositor a harness started for it and will tear down afterwards.\n"

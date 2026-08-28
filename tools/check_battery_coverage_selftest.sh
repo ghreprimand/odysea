@@ -41,7 +41,7 @@ trap 'rm -rf -- "$workspace"' EXIT
 # number this file is written to contain. A scenario that stopped running — an
 # edit that dropped it, a helper that returned early — would otherwise leave a
 # smaller suite reporting the same success sentence.
-readonly expected_scenarios=26
+readonly expected_scenarios=30
 scenarios=0
 failures=0
 
@@ -147,7 +147,7 @@ expect "all entries ran" "$junit" "$registered" "$no_declarations" 0 \
 junit="$workspace/declined.xml"
 registered="$workspace/declined.txt"
 write_junit "$junit" a run "a ok" \
-    b notrun "compositor-gate: DECL -- declined: no compositor was declared for this run" \
+    b notrun $'compositor-gate: DECL -- declined: no compositor was declared for this run\ncompositor-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup' \
     c run "c ok"
 write_registered "$registered" a "b:77" c
 expect "declared refusal passes and is listed" "$junit" "$registered" "$refusal_declarations" 0 \
@@ -165,7 +165,7 @@ write_junit "$junit" a run "a ok" \
     c run "c ok"
 write_registered "$registered" a "b:77" c
 expect "explained capability skip still fails" "$junit" "$registered" "$refusal_declarations" 1 \
-    "without a declared refusal"
+    "declaration did not carry an interlock proof"
 
 # Scenario 4: the form is anchored, not merely mentioned. A skip whose output
 # talks ABOUT declining — the token present but not as the line's own
@@ -177,7 +177,7 @@ write_junit "$junit" a run "a ok" \
     c run "c ok"
 write_registered "$registered" a "b:77" c
 expect "a mention of the token is not a declaration" "$junit" "$registered" \
-    "$refusal_declarations" 1 "without a declared refusal"
+    "$refusal_declarations" 1 "declaration did not carry an interlock proof"
 
 # Scenario 5: a declaration with no reason after it declares nothing, and is
 # refused. Otherwise the cheapest way past the gate would be the token alone.
@@ -186,7 +186,7 @@ registered="$workspace/empty_reason.txt"
 write_junit "$junit" a run "a ok" b notrun "compositor-gate: DECL -- declined: " c run "c ok"
 write_registered "$registered" a "b:77" c
 expect "a declaration with no reason fails" "$junit" "$registered" "$refusal_declarations" 1 \
-    "without a declared refusal"
+    "declaration did not carry an interlock proof"
 
 # Scenario 6: a test disabled in the build configuration — status "disabled",
 # as ctest records static_analysis under the sanitizer preset — is an intended
@@ -234,8 +234,9 @@ expect "empty roster fails" "$junit" "$registered" "$no_declarations" 1 "roster 
 junit="$workspace/nothing_ran.xml"
 registered="$workspace/nothing_ran.txt"
 declarations="$workspace/nothing_ran_decl.txt"
-write_junit "$junit" a notrun "a-gate: DECL -- declined: nothing declared" \
-    b notrun "b-gate: DECL -- declined: nothing declared"
+write_junit "$junit" \
+    a notrun $'a-gate: DECL -- declined: nothing declared\na-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup' \
+    b notrun $'b-gate: DECL -- declined: nothing declared\nb-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup'
 write_registered "$registered" "a:77" "b:77"
 write_declarations "$declarations" "a:refusal:a compositor started for this run" \
     "b:refusal:a compositor started for this run"
@@ -380,6 +381,54 @@ printf '# declared skip capabilities\nb\trefusal\tfirst\nb\tcapability\tsecond\n
     >"$declarations"
 expect "a duplicated declaration fails" "$junit" "$registered" "$declarations" 1 \
     "is declared more than once"
+
+# Scenario 27: the category-laundering fixture. The RHI entry has exactly the
+# same missing OpenGL capability as an honest capability skip, but reclassifies
+# itself as a refusal and prints a bare DECL line. That must remain red: only
+# the isolated-compositor interlock emits the structural refusal proof.
+junit="$workspace/laundered_capability.xml"
+registered="$workspace/laundered_capability.txt"
+declarations="$workspace/laundered_capability_decl.txt"
+write_junit "$junit" a run "a ok" \
+    b notrun "rhi-gate: DECL -- declined: no usable OpenGL context" \
+    c run "c ok"
+write_registered "$registered" a "b:77" c
+write_declarations "$declarations" "b:refusal:an offscreen OpenGL context"
+expect "a capability cannot be laundered as a bare refusal" "$junit" "$registered" \
+    "$declarations" 1 "declaration did not carry an interlock proof"
+
+# Scenario 28: a proof from another gate cannot authenticate the DECL line.
+# Keeping the gate names paired stops a copied compositor proof from blessing a
+# different gate's category change.
+junit="$workspace/mismatched_refusal_proof.xml"
+write_junit "$junit" a run "a ok" \
+    b notrun $'rhi-gate: DECL -- declined: no usable OpenGL context\ncompositor-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup' \
+    c run "c ok"
+expect "a proof from another gate does not authenticate a refusal" "$junit" "$registered" \
+    "$declarations" 1 "declaration did not carry an interlock proof"
+
+# Scenario 29: a capability declaration is still a partial account of a
+# report, not a semantic proof. An unrelated captured cause keeps its normal
+# unmet failure and adds a visible warning that the declared precondition does
+# not resemble what the entry reported.
+junit="$workspace/wrong_precondition.xml"
+declarations="$workspace/wrong_precondition_decl.txt"
+write_junit "$junit" a run "a ok" b notrun "rhi-gate: SKIP -- fixture file was missing" c run "c ok"
+write_declarations "$declarations" "b:capability:an offscreen OpenGL context"
+expect "an unrelated precondition report warns visibly" "$junit" "$registered" "$declarations" 1 \
+    "declared precondition does not resemble what the entry reported"
+
+# Scenario 30: the proof follows the refusal it authenticates. A prepended
+# proof could otherwise be an unrelated startup line, rather than evidence
+# that the policy boundary produced this declaration.
+junit="$workspace/out_of_order_refusal_proof.xml"
+declarations="$workspace/out_of_order_refusal_proof_decl.txt"
+write_junit "$junit" a run "a ok" \
+    b notrun $'compositor-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup\ncompositor-gate: DECL -- declined: no compositor was declared for this run' \
+    c run "c ok"
+write_declarations "$declarations" "b:refusal:a compositor started for this run"
+expect "a proof before its declaration does not authenticate it" "$junit" "$registered" \
+    "$declarations" 1 "declaration did not carry an interlock proof"
 
 if ((scenarios != expected_scenarios)); then
     printf 'battery_coverage_self_test: reported %d scenario(s), expected %d\n' \

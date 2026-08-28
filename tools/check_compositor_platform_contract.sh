@@ -64,6 +64,15 @@ run_refusal_case() {
         failures=$((failures + 1))
         return
     fi
+    if ! grep -Fqx \
+        'compositor-gate: REFUSAL-PROOF -- isolated-compositor interlock rejected the session before renderer setup' \
+        "$output"; then
+        printf 'compositor-platform-contract: FAIL %s -- refusal lacked interlock proof\n' \
+            "$name" >&2
+        head -n 20 "$output" >&2
+        failures=$((failures + 1))
+        return
+    fi
     if grep -Eq 'compositor-gate: (RUN|SKIP|FAIL)' "$output"; then
         printf 'compositor-platform-contract: FAIL %s -- launcher selected a platform\n' \
             "$name" >&2
