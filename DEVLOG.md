@@ -25,6 +25,34 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- What fixes the thumbnail cache file name
+
+The thumbnail cache is a shared resource, and its file name is not an internal
+choice. The freedesktop thumbnail specification defines the name as the MD5
+digest of the source file's URI, and it fixes the URI itself: which bytes stand
+literally and which are percent-encoded. That specification is the whole
+authority for the escaping OdySea writes, and it is the reason the escaping is
+what it is.
+
+The consequence is why the detail carries weight. The name is the digest of
+exactly those bytes, so an escaping that diverges anywhere produces a different
+digest and therefore a different file name. The result is a cache no other
+application can find, while every thumbnail already on disk stays invisible to
+this one. Nothing fails: both sides do the work twice, hold duplicate copies,
+and report success. That silence is what makes the byte sequence worth stating
+precisely rather than approximately.
+
+The trash specification is a separate specification with a separate purpose,
+and its escaping is not interchangeable with this one — reusing it would encode
+characters the thumbnail URI leaves literal, and the digest would move. The
+literal set OdySea writes is the alphanumerics together with the punctuation the
+thumbnail specification exempts, and the tests assert that set directly rather
+than asserting agreement with any implementation of it.
+
+Validity remains a separate question from naming. A digest carries no collision
+guarantee, so a stored thumbnail is accepted only when the source URI recorded
+inside it matches, the recorded modification time matches, and the file is
+readable; a name alone is never treated as proof.
 ## 2026-08-28 -- QML-facing model roles use the type the registry understands
 
 The fuzzy-find, Miller-columns, and storage-usage adapters exposed their item

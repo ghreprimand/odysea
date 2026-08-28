@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-28 -- What fixes the thumbnail cache file name
 ## 2026-08-28 -- QML-facing model roles use the type the registry understands
 ## 2026-08-28 -- Action-bar compaction measures its full row
 ## 2026-08-28 -- Accent presets keep file meaning stable
