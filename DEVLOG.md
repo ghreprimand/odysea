@@ -25,6 +25,31 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- Accent presets keep file meaning stable
+
+Tideglass, Beacon, Ember, Orchid, and Verdant now select a live shell accent.
+Each preset persists a stable identifier while the appearance surface resolves
+its display name, so a later label change does not disturb an existing stored
+choice. The accent drives active chrome, focus, rubber-band selection, and
+the existing bright-pass emission path; Full, Balanced, Minimal, and Off keep
+their established effective-level behavior.
+
+Directory, generic-file, symlink, error, warning, and success inks remain in
+the semantic palette matrix. The controller test iterates its entire preset
+model for every palette, so a newly added preset must preserve those roles.
+
+The render-site contrast arithmetic now has one shared implementation. The
+appearance gate and the accent-selection warning call that implementation,
+which reports the specific surface below the indicator floor. The appearance
+panel previews selection immediately, supports standard pointer and keyboard
+paths, and reset returns the shipped Tideglass choice.
+
+Core appearance persistence and controller tests passed. The appearance input
+test passed on the software scene graph at logical scale 1x; it verifies live
+control bindings and input paths, not device-resolution presentation.
+
+---
+
 ## 2026-08-28 -- A group survey is refused by its shape, not by its framing
 
 Every category rule shipped so far keys on framing: a survey sentence, a

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QColor>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -71,6 +72,16 @@ struct ShellPalette {
     QColor success;
 };
 
+/// A stable accent choice with a separately resolved display name.
+///
+/// The color is the only authored value in a preset. The controller derives
+/// its focus, chrome, and emission-facing tokens from this value at runtime.
+struct AccentPreset {
+    QString id;
+    QString name;
+    QColor accent;
+};
+
 /// The identifier of the shipped default family.
 [[nodiscard]] QString defaultShellPaletteId();
 
@@ -80,5 +91,15 @@ struct ShellPalette {
 /// The family for `id`. An unknown identifier resolves to the shipped
 /// default, so a settings file from a build with more families still loads.
 [[nodiscard]] const ShellPalette& shellPalette(const QString& id);
+
+/// The identifier of the shipped accent preset.
+[[nodiscard]] QString defaultAccentPresetId();
+
+/// Every shipped accent preset, default first.
+[[nodiscard]] QList<AccentPreset> shellAccentPresets();
+
+/// The preset for `id`. An unknown identifier resolves to the shipped
+/// default, so stored choices remain forward-compatible.
+[[nodiscard]] const AccentPreset& shellAccentPreset(const QString& id);
 
 } // namespace odysea::app

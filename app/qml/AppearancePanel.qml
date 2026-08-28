@@ -98,6 +98,7 @@ Popup {
         property alias comboObjectName: control.objectName
         property alias model: control.model
         property string label
+        property string textRole
         property int themeIndex
         signal picked(int index)
 
@@ -112,6 +113,7 @@ Popup {
 
             Accessible.name: comboRow.label
             Layout.fillWidth: true
+            textRole: comboRow.textRole
             onActivated: index => comboRow.picked(index)
 
             Binding on currentIndex {
@@ -150,6 +152,32 @@ Popup {
                     model: panel.theme.availablePalettes
                     themeIndex: panel.theme.availablePalettes.indexOf(panel.theme.paletteId)
                     onPicked: index => panel.theme.paletteId = panel.theme.availablePalettes[index]
+                }
+                ThemeCombo {
+                    comboObjectName: "accentPresetBox"
+                    label: qsTr("Accent")
+                    model: panel.theme.accentPresets
+                    textRole: "name"
+                    themeIndex: panel.theme.accentPresetIndex
+                    onPicked: index => panel.theme.accentPresetIndex = index
+                }
+                Rectangle {
+                    objectName: "accentPreview"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 6
+                    color: panel.theme.accent
+                    radius: 3
+                }
+                Text {
+                    objectName: "accentContrastWarning"
+                    Layout.fillWidth: true
+                    visible: panel.theme.accentContrastWarning.length > 0
+                    text: panel.theme.accentContrastWarning
+                    color: panel.theme.danger
+                    wrapMode: Text.Wrap
+                    font.family: panel.theme.captionFontFamily
+                    font.pixelSize: panel.theme.captionFontPixelSize
+                    Accessible.name: text
                 }
                 CheckBox {
                     objectName: "highContrastCheck"

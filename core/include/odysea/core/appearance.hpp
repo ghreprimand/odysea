@@ -88,7 +88,7 @@ struct EffectLevels {
 /// A default-constructed value is the shipped configuration.
 struct AppearanceSettings {
     /// Version of the persisted schema this build reads and writes.
-    static constexpr int current_version = 3;
+    static constexpr int current_version = 4;
     static constexpr std::size_t maximum_places = 32;
     static constexpr std::size_t maximum_recent_destinations = 12;
 
@@ -96,6 +96,11 @@ struct AppearanceSettings {
     /// value; the presentation layer resolves unknown identifiers to the
     /// shipped default family.
     std::string palette = "odyssey-default";
+
+    /// Stable identifier of the accent preset. The presentation layer owns
+    /// the preset vocabulary so a label can change without rewriting this
+    /// persisted choice.
+    std::string accent_preset = "tideglass";
 
     EffectProfile profile = EffectProfile::Balanced;
 

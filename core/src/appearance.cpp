@@ -90,6 +90,13 @@ constexpr std::size_t kMaximumStoredPathLength = 4096;
     return fallback;
 }
 
+void apply_accent_preset(AppearanceSettings& settings, std::string_view key,
+                         std::string_view value) {
+    if (key == "accent_preset" && !value.empty()) {
+        settings.accent_preset = std::string(value);
+    }
+}
+
 [[nodiscard]] std::optional<std::size_t> parse_size(std::string_view text) noexcept {
     std::size_t value = 0;
     const char* const first = text.data();
@@ -245,6 +252,7 @@ EffectLevels clamp_effect_levels(const EffectLevels& levels) noexcept {
 AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept {
     AppearanceSettings result = settings;
     result.palette = without_control_characters(settings.palette);
+    result.accent_preset = without_control_characters(settings.accent_preset);
     result.font_family = without_control_characters(settings.font_family);
     result.scale = clamped(settings.scale, kScaleMin, kScaleMax);
     result.glass_opacity = clamped(settings.glass_opacity, kGlassOpacityMin, 1.0);
@@ -382,6 +390,7 @@ std::string serialize_appearance(const AppearanceSettings& settings) {
     out.reserve(512);
     append_key(out, "version", std::to_string(AppearanceSettings::current_version));
     append_key(out, "palette", s.palette);
+    append_key(out, "accent_preset", s.accent_preset);
     append_key(out, "profile", to_string(s.profile));
     append_key(out, "font_source", to_string(s.font_source));
     append_key(out, "font_family", s.font_family);
@@ -434,6 +443,7 @@ AppearanceSettings parse_appearance(std::string_view text) {
         }
         const std::string_view key = trimmed(line.substr(0, equals));
         const std::string_view value = trimmed(line.substr(equals + 1));
+        apply_accent_preset(s, key, value);
 
         if (key == "palette" && !value.empty()) {
             s.palette = std::string(value);

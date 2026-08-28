@@ -21,6 +21,7 @@ namespace {
 void test_defaults_are_the_shipped_configuration() {
     const AppearanceSettings s;
     check(s.palette == "odyssey-default", "the shipped palette is odyssey-default");
+    check(s.accent_preset == "tideglass", "the shipped accent preset is tideglass");
     check(s.profile == EffectProfile::Balanced, "the shipped profile is balanced");
     check(s.font_source == FontSource::Bundled, "the shipped font source is the bundled face");
     check(s.density == Density::Cozy, "the shipped density is cozy");
@@ -122,6 +123,7 @@ void test_accessibility_overrides_shape_the_effective_levels() {
 void test_serialization_round_trips() {
     AppearanceSettings s;
     s.palette = "odyssey-aurora";
+    s.accent_preset = "beacon";
     s.profile = EffectProfile::Custom;
     s.font_source = FontSource::Named;
     s.font_family = "Example Mono";
@@ -186,12 +188,14 @@ void test_parsing_tolerates_damage_and_the_future() {
 
     const AppearanceSettings future = parse_appearance("version=999\n"
                                                        "palette=odyssey-amber\n"
+                                                       "accent_preset=ember\n"
                                                        "profile=someday-profile\n"
                                                        "brand_new_key=brand new value\n"
                                                        "scale=not-a-number\n"
                                                        "# a comment line\n"
                                                        "  density = comfortable \n");
     check(future.palette == "odyssey-amber", "known keys load from a newer file");
+    check(future.accent_preset == "ember", "known accent presets load from a newer file");
     check(future.profile == EffectProfile::Balanced,
           "an unknown profile name falls back to balanced");
     check(future.scale == 1.0, "a malformed number keeps its default");
@@ -255,6 +259,11 @@ void test_stored_strings_cannot_inject_keys() {
     p.palette = "odyssey-default\r\nhigh_contrast=true";
     const AppearanceSettings palette_back = parse_appearance(serialize_appearance(p));
     check(!palette_back.high_contrast, "a palette identifier cannot inject keys");
+
+    AppearanceSettings accent;
+    accent.accent_preset = "tideglass\r\nhigh_contrast=true";
+    const AppearanceSettings accent_back = parse_appearance(serialize_appearance(accent));
+    check(!accent_back.high_contrast, "an accent preset identifier cannot inject keys");
 }
 
 void test_enum_names_round_trip() {

@@ -55,6 +55,8 @@ qt_add_qml_module(odysea_shell_qml
         src/storage_usage_model.hpp
         src/theme_controller.cpp
         src/theme_controller.hpp
+        src/theme_contrast.cpp
+        src/theme_contrast.hpp
         src/theme_palettes.cpp
         src/theme_palettes.hpp
     QML_FILES

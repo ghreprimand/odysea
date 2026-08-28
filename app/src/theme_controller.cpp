@@ -6,6 +6,7 @@
 // and turns the active color family into concrete rendering roles.
 #include "theme_controller.hpp"
 
+#include "theme_contrast.hpp"
 #include "theme_palettes.hpp"
 
 #include <QDir>
@@ -126,6 +127,14 @@ struct BundledFontRegistration {
     return registration;
 }
 
+[[nodiscard]] QColor restingHover(const ShellPalette& palette) {
+    return palette.light ? palette.inset.darker(106) : palette.inset.lighter(135);
+}
+
+[[nodiscard]] QColor restingPressed(const ShellPalette& palette) {
+    return palette.light ? palette.inset.darker(114) : palette.inset.lighter(165);
+}
+
 } // namespace
 
 ThemeController::ThemeController(QObject* parent) : QObject(parent) {
@@ -180,6 +189,94 @@ void ThemeController::setPaletteId(const QString& id) {
 
 bool ThemeController::lightPalette() const {
     return activePalette().light;
+}
+
+const AccentPreset& ThemeController::activeAccentPreset() const {
+    const QString id = QString::fromStdString(settings_.accent_preset);
+    return shellAccentPreset(id);
+}
+
+QColor ThemeController::resolvedAccent() const {
+    if (accentPresetId() == defaultAccentPresetId()) {
+        return activePalette().accent;
+    }
+    return activeAccentPreset().accent;
+}
+
+QVariantList ThemeController::accentPresets() {
+    QVariantList result;
+    const QList<AccentPreset> presets = shellAccentPresets();
+    result.reserve(presets.size());
+    for (const AccentPreset& preset : presets) {
+        result.append(QVariantMap{{QStringLiteral("id"), preset.id},
+                                  {QStringLiteral("name"), preset.name},
+                                  {QStringLiteral("color"), preset.accent}});
+    }
+    return result;
+}
+
+QString ThemeController::accentPresetId() const {
+    return activeAccentPreset().id;
+}
+
+void ThemeController::setAccentPresetId(const QString& id) {
+    const QString resolved = shellAccentPreset(id).id;
+    if (accentPresetId() == resolved) {
+        return;
+    }
+    mutate([&](core::AppearanceSettings& s) { s.accent_preset = resolved.toStdString(); });
+}
+
+int ThemeController::accentPresetIndex() const {
+    const QList<AccentPreset> presets = shellAccentPresets();
+    for (int index = 0; index < presets.size(); ++index) {
+        if (presets.at(index).id == accentPresetId()) {
+            return index;
+        }
+    }
+    return 0;
+}
+
+void ThemeController::setAccentPresetIndex(int index) {
+    const QList<AccentPreset> presets = shellAccentPresets();
+    if (index < 0 || index >= presets.size()) {
+        return;
+    }
+    setAccentPresetId(presets.at(index).id);
+}
+
+QString ThemeController::accentContrastWarning() const {
+    const QList<ThemeContrastSample> samples{{.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("window ground"),
+                                              .foreground = accent(),
+                                              .background = background(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("selected entry"),
+                                              .foreground = accent(),
+                                              .background = selectionBed(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("hovered surface"),
+                                              .foreground = accent(),
+                                              .background = hover(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("pressed surface"),
+                                              .foreground = accent(),
+                                              .background = pressed(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("panel"),
+                                              .foreground = accent(),
+                                              .background = panel(),
+                                              .floor = 3.0}};
+    const QStringList failures = themeContrastFailures(samples);
+    if (failures.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("Accent contrast needs attention: %1")
+        .arg(failures.join(QStringLiteral("; ")));
 }
 
 ThemeController::Profile ThemeController::profile() const {
@@ -715,7 +812,7 @@ QColor ThemeController::metaInk() const {
 }
 
 QColor ThemeController::accent() const {
-    return lifted(activePalette().accent);
+    return lifted(resolvedAccent());
 }
 
 QColor ThemeController::selectionBed() const {
@@ -731,17 +828,15 @@ QColor ThemeController::matchBed() const {
 }
 
 QColor ThemeController::focus() const {
-    return lifted(activePalette().focus);
+    return accent();
 }
 
 QColor ThemeController::hover() const {
-    const ShellPalette& p = activePalette();
-    return p.light ? p.inset.darker(106) : p.inset.lighter(135);
+    return restingHover(activePalette());
 }
 
 QColor ThemeController::pressed() const {
-    const ShellPalette& p = activePalette();
-    return p.light ? p.inset.darker(114) : p.inset.lighter(165);
+    return restingPressed(activePalette());
 }
 
 QColor ThemeController::rubberBand() const {

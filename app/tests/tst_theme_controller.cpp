@@ -4,6 +4,7 @@
 // state observably and immediately, profile and reset transitions behave,
 // fonts resolve to real families, and state survives a restart through the
 // configured storage path. Persistence runs against a temporary directory.
+#include "theme_contrast.hpp"
 #include "theme_controller.hpp"
 #include "theme_palettes.hpp"
 
@@ -18,27 +19,12 @@
 #include <QtTest>
 
 #include <algorithm>
-#include <cmath>
-
+using odysea::app::themeContrastFailures;
+using odysea::app::themeContrastRatio;
+using odysea::app::ThemeContrastSample;
 using odysea::app::ThemeController;
 
 namespace {
-
-double linear_channel(double channel) {
-    return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
-}
-
-double relative_luminance(const QColor& color) {
-    return (0.2126 * linear_channel(static_cast<double>(color.redF()))) +
-           (0.7152 * linear_channel(static_cast<double>(color.greenF()))) +
-           (0.0722 * linear_channel(static_cast<double>(color.blueF())));
-}
-
-double contrast_ratio(const QColor& first, const QColor& second) {
-    const double bright = std::max(relative_luminance(first), relative_luminance(second));
-    const double dark = std::min(relative_luminance(first), relative_luminance(second));
-    return (bright + 0.05) / (dark + 0.05);
-}
 
 /// Source-over composite of `ink` at `alpha` on an opaque `under` bed:
 /// the same arithmetic the scene graph applies when a translucent layer
@@ -118,21 +104,23 @@ struct RolePair {
 /// theme's current override state and returns a line per miss.
 QStringList contrast_failures(ThemeController& theme, const QString& palette,
                               const QList<RolePair>& pairs, bool highContrast) {
-    QStringList failures;
+    QList<ThemeContrastSample> samples;
     theme.setHighContrast(highContrast);
     for (const RolePair& pair : pairs) {
         const double floor = highContrast ? pair.highContrastFloor : pair.defaultFloor;
         const QColor ink = (theme.*pair.foreground)();
         for (const BedVariant& bed : pair.beds(theme)) {
-            const double measured = contrast_ratio(ink, bed.color);
-            if (measured < floor) {
-                failures.append(
-                    QStringLiteral("%1 / %2 on %3%4: %5 < %6")
-                        .arg(palette, QLatin1String(pair.description), bed.name,
-                             highContrast ? QStringLiteral(" [high contrast]") : QString(),
-                             QString::number(measured, 'f', 2), QString::number(floor, 'f', 1)));
-            }
+            samples.append(ThemeContrastSample{.role = QLatin1String(pair.description),
+                                               .renderSite = bed.name,
+                                               .foreground = ink,
+                                               .background = bed.color,
+                                               .floor = floor});
         }
+    }
+    const QString mode = highContrast ? QStringLiteral(" [high contrast]") : QString();
+    QStringList failures;
+    for (const QString& failure : themeContrastFailures(samples)) {
+        failures.append(QStringLiteral("%1 / %2%3").arg(palette, failure, mode));
     }
     return failures;
 }
@@ -145,6 +133,9 @@ class tst_ThemeController : public QObject {
   private slots:
     void defaults_are_the_shipped_configuration();
     void palettes_resolve_and_restyle();
+    void accent_presets_resolve_live_and_keep_stable_ids();
+    void accent_presets_preserve_file_type_and_status_roles();
+    void accent_contrast_warning_uses_render_site_measurement();
     void profile_presets_steer_effect_levels();
     void slider_writes_switch_to_custom_and_are_remembered();
     void accessibility_overrides_apply_immediately();
@@ -181,6 +172,9 @@ void tst_ThemeController::defaults_are_the_shipped_configuration() {
     QVERIFY(!theme.lightPalette());
     QCOMPARE(theme.availablePalettes().first(), QStringLiteral("odyssey-default"));
     QCOMPARE(theme.availablePalettes().size(), 6);
+    QCOMPARE(theme.accentPresetId(), QStringLiteral("tideglass"));
+    QCOMPARE(theme.accentPresets().first().toMap().value(QStringLiteral("name")).toString(),
+             QStringLiteral("Tideglass"));
     QCOMPARE(theme.rowHeight(), 34);
 }
 
@@ -202,6 +196,111 @@ void tst_ThemeController::palettes_resolve_and_restyle() {
     theme.setPaletteId(QStringLiteral("no-such-family"));
     QCOMPARE(theme.paletteId(), QStringLiteral("odyssey-default"));
     QCOMPARE(theme.background(), defaultGround);
+}
+
+void tst_ThemeController::accent_presets_resolve_live_and_keep_stable_ids() {
+    ThemeController theme;
+    const QVariantList presets = ThemeController::accentPresets();
+    QCOMPARE(presets.size(), 5);
+
+    const QStringList expectedIds{QStringLiteral("tideglass"), QStringLiteral("beacon"),
+                                  QStringLiteral("ember"), QStringLiteral("orchid"),
+                                  QStringLiteral("verdant")};
+    const QStringList expectedNames{QStringLiteral("Tideglass"), QStringLiteral("Beacon"),
+                                    QStringLiteral("Ember"), QStringLiteral("Orchid"),
+                                    QStringLiteral("Verdant")};
+    QStringList ids;
+    QStringList names;
+    for (const QVariant& value : presets) {
+        const QVariantMap preset = value.toMap();
+        ids.append(preset.value(QStringLiteral("id")).toString());
+        names.append(preset.value(QStringLiteral("name")).toString());
+        QVERIFY(preset.value(QStringLiteral("color")).value<QColor>().isValid());
+    }
+    QCOMPARE(ids, expectedIds);
+    QCOMPARE(names, expectedNames);
+
+    const QColor tideglass = theme.accent();
+    theme.setAccentPresetId(QStringLiteral("beacon"));
+    QCOMPARE(theme.accentPresetId(), QStringLiteral("beacon"));
+    QCOMPARE(theme.accentPresetIndex(), 1);
+    QVERIFY(theme.accent() != tideglass);
+    QCOMPARE(theme.focus(), theme.accent());
+
+    theme.setAccentPresetIndex(2);
+    QCOMPARE(theme.accentPresetId(), QStringLiteral("ember"));
+    theme.setAccentPresetId(QStringLiteral("not-a-preset"));
+    QCOMPARE(theme.accentPresetId(), QStringLiteral("tideglass"));
+}
+
+void tst_ThemeController::accent_presets_preserve_file_type_and_status_roles() {
+    ThemeController theme;
+    const QVariantList presets = ThemeController::accentPresets();
+    QVERIFY(!presets.isEmpty());
+
+    // Iterate the controller's complete model instead of a fixed list. A new
+    // preset joins this invariant without needing a matching test edit.
+    theme.setProfile(ThemeController::Off);
+    for (const QString& palette : theme.availablePalettes()) {
+        theme.setPaletteId(palette);
+        theme.setAccentPresetIndex(0);
+        const QColor file = theme.textFaint();
+        const QColor directory = theme.dirInk();
+        const QColor symlink = theme.linkInk();
+        const QColor error = theme.danger();
+        const QColor warning = theme.warning();
+        const QColor success = theme.success();
+
+        for (int index = 0; index < presets.size(); ++index) {
+            theme.setAccentPresetIndex(index);
+            QCOMPARE(theme.textFaint(), file);
+            QCOMPARE(theme.dirInk(), directory);
+            QCOMPARE(theme.linkInk(), symlink);
+            QCOMPARE(theme.danger(), error);
+            QCOMPARE(theme.warning(), warning);
+            QCOMPARE(theme.success(), success);
+        }
+    }
+}
+
+void tst_ThemeController::accent_contrast_warning_uses_render_site_measurement() {
+    ThemeController theme;
+    theme.setPaletteId(QStringLiteral("odyssey-parchment-light"));
+    theme.setAccentPresetId(QStringLiteral("beacon"));
+
+    const QList<ThemeContrastSample> samples{{.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("window ground"),
+                                              .foreground = theme.accent(),
+                                              .background = theme.background(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("selected entry"),
+                                              .foreground = theme.accent(),
+                                              .background = theme.selectionBed(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("hovered surface"),
+                                              .foreground = theme.accent(),
+                                              .background = theme.hover(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("pressed surface"),
+                                              .foreground = theme.accent(),
+                                              .background = theme.pressed(),
+                                              .floor = 3.0},
+                                             {.role = QStringLiteral("Accent"),
+                                              .renderSite = QStringLiteral("panel"),
+                                              .foreground = theme.accent(),
+                                              .background = theme.panel(),
+                                              .floor = 3.0}};
+    const QStringList failures = themeContrastFailures(samples);
+
+    QVERIFY(!failures.isEmpty());
+    QVERIFY(!theme.accentContrastWarning().isEmpty());
+    QCOMPARE(theme.accentContrastWarning().isEmpty(), failures.isEmpty());
+    for (const QString& failure : failures) {
+        QVERIFY(theme.accentContrastWarning().contains(failure));
+    }
 }
 
 void tst_ThemeController::profile_presets_steer_effect_levels() {
@@ -411,7 +510,7 @@ void tst_ThemeController::reset_repairs_a_damaged_settings_file() {
     const QByteArray text = repaired.readAll();
     QVERIFY(!text.contains("nan"));
     QVERIFY(!text.contains("nonsense"));
-    QVERIFY(text.contains("version=3"));
+    QVERIFY(text.contains("version=4"));
 
     ThemeController restored;
     restored.setStoragePath(path);
@@ -524,7 +623,7 @@ void tst_ThemeController::long_form_role_is_readable() {
 
     for (const QString& palette : theme.availablePalettes()) {
         theme.setPaletteId(palette);
-        QVERIFY2(contrast_ratio(theme.longFormInk(), theme.background()) >= 4.5,
+        QVERIFY2(themeContrastRatio(theme.longFormInk(), theme.background()) >= 4.5,
                  qPrintable(QStringLiteral("Long-form contrast failed for %1").arg(palette)));
     }
 
@@ -779,7 +878,7 @@ void tst_ThemeController::high_contrast_roles_meet_measured_ratios() {
 
         // The high-contrast hairline promotion is itself a measured claim.
         theme.setHighContrast(true);
-        const double hairline = contrast_ratio(theme.border(), theme.panel());
+        const double hairline = themeContrastRatio(theme.border(), theme.panel());
         if (hairline < 3.0) {
             failures.append(QStringLiteral("%1 / hairline on panel [high contrast]: %2 < 3.0")
                                 .arg(palette, QString::number(hairline, 'f', 2)));
@@ -901,6 +1000,7 @@ void tst_ThemeController::state_persists_across_instances() {
         ThemeController theme;
         theme.setStoragePath(path);
         theme.setPaletteId(QStringLiteral("odyssey-aurora"));
+        theme.setAccentPresetId(QStringLiteral("orchid"));
         theme.setProfile(ThemeController::Strong);
         theme.setDensity(ThemeController::Compact);
         theme.setUiScale(1.25);
@@ -910,6 +1010,7 @@ void tst_ThemeController::state_persists_across_instances() {
     ThemeController restored;
     restored.setStoragePath(path);
     QCOMPARE(restored.paletteId(), QStringLiteral("odyssey-aurora"));
+    QCOMPARE(restored.accentPresetId(), QStringLiteral("orchid"));
     QCOMPARE(restored.profile(), ThemeController::Strong);
     QCOMPARE(restored.density(), ThemeController::Compact);
     QCOMPARE(restored.uiScale(), 1.25);
@@ -948,6 +1049,7 @@ void tst_ThemeController::reset_restores_and_persists_the_defaults() {
     ThemeController theme;
     theme.setStoragePath(path);
     theme.setPaletteId(QStringLiteral("odyssey-amber"));
+    theme.setAccentPresetId(QStringLiteral("verdant"));
     theme.setScanline(0.3);
     theme.setHighContrast(true);
 
@@ -955,6 +1057,7 @@ void tst_ThemeController::reset_restores_and_persists_the_defaults() {
     theme.resetToDefaults();
     QCOMPARE(changed.count(), 1);
     QCOMPARE(theme.paletteId(), QStringLiteral("odyssey-default"));
+    QCOMPARE(theme.accentPresetId(), QStringLiteral("tideglass"));
     QCOMPARE(theme.profile(), ThemeController::Balanced);
     QVERIFY(!theme.highContrast());
 
@@ -965,6 +1068,7 @@ void tst_ThemeController::reset_restores_and_persists_the_defaults() {
     ThemeController restored;
     restored.setStoragePath(path);
     QCOMPARE(restored.paletteId(), QStringLiteral("odyssey-default"));
+    QCOMPARE(restored.accentPresetId(), QStringLiteral("tideglass"));
     QCOMPARE(restored.profile(), ThemeController::Balanced);
 }
 

@@ -125,6 +125,48 @@ Item {
             verify(!Qt.colorEqual(theme.background, ground));
         }
 
+        function test_accentPresetComboRestylesTokensImmediately() {
+            const combo = control("accentPresetBox");
+            const preview = control("accentPreview");
+            const before = theme.accent.toString();
+
+            combo.currentIndex = 1;
+            combo.activated(1);
+            compare(theme.accentPresetId, "beacon");
+            verify(!Qt.colorEqual(theme.accent, before));
+            compare(preview.color, theme.accent);
+        }
+
+        function test_accentPresetComboHasAKeyboardPath() {
+            const combo = control("accentPresetBox");
+            combo.forceActiveFocus();
+            verify(combo.activeFocus);
+
+            keyClick(Qt.Key_Space);
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Return);
+            tryVerify(function () {
+                return theme.accentPresetId !== "tideglass";
+            });
+        }
+
+        function test_accentContrastWarningTracksTheSelectedAccent() {
+            const palette = control("paletteBox");
+            const target = theme.availablePalettes.indexOf("odyssey-parchment-light");
+            verify(target >= 0);
+            palette.currentIndex = target;
+            palette.activated(target);
+
+            const accent = control("accentPresetBox");
+            accent.currentIndex = 1;
+            accent.activated(1);
+
+            const warning = control("accentContrastWarning");
+            compare(warning.visible, theme.accentContrastWarning.length > 0);
+            verify(warning.visible);
+            verify(warning.text.length > 0);
+        }
+
         function test_densityAndFontSourceCombosApply() {
             const density = control("densityBox");
             const rowsBefore = theme.rowHeight;
@@ -193,17 +235,20 @@ Item {
             verify(control("scanlineSlider").Accessible.name.length > 0);
             verify(control("uiScaleSlider").Accessible.name.length > 0);
             verify(control("paletteBox").Accessible.name.length > 0);
+            verify(control("accentPresetBox").Accessible.name.length > 0);
             verify(control("profileBox").Accessible.name.length > 0);
         }
 
         function test_resetButtonRestoresShippedState() {
             theme.paletteId = "odyssey-amber";
+            theme.accentPresetId = "orchid";
             theme.scanline = 0.3;
             theme.highContrast = true;
             compare(theme.profile, ShellTheme.Custom);
 
             mouseClick(control("resetAppearanceButton"));
             compare(theme.paletteId, "odyssey-default");
+            compare(theme.accentPresetId, "tideglass");
             compare(theme.profile, ShellTheme.Balanced);
             verify(!theme.highContrast);
 

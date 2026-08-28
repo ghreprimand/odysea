@@ -186,6 +186,25 @@ namespace {
     return palettes;
 }
 
+[[nodiscard]] const QList<AccentPreset>& allAccentPresets() {
+    static const QList<AccentPreset> presets{{.id = QStringLiteral("tideglass"),
+                                              .name = QStringLiteral("Tideglass"),
+                                              .accent = QColor(0xD8, 0xB0, 0x30)},
+                                             {.id = QStringLiteral("beacon"),
+                                              .name = QStringLiteral("Beacon"),
+                                              .accent = QColor(0x4D, 0xB8, 0xFF)},
+                                             {.id = QStringLiteral("ember"),
+                                              .name = QStringLiteral("Ember"),
+                                              .accent = QColor(0xEF, 0x8A, 0x48)},
+                                             {.id = QStringLiteral("orchid"),
+                                              .name = QStringLiteral("Orchid"),
+                                              .accent = QColor(0xCF, 0x8C, 0xF4)},
+                                             {.id = QStringLiteral("verdant"),
+                                              .name = QStringLiteral("Verdant"),
+                                              .accent = QColor(0x72, 0xCF, 0x8A)}};
+    return presets;
+}
+
 } // namespace
 
 QString defaultShellPaletteId() {
@@ -208,6 +227,23 @@ const ShellPalette& shellPalette(const QString& id) {
         }
     }
     return allPalettes().first();
+}
+
+QString defaultAccentPresetId() {
+    return allAccentPresets().first().id;
+}
+
+QList<AccentPreset> shellAccentPresets() {
+    return allAccentPresets();
+}
+
+const AccentPreset& shellAccentPreset(const QString& id) {
+    for (const AccentPreset& preset : allAccentPresets()) {
+        if (preset.id == id) {
+            return preset;
+        }
+    }
+    return allAccentPresets().first();
 }
 
 } // namespace odysea::app

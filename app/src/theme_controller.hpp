@@ -33,6 +33,12 @@ class ThemeController : public QObject {
     Q_PROPERTY(QStringList availablePalettes READ availablePalettes CONSTANT)
     Q_PROPERTY(QString paletteId READ paletteId WRITE setPaletteId NOTIFY appearanceChanged)
     Q_PROPERTY(bool lightPalette READ lightPalette NOTIFY appearanceChanged)
+    Q_PROPERTY(QVariantList accentPresets READ accentPresets CONSTANT)
+    Q_PROPERTY(
+        QString accentPresetId READ accentPresetId WRITE setAccentPresetId NOTIFY appearanceChanged)
+    Q_PROPERTY(int accentPresetIndex READ accentPresetIndex WRITE setAccentPresetIndex NOTIFY
+                   appearanceChanged)
+    Q_PROPERTY(QString accentContrastWarning READ accentContrastWarning NOTIFY appearanceChanged)
 
     Q_PROPERTY(Profile profile READ profile WRITE setProfile NOTIFY appearanceChanged)
     Q_PROPERTY(Source fontSource READ fontSource WRITE setFontSource NOTIFY appearanceChanged)
@@ -154,6 +160,12 @@ class ThemeController : public QObject {
     [[nodiscard]] QString paletteId() const;
     void setPaletteId(const QString& id);
     [[nodiscard]] bool lightPalette() const;
+    [[nodiscard]] static QVariantList accentPresets();
+    [[nodiscard]] QString accentPresetId() const;
+    void setAccentPresetId(const QString& id);
+    [[nodiscard]] int accentPresetIndex() const;
+    void setAccentPresetIndex(int index);
+    [[nodiscard]] QString accentContrastWarning() const;
 
     [[nodiscard]] Profile profile() const;
     void setProfile(Profile profile);
@@ -270,6 +282,8 @@ class ThemeController : public QObject {
     void mutate(Change&& change);
     void persist();
     [[nodiscard]] const struct ShellPalette& activePalette() const;
+    [[nodiscard]] const struct AccentPreset& activeAccentPreset() const;
+    [[nodiscard]] QColor resolvedAccent() const;
     [[nodiscard]] core::EffectLevels stored() const;
     [[nodiscard]] core::EffectLevels effective() const;
     /// Applies the effective text lift to a chromatic ink: multiplies the
