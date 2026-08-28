@@ -24,6 +24,76 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- The static-analysis baseline records what was said, not only how often
+
+The advisory half of static analysis was held to a recorded count per file and
+check. A count cannot tell a diagnostic that was fixed from one that was
+replaced, and the two together are indistinguishable from no change at all.
+Demonstrated rather than argued: in `app/src/thumbnail_backend.cpp`, whose
+recorded entries are three `readability-math-missing-parentheses` and two
+`cppcoreguidelines-pro-bounds-pointer-arithmetic`, parenthesizing the megabyte
+rounding in one function and writing `rowBytes + height * bytesPerPixel` in
+another leaves both counts exactly where they were. The gate's output was
+byte-identical to a clean tree -- the same 114 diagnostics across the same 74
+entries -- with a precedence defect in the file it was watching. The first
+edit is a correct tidy-up on its own, which is what makes the pair a plausible
+accident rather than an attack.
+
+Each recorded entry now carries a digest of that entry's diagnostic text
+alongside its count, and an entry whose count holds while its text moves is
+reported as such, naming both digests. The digest is taken over message text
+only. Messages carry no line or column, so the property the per-file-and-check
+key was chosen for is kept: moving a diagnostic down its file still does not
+restate the baseline, and a reader is not trained to regenerate the baseline on
+sight, which is how a real swap gets waved through.
+
+Collapsing duplicate reports needed care that was not obvious beforehand. A
+header is re-analysed by every translation unit that includes it, and one
+location can be worded in more than one way: a unit that sees only a
+destructor's declaration reports a class as defining "a destructor", a unit
+that sees its definition reports it as defining "a non-default destructor".
+Putting the message into the identity that collapses duplicates would have made
+that header's count depend on which unrelated sources include it -- the exact
+instability the collapse exists to prevent, and it showed up as the recorded
+total moving from 114 to 115. A location is one occurrence, and every wording
+observed at it is carried into the digest together.
+
+Sorting is pinned to the C collation order everywhere the digest depends on it.
+The digest is committed and has to reproduce on another machine, and default
+collation orders punctuation differently between locales, so an unpinned sort
+would have made a recorded value a property of the checkout's environment.
+
+Three floors sit under the mechanism, because a digest that stops being
+compared fails the same way a counter that stops counting does. The digesting
+tool is required rather than optional, since an empty digest compares equal to
+every other empty digest. A measured entry whose digest is not well-formed
+fails the run instead of being compared. A recorded entry without a digest --
+the shape of every baseline written before this change -- is refused with the
+command that regenerates it, rather than being read as having no digest to
+disagree with.
+
+The gate's self-test grows from 13 scenarios to 19. The load-bearing one
+records a baseline over a file holding two occurrences of one check, then
+analyses a file where one of them has been fixed and another introduced: same
+count, same entry, different text. Two more require it to be reported as
+changed text rather than as one entry arriving and another leaving, and one
+requires a diagnostic that moved down its file to still be accepted.
+
+Known limit, and it is a real one: two occurrences of one check in one file
+whose messages are byte-identical remain interchangeable, because outside their
+locations nothing distinguishes them. Closing that would mean recording a line
+or column and giving up insensitivity to edits above a diagnostic. The fatal
+tier is unaffected either way -- `bugprone-*`, the clang analyzer,
+owning-memory, no-malloc and `modernize-use-scoped-lock` fail the translation
+unit outright and never reach this comparison.
+
+Verified by reproducing the substitution on the unmodified gate and confirming
+it passed, then confirming the same payload is rejected by the new one; by the
+19-scenario self-test with a floor on its own reported count; and by the
+release and sanitizer batteries over the regenerated baseline.
+
+---
+
 ## 2026-08-27 -- A heading's date is checked against its commit
 
 The record's reading-order rule compares entries against each other using the

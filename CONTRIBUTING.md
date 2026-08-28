@@ -267,10 +267,20 @@ These are not optional; they are how the project stays safe in C++:
   the categories that indicate real defects — `bugprone-*`, owning-memory,
   no-malloc, and the clang analyzer — to errors; those fail the gate outright.
   Every remaining enabled check is advisory and is held against
-  `tools/clang_tidy_baseline.txt`, which records one count per file and check.
+  `tools/clang_tidy_baseline.txt`, which records one count per file and check
+  together with a digest of that entry's diagnostic text.
   The gate fails when a file gains a diagnostic it did not have and equally
   when it sheds one without the baseline being updated, so the recorded set can
-  only move downward. Fix a new diagnostic rather than recording it; after
+  only move downward. It also fails when the count holds but the text moves,
+  which is what a fixed diagnostic and a newly introduced one look like
+  together: parenthesizing one expression while getting the precedence wrong in
+  another leaves the same file with the same number of occurrences of the same
+  check, and a count-only comparison reported that as a clean tree. The digest
+  covers message text only and carries no line or column, so moving a
+  diagnostic down its file does not restate the baseline. Two occurrences of
+  one check in one file whose messages are byte-identical remain
+  interchangeable, because nothing outside their locations distinguishes them.
+  Fix a new diagnostic rather than recording it; after
   genuinely removing one, regenerate with
   `bash tools/check_clang_tidy.sh <build-directory> --update-baseline` and
   commit the smaller baseline. Advisory diagnostics are summarized rather than

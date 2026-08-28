@@ -11,6 +11,16 @@
 # baseline being updated, so the recorded set can only move downward and can
 # never quietly drift.
 #
+# Each recorded entry carries a digest of the diagnostic text alongside the
+# count. A count alone cannot tell a fixed diagnostic from a substituted one:
+# parenthesising one expression while introducing a precedence defect in
+# another leaves the same file with the same number of occurrences of the same
+# check, and the gate's output was byte-identical to a clean tree. The digest
+# is taken over the message text only, which carries no line or column, so the
+# deliberate insensitivity to editing above a recorded diagnostic is kept: an
+# entry restates the baseline when what the analyser said about the file
+# changes, not when the file moved.
+#
 # Advisory output is summarised rather than reprinted. Emitting every advisory
 # line on every run buries a new diagnostic in several hundred unchanged ones,
 # which defeats the reason for running the analysis in a gate at all.
@@ -88,6 +98,15 @@ readonly fatal_check_pattern
 if [[ -z "$fatal_check_pattern" ]]; then
     printf 'static_analysis: no check is promoted to an error in %s\n' "$policy_file" >&2
     printf '  The gate reads its fatal set from that line; without it there is nothing to enforce.\n' >&2
+    exit 1
+fi
+
+# The digest tool is required rather than optional. Without it every entry
+# would carry an empty digest, every empty digest would compare equal to every
+# other, and the comparison would go on reporting success while checking
+# nothing - the same failure as a counter that stopped counting.
+if ! command -v sha256sum >/dev/null 2>&1; then
+    printf 'static_analysis: sha256sum is required to digest diagnostic text\n' >&2
     exit 1
 fi
 
@@ -169,20 +188,126 @@ fi
 #
 # The count is per file and check rather than per line so that editing a file
 # above a recorded diagnostic does not restate the baseline.
+#
+# The message text is kept, because the count on its own cannot distinguish a
+# diagnostic that was fixed from one that was replaced. It is carried into a
+# per-entry digest below rather than into the entry key, so that two
+# occurrences of one check in one file stay a single recorded line.
+#
+# It is deliberately not part of the identity that collapses the duplicates
+# either. One location can be described in more than one way: analysed from a
+# translation unit that sees only the declaration of a destructor, a class is
+# reported as defining "a destructor", and from one that sees the definition as
+# defining "a non-default destructor" - the same diagnostic, at the same line
+# and column, worded by what that unit could see. Counting those separately
+# made a header's recorded count depend on which unrelated sources include it,
+# which is the instability collapsing duplicates exists to prevent. A location
+# is therefore one occurrence, and every wording observed at it is carried into
+# the digest together.
+#
+# The repository root is stripped everywhere on the line, not only at its
+# start: a message that quoted an absolute path would otherwise make the digest
+# depend on where the checkout happens to live. Tabs are folded to spaces first
+# so that a message can never split the fields it is carried in.
+#
+# Every sort that the digest depends on runs in the C collation order. The
+# digest is committed to the baseline and has to reproduce on another machine,
+# and the default collation orders punctuation differently between locales, so
+# an unpinned sort would make the recorded digest a property of the checkout's
+# environment rather than of the analysis.
+readonly diagnostics_file="$workspace/diagnostics-normalised.txt"
+tr '\t' ' ' <"$raw_output" |
+    sed "s|${repository_root}/||g" |
+    sed -nE 's/^([^ :]+):([0-9]+):([0-9]+): (warning|error): (.*) \[([a-z0-9-]+)\]$/\1\t\2\t\3\t\6\t\5/p' |
+    LC_ALL=C sort -u >"$diagnostics_file"
+
+# Reduces the diagnostics to one record per location, carrying every wording
+# observed there. The unit separator joins them because it cannot occur in a
+# diagnostic message, and it never reaches the output: the joined text is
+# digest input only.
+readonly locations_file="$workspace/locations.txt"
+LC_ALL=C sort -t$'\t' -k1,1 -k4,4 -k2,2 -k3,3 -k5,5 "$diagnostics_file" |
+    awk -F'\t' -v separator=$'\x1f' '
+        {
+            key = $1 FS $4 FS $2 FS $3
+            if (key != previous) {
+                if (started) {
+                    printf "%s\t%s\t%s\n", path, check, wordings
+                }
+                started = 1
+                previous = key
+                path = $1
+                check = $4
+                wordings = $5
+            } else {
+                wordings = wordings separator $5
+            }
+        }
+        END {
+            if (started) {
+                printf "%s\t%s\t%s\n", path, check, wordings
+            }
+        }
+    ' >"$locations_file"
+
+# Groups the locations by file and check, counting them and digesting their
+# text. Locations are sorted by their wording within a group by the sort below,
+# so the digest describes what was said about that file and check and not the
+# order the translation units happened to be analysed in.
 readonly current_file="$workspace/current.txt"
-sed "s|^${repository_root}/||" "$raw_output" |
-    sed -nE 's/^([^ :]+):([0-9]+):([0-9]+): (warning|error): .*\[([a-z0-9-]+)\]$/\1\t\2\t\3\t\5/p' |
-    sort -u |
-    awk -F'\t' '{ print $1 "\t" $4 }' |
-    sort |
-    uniq -c |
-    sed -E 's/^ *([0-9]+) /\1\t/' |
-    sort -k2,2 -k3,3 >"$current_file"
+{
+    group_key=""
+    group_count=0
+    group_text=""
+
+    flush_group() {
+        if [[ -z "$group_key" ]]; then
+            return 0
+        fi
+        local path="${group_key%%$'\t'*}"
+        local check="${group_key#*$'\t'}"
+        local digest
+        digest="$(printf '%s' "$group_text" | sha256sum | cut -c1-12)"
+        printf '%d\t%s\t%s\t%s\n' "$group_count" "$path" "$check" "$digest"
+    }
+
+    while IFS=$'\t' read -r path check wordings; do
+        entry_key="$path"$'\t'"$check"
+        if [[ "$entry_key" != "$group_key" ]]; then
+            flush_group
+            group_key="$entry_key"
+            group_count=0
+            group_text=""
+        fi
+        group_count=$((group_count + 1))
+        group_text+="$wordings"$'\n'
+    done < <(LC_ALL=C sort -t$'\t' -k1,1 -k2,2 -k3,3 "$locations_file")
+
+    flush_group
+} | LC_ALL=C sort -k2,2 -k3,3 >"$current_file"
+
+# A floor under the digest itself. An entry whose digest is empty or malformed
+# means the digesting step produced nothing, and an empty digest compares equal
+# to every other empty digest, so the comparison below would pass every swap it
+# exists to catch.
+while IFS=$'\t' read -r _count path check digest; do
+    if [[ ! "$digest" =~ ^[0-9a-f]{12}$ ]]; then
+        printf 'static_analysis: %s: %s was measured without a usable diagnostic-text digest\n' \
+            "$path" "$check" >&2
+        printf '  The digest is what distinguishes a fixed diagnostic from a substituted one.\n' >&2
+        exit 1
+    fi
+done <"$current_file"
 
 if ((update_baseline == 1)); then
     {
         printf '# Recorded advisory clang-tidy diagnostics, one line per file and\n'
-        printf '# check, written as: count<TAB>path<TAB>check.\n'
+        printf '# check, written as: count<TAB>path<TAB>check<TAB>digest.\n'
+        printf '#\n'
+        printf '# The digest covers the diagnostic text of that entry, so that fixing\n'
+        printf '# one occurrence while introducing another is not recorded as no change.\n'
+        printf '# It carries no line or column: moving a diagnostic down a file leaves\n'
+        printf '# the entry alone.\n'
         printf '#\n'
         printf '# The gate fails when this set changes in either direction. Regenerate\n'
         printf '# with: bash tools/check_clang_tidy.sh <build-directory> --update-baseline\n'
@@ -213,7 +338,21 @@ fi
 
 readonly recorded_file="$workspace/recorded.txt"
 grep -v '^#' "$baseline_file" | grep -v '^[[:space:]]*$' |
-    sort -k2,2 -k3,3 >"$recorded_file" || true
+    LC_ALL=C sort -k2,2 -k3,3 >"$recorded_file" || true
+
+# A baseline written before entries carried a digest has three fields, and a
+# missing digest would compare equal to nothing and be reported as a change on
+# every entry at once - or, worse, be treated as "no digest recorded, so no
+# digest to disagree with". Neither is a comparison. The baseline is refused
+# until it has been regenerated in the current form.
+while IFS=$'\t' read -r _count path check digest; do
+    if [[ ! "$digest" =~ ^[0-9a-f]{12}$ ]]; then
+        printf 'static_analysis: the baseline entry for %s: %s carries no diagnostic-text digest\n' \
+            "$path" "$check" >&2
+        printf '  Regenerate it with: bash tools/check_clang_tidy.sh <build-directory> --update-baseline\n' >&2
+        exit 1
+    fi
+done <"$recorded_file"
 
 # Compares the recorded and current sets keyed on path and check, so a count
 # that moves in either direction is reported with both values.
@@ -230,15 +369,20 @@ readonly drift_file="$workspace/drift.txt"
 awk -F'\t' '
     $1 == "recorded" {
         recorded[$3 "\t" $4] = $2
+        digest[$3 "\t" $4] = $5
         next
     }
     $1 == "current" {
         key = $3 "\t" $4
         if (!(key in recorded)) {
-            printf "new\t%s\t%s\t0\t%s\n", $3, $4, $2
+            printf "new\t%s\t%s\t0\t%s\t\t%s\n", $3, $4, $2, $5
         } else {
             if (recorded[key] + 0 != $2 + 0) {
-                printf "changed\t%s\t%s\t%s\t%s\n", $3, $4, recorded[key], $2
+                printf "changed\t%s\t%s\t%s\t%s\t%s\t%s\n", \
+                    $3, $4, recorded[key], $2, digest[key], $5
+            } else if (digest[key] != $5) {
+                printf "substituted\t%s\t%s\t%s\t%s\t%s\t%s\n", \
+                    $3, $4, recorded[key], $2, digest[key], $5
             }
             delete recorded[key]
         }
@@ -246,17 +390,18 @@ awk -F'\t' '
     END {
         for (key in recorded) {
             split(key, parts, "\t")
-            printf "cleared\t%s\t%s\t%s\t0\n", parts[1], parts[2], recorded[key]
+            printf "cleared\t%s\t%s\t%s\t0\t%s\t\n", \
+                parts[1], parts[2], recorded[key], digest[key]
         }
     }
 ' < <(
     sed 's/^/recorded\t/' "$recorded_file"
     sed 's/^/current\t/' "$current_file"
-) | sort >"$drift_file"
+) | LC_ALL=C sort >"$drift_file"
 
 if [[ -s "$drift_file" ]]; then
     printf 'static_analysis: the advisory diagnostic set moved away from the baseline\n' >&2
-    while IFS=$'\t' read -r kind path check was now; do
+    while IFS=$'\t' read -r kind path check was now was_digest now_digest; do
         case "$kind" in
             new)
                 printf '  %s: %s is new (%s occurrence(s))\n' \
@@ -265,6 +410,11 @@ if [[ -s "$drift_file" ]]; then
             changed)
                 printf '  %s: %s went from %s to %s occurrence(s)\n' \
                     "$path" "$check" "$was" "$now" >&2
+                ;;
+            substituted)
+                printf '  %s: %s still occurs %s time(s), but the analyser now says something else about it (recorded %s, now %s)\n' \
+                    "$path" "$check" "$now" "$was_digest" "$now_digest" >&2
+                printf '    An occurrence was fixed and another introduced, or an existing one changed form.\n' >&2
                 ;;
             cleared)
                 printf '  %s: %s no longer occurs (%s recorded)\n' \
