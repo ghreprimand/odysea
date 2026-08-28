@@ -38,6 +38,21 @@ A linked-module test imports the production QML module and reads the first and
 last role values from all three types. A separate storage contract rejects a
 non-`int` backing type, so the generated type descriptions cannot drift back to
 an unresolved alias while runtime enum visibility continues to pass.
+## 2026-08-28 -- Action-bar compaction measures its full row
+
+The action bar now derives its labeled compact breakpoint from an independent
+measurement row built from the same controls, margins, spacing, action labels,
+and stretch reserve as the rendered row. That row stays labeled while the
+rendered row is compact, so the compact state cannot lower the threshold that
+selects it. Button implicit widths, density, and interface scale therefore
+flow through the same layout contract rather than a separately maintained
+width sum.
+
+The reusable-component test checks Compact, Cozy, and Comfortable density: at
+the measured width every labeled action remains within the bar, and one pixel
+less selects compact chrome. The visual validation ran on the software scene
+graph at logical scale 1x and with logical scale 2; these runs verify layout
+only, not a device-resolution framebuffer.
 
 ---
 

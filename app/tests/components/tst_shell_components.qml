@@ -770,6 +770,41 @@ Item {
             compare(model.calls[model.calls.length - 1], "requestCopy");
         }
 
+        function test_actionBarLabeledRequirementContainsEveryLabeledControl() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const bar = createTemporaryObject(actionBarFactory, harness, {
+                "shellModel": model,
+                "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
+            });
+            verify(bar !== null);
+
+            const densities = [ShellTheme.Compact, ShellTheme.Cozy, ShellTheme.Comfortable];
+            const controlNames = ["filterField", "sortModeBox", "hiddenToggle", "selectAllButton", "copyButton", "moveButton", "renameButton", "trashButton"];
+            for (let densityIndex = 0; densityIndex < densities.length; ++densityIndex) {
+                theme.density = densities[densityIndex];
+                flush();
+
+                const requirement = Math.ceil(bar.labeledWidthRequirement);
+                bar.width = requirement;
+                flush();
+                verify(!bar.compact, "the measured requirement must keep labels at density " + densityIndex);
+
+                for (let controlIndex = 0; controlIndex < controlNames.length; ++controlIndex) {
+                    const control = findChild(bar, controlNames[controlIndex]);
+                    verify(control !== null);
+                    const position = control.mapToItem(bar, 0, 0);
+                    verify(position.x >= 8 - 0.5, controlNames[controlIndex] + " must respect the left margin");
+                    verify(position.x + control.width <= bar.width - 8 + 0.5, controlNames[controlIndex] + " must fit inside the measured requirement");
+                }
+
+                bar.width = requirement - 1;
+                flush();
+                verify(bar.compact, "one pixel below the measured requirement must use compact chrome at density " + densityIndex);
+            }
+
+            theme.density = ShellTheme.Cozy;
+        }
+
         function test_actionBarFilterReachesModel() {
             const model = createTemporaryObject(modelFactory, harness);
             const bar = createTemporaryObject(actionBarFactory, harness, {

@@ -437,8 +437,11 @@ there is no apply step.
   workspace toggles and the action row's operation buttons drop their labels
   and render icons only, and the filter field narrows, so every control
   stays visible, reachable, and unclipped down to the window's minimum size
-  (720×480 logical). The labels remain available through accessible names
-  and tooltips, and the bound scales with the interface.
+  (720×480 logical). The action row derives its bound from an independent,
+  always-labeled measurement row using the same controls, margins, spacing,
+  and stretch reserve as the rendered row, so compact children cannot change
+  the condition that selects them. The labels remain available through
+  accessible names and tooltips, and the bound scales with the interface.
 - **Screen-effect profiles.** `Off`, `Minimal`, `Balanced` (shipped default),
   and `Strong` are fixed presets over the effect levels: core and wide bloom,
   scanlines, vignette, persistence, ground depth, and text lift. `Custom`

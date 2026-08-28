@@ -13,11 +13,12 @@ ChromeStrip {
     required property var shellModel
     required property ActionRegistry registry
 
-    /// The live width required by the fully labeled row. Each hidden button
-    /// uses the same action declaration and shared component as its visible
-    /// counterpart, so translated labels, density-scaled type, icon size,
-    /// and padding all move the breakpoint together.
-    readonly property real labeledWidthRequirement: 16 + (actionRow.spacing * 8) + 260 + 130 + hiddenToggle.implicitWidth + selectAllMeasure.implicitWidth + copyMeasure.implicitWidth + moveMeasure.implicitWidth + renameMeasure.implicitWidth + trashMeasure.implicitWidth
+    /// The live width required by the fully labeled row. The independent
+    /// measurement row uses the same controls, margins, spacing, action
+    /// declarations, and stretch reserve as the visible row. It stays labeled
+    /// while the visible row is compact, avoiding a feedback loop where the
+    /// compact children could shrink the threshold that selects them.
+    readonly property real labeledWidthRequirement: actionRow.anchors.leftMargin + actionRow.anchors.rightMargin + labeledMeasureRow.implicitWidth
 
     /// Below the measured labeled requirement the operation buttons drop
     /// their labels and the filter field narrows. The labels stay available
@@ -36,21 +37,46 @@ ChromeStrip {
     outlined: false
     implicitHeight: Math.max(44, bar.theme.chromeFontPixelSize + 20)
 
-    Item {
+    RowLayout {
+        id: labeledMeasureRow
+
         visible: false
+        spacing: actionRow.spacing
+
+        ShellTextField {
+            Layout.preferredWidth: 260
+            theme: bar.theme
+            fieldColor: bar.theme.panel
+            placeholderText: filterField.placeholderText
+        }
+
+        ComboBox {
+            Layout.preferredWidth: sortBox.Layout.preferredWidth
+            model: sortBox.model
+        }
+
+        CheckBox {
+            text: hiddenToggle.text
+        }
 
         ActionButton {
             id: selectAllMeasure
 
             theme: bar.theme
+            showLabel: true
             registry: bar.registry
             actionId: "selection.all"
+        }
+
+        Item {
+            Layout.fillWidth: true
         }
 
         ActionButton {
             id: copyMeasure
 
             theme: bar.theme
+            showLabel: true
             registry: bar.registry
             actionId: "selection.copy"
         }
@@ -59,6 +85,7 @@ ChromeStrip {
             id: moveMeasure
 
             theme: bar.theme
+            showLabel: true
             registry: bar.registry
             actionId: "selection.move"
         }
@@ -67,6 +94,7 @@ ChromeStrip {
             id: renameMeasure
 
             theme: bar.theme
+            showLabel: true
             registry: bar.registry
             actionId: "selection.rename"
         }
@@ -75,6 +103,7 @@ ChromeStrip {
             id: trashMeasure
 
             theme: bar.theme
+            showLabel: true
             registry: bar.registry
             actionId: "selection.trash"
         }
