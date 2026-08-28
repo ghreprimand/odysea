@@ -458,20 +458,28 @@ falls short. Write every feature from the requirement it satisfies.
   upstream's own provenance and license text reproduced verbatim as its terms
   require; the identical text one directory outside that tree is refused.
 
+- Do not survey a field and place this project inside it. A positioning
+  paragraph needs no name at all — a landscape, a gap found in it, this project
+  set in the gap — and it makes the same claim. Describe what OdySea does and
+  what is out of scope, in its own terms.
+
 `public_repository_guard` enforces the category rather than a list of
 instances, and deliberately so: a tracked list of names would publish those
 names in the file written to suppress them, and would also disclose that the
 suppression exists. Hashing such a list fixes neither, because a short known
-name falls to a wordlist. The consequence is a stated gap — a name carried
-without a hosted-source reference, without derivative framing, and without a
-crediting heading is not detected, so the rule is yours to keep, not only the
-guard's.
+name falls to a wordlist. The consequence is a stated gap — a bare name carried
+without a hosted-source reference, without derivative framing, without a
+positioning structure, and without a crediting heading is not detected, so the
+rule is yours to keep, not only the guard's.
 
 Weak comparatives are ordinary engineering prose and stay usable. The guard
 matches a comparative only where it immediately governs a set this project is
-being placed within or against, and it does not match the category noun at all:
-saying that the thumbnail cache escapes paths the way the surrounding desktop
-does is a specification statement, and it is meant to keep working.
+being placed within or against, and it does not match interoperability prose:
+saying that a divergent escaping would produce a cache no other application can
+read is a specification statement, and it is meant to keep working. What is
+refused is the enumerated peer group — a qualifier such as "most" or "existing"
+in front of the project category — because there is no way to write that except
+as a statement about a set of peers.
 
 ## Engineering record
 

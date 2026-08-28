@@ -3,46 +3,46 @@
 OdySea is a local-first, GPU-accelerated file manager. This document records the
 product intent and the high-level architecture the implementation targets.
 
-## Positioning
+## What OdySea is
 
-The Linux file-manager landscape spans a wide range:
+A fast, local browser for the filesystem on this machine, driven equally well by
+keyboard or by mouse.
 
-- **Environment file managers** — Dolphin (KDE), Nautilus (GNOME), Thunar
-  (Xfce). Feature-complete and well integrated with their desktop environments,
-  but tied to those environments' conventions.
-- **Terminal file managers** — Yazi, nnn, ranger, Midnight Commander. Extremely
-  fast and keyboard-driven, but constrained by the terminal grid and text-only
-  rendering.
-- **Data-platform explorers** — e.g. content-indexed virtual filesystems that
-  span multiple devices and cloud backends.
+- **Local and immediate.** It browses what is mounted here. Directory listings,
+  metadata, and thumbnails are produced by this application, and a large
+  directory stays responsive while it loads.
+- **Graphical and GPU-rendered.** Icons, thumbnails, selection models, and
+  drag-and-drop are first-class, and the shell is drawn through a hardware scene
+  graph rather than a character grid.
+- **Keyboard-complete.** Every action has a keyboard route, and the keyboard
+  route is designed first rather than retrofitted.
+- **Desktop-integrated but not desktop-bound.** It follows the freedesktop
+  specifications for trash, thumbnails, MIME handling, and desktop entries, so
+  it interoperates with the surrounding session without adopting the conventions
+  of any single desktop environment.
 
-OdySea occupies the gap between the first two categories: the ergonomics and
-speed of a terminal file manager, delivered through a graphical, GPU-rendered
-surface with proper thumbnails, selection models, and drag-and-drop. It does not
-pursue the data-platform direction; its scope is a fast, local browser that is
-equally comfortable driven by keyboard or mouse.
+## Scope boundaries
 
-## Explicitly not
-
-- **Not a TUI or a keyboard-only tool.** The pointer experience is a first-class
-  target, equal to the keyboard — full graphical rendering, icons, thumbnails,
+- **Not a text-only interface.** The pointer experience is a first-class target,
+  equal to the keyboard — full graphical rendering, icons, thumbnails,
   drag-and-drop, and context menus.
-- **Not modal-by-default.** Vim-style modal input is opt-in, never forced.
-- **Not a cross-device virtual filesystem or cloud sync platform.**
+- **Not modal by default.** Modal keybindings are opt-in, never forced.
+- **Not a cross-device virtual filesystem or cloud sync platform.** Content
+  indexing across multiple devices and remote backends is out of scope.
 
 ## Interaction model
 
-**Principle: full input parity.** OdySea is a graphical desktop application, not a
-terminal UI with a mouse bolted on. The keyboard and the pointer are two
-complete, first-class input paths, and neither is allowed to compromise the
-other. A mouse-driven user should find OdySea as natural as any mainstream
-desktop file manager; a keyboard-driven user should find it as fast as a
-terminal file manager. Achieving both at once is a deliberate design target.
+**Principle: full input parity.** OdySea is a graphical desktop application. The
+keyboard and the pointer are two complete, first-class input paths, and neither
+is allowed to compromise the other. A mouse-driven user should reach every
+action through direct manipulation and menus; a keyboard-driven user should
+reach every action without touching the pointer, at typing speed. Achieving both
+at once is a deliberate design target.
 
 - **Keyboard.** Every action is reachable without the mouse. A command palette
   provides discoverable, searchable commands; type-ahead jumps to entries; arrow
   and Home/End keys navigate; standard shortcuts cover rename, trash, copy,
-  move, and selection. An optional modal (vim-style) mode is available but is
+  move, and selection. An optional modal keybinding mode is available but is
   **off by default**.
 - **Navigation geometry.** List arrows move by one row. Grid arrows preserve
   row and column boundaries rather than wrapping across cell edges, while

@@ -1,9 +1,9 @@
 // Headless tests for the thumbnail cache policy.
 //
 // Everything here is pure: no threads, no decoder, no display server. The
-// digest and escaping expectations are taken from published test vectors and
-// from what other desktop implementations produce, never from this
-// implementation's own output, so a mistake here cannot validate itself.
+// digest and escaping expectations come from published test vectors and from
+// the freedesktop thumbnail specification, never from this implementation's own
+// output, so a mistake here cannot validate itself.
 #include "digest.hpp"
 #include "odysea/core/thumbnail.hpp"
 #include "test_support.hpp"
@@ -115,10 +115,10 @@ void test_the_digest_matches_published_vectors() {
     }
 }
 
-void test_the_uri_escapes_the_same_bytes_other_desktops_escape() {
-    // Expectations produced by an established desktop URI implementation. The
+void test_the_uri_escapes_the_bytes_the_shared_cache_key_requires() {
+    // Expectations fixed by the shared cache key rather than by this code. The
     // cache file name is the digest of these exact bytes, so any divergence
-    // would silently create a cache no other application can find.
+    // would silently create a cache nothing else on the system can find.
     const std::array<std::pair<std::string, std::string>, 11> expectations{{
         {"/tmp/plain.png", "file:///tmp/plain.png"},
         {"/tmp/a b.png", "file:///tmp/a%20b.png"},
@@ -321,7 +321,7 @@ int main() {
     const odysea::test::TemporaryTree tree("thumbnail_policy");
 
     test_the_digest_matches_published_vectors();
-    test_the_uri_escapes_the_same_bytes_other_desktops_escape();
+    test_the_uri_escapes_the_bytes_the_shared_cache_key_requires();
     test_the_uri_addresses_a_path_the_way_a_file_is_named();
     test_the_cache_name_is_the_digest_of_the_uri();
     test_the_cache_layout_follows_the_standard(tree.root());

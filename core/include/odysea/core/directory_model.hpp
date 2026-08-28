@@ -121,9 +121,9 @@ void sort_entries(std::vector<Entry>& entries);
 
 /// Read a directory into a sorted list of entries.
 ///
-/// Ordering is directories-first, then case-insensitively by name, matching the
-/// default presentation of most desktop file managers. Errors on individual
-/// entries are skipped rather than aborting the whole listing.
+/// Ordering is directories-first, then case-insensitively by name, which is the
+/// default presentation this application ships. Errors on individual entries
+/// are skipped rather than aborting the whole listing.
 ///
 /// Never throws. A failure to open the directory reports through `error` and
 /// yields no entries. A failure part-way through iteration reports the first

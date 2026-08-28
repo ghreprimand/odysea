@@ -15,8 +15,8 @@ namespace odysea::core::detail {
 /// RFC 1321 MD5 digest of `data`.
 ///
 /// This exists for one reason: the shared thumbnail cache names its files after
-/// the MD5 of the source URI, so interoperating with other desktops requires
-/// exactly this function. It is a naming scheme, never a security primitive.
+/// the MD5 of the source URI, so participating in that cache requires exactly
+/// this function. It is a naming scheme, never a security primitive.
 /// MD5 is not collision resistant, so anything looked up by a name derived here
 /// must also verify the source it claims to describe rather than trusting the
 /// name alone.

@@ -399,7 +399,8 @@ readonly third_party_slug="someone/some-other-thing"
 
 readonly forge_message='a third-party hosted-source reference is tracked'
 readonly framing_message='derivative or comparative framing is tracked'
-readonly heading_message='a credits or prior-work section heading is tracked'
+readonly heading_message='a credits, prior-work, or positioning section heading is tracked'
+readonly positioning_message='comparative positioning within a field is tracked'
 
 # Runs the guard in one throwaway repository and requires either acceptance or
 # rejection for a named reason. Requiring the reason is what stops a scenario
@@ -547,7 +548,19 @@ expect_reason_outcome comparative_construction reject "$framing_message" \
 
 expect_reason_outcome comparative_unlike reject "$framing_message" \
     "$(build_repository_named framing_unlike NOTES.md \
-        "Unlike ""other file managers, the trash path is transactional.")"
+        "Unlike ""other file mana""gers, the trash path is transactional.")"
+
+# The enumerated peer group. No comparative operator, no name: a qualifier in
+# front of the project category is already a statement about a set of peers.
+expect_reason_outcome peer_category_group reject "$framing_message" \
+    "$(build_repository_named framing_peer_group NOTES.md \
+        "Most desktop file mana""gers present directories first.")"
+
+# The same peer group reached through a verb rather than a qualifier, and with
+# a category noun the enumerated-group rule does not cover.
+expect_reason_outcome peer_group_verb_construction reject "$framing_message" \
+    "$(build_repository_named framing_peer_verb NOTES.md \
+        "The palette filters rows as ""other desktop tools do.")"
 
 # --- The discriminating direction -------------------------------------------
 # These must all be accepted. A rule that reported them would be reporting
@@ -561,12 +574,13 @@ expect_reason_outcome weak_comparative_in_technical_prose accept "$framing_messa
 Directory loads are faster than the linear scan they replaced.
 Selection behaves compared to the anchor rather than the cursor.")"
 
-# The category noun in a specification statement. Cache interoperability is
-# defined by what the surrounding desktop produces, and saying so is required.
+# Interoperability prose. The thumbnail cache is shared, so what the rest of
+# the system can read is a required subject and must keep passing. The peer
+# category is what is refused, not the fact that other software exists.
 expect_reason_outcome interoperability_statement accept "$framing_message" \
     "$(build_repository_named framing_interop NOTES.md \
-        "The escaping matches what other desktop file managers produce, because
-a cache no other application can find is not an interoperable one.")"
+        "The cache file name is the digest of these exact bytes, so a divergence
+would produce a private cache that no other application can find.")"
 
 # Dependency names are cited, not avoided.
 expect_reason_outcome dependency_citation accept "$framing_message" \
@@ -609,6 +623,52 @@ expect_reason_outcome attribution_heading_is_permitted accept "$heading_message"
 ## Attribution
 
 Commits carry the repository owner's account-scoped no-reply identity.")"
+
+# --- Comparative positioning within a field ---------------------------------
+# The argument that needs no peer at all: a survey of a field, a gap found in
+# it, and this project placed in the gap. It carries no name and no derivation
+# phrase, so every rule above passes it, and it is the same claim.
+
+expect_reason_outcome field_survey_framing reject "$positioning_message" \
+    "$(build_repository_named positioning_landscape NOTES.md \
+        "The Linux file-mana""ger landscape spans a wide range of designs.")"
+
+expect_reason_outcome placement_in_a_gap reject "$positioning_message" \
+    "$(build_repository_named positioning_gap NOTES.md \
+        "OdySea occupies the ""gap between the first two categories.")"
+
+expect_reason_outcome two_poles_and_a_middle reject "$positioning_message" \
+    "$(build_repository_named positioning_poles NOTES.md \
+        "Desktop tools tend to sit ""at two ext""remes; OdySea aims for the middle grou""nd.")"
+
+expect_reason_outcome as_good_as_any_construction reject "$positioning_message" \
+    "$(build_repository_named positioning_asany NOTES.md \
+        "A mouse-driven user should find it as natural as any main""stream desktop file manager.")"
+
+expect_reason_outcome positioning_section_heading reject "$heading_message" \
+    "$(build_repository_named positioning_heading NOTES.md \
+        "# Notes
+
+## Position""ing")"
+
+# The discriminating direction. A scope statement about this project alone must
+# pass, including one that says what it does not do.
+expect_reason_outcome own_scope_statement accept "$positioning_message" \
+    "$(build_repository_named positioning_scope NOTES.md \
+        "OdySea browses what is mounted on this machine. It follows the
+freedesktop specifications for trash, thumbnails, and MIME handling.
+
+## Scope boundaries
+
+- Not a cross-device virtual filesystem or cloud sync platform.
+- Not modal by default. Modal keybindings are opt-in, never forced.")"
+
+# A middle value in an engineering trade-off is not a market position. The
+# words carry a real technical sense and must stay usable.
+expect_reason_outcome engineering_trade_off_prose accept "$positioning_message" \
+    "$(build_repository_named positioning_tradeoff NOTES.md \
+        "The publication interval grows with the listing, so the cost sits
+between a single batch and one signal per row.")"
 
 # --- The tracked dependency citations, as they actually stand ---------------
 # The strongest accepting case available: the real tracked files that cite
@@ -658,7 +718,7 @@ fi
 
 # A floor on the suite's own reporting. A scenario that stops running leaves
 # the remaining ones green, and the summary line below would still be printed.
-readonly expected_scenarios=51
+readonly expected_scenarios=60
 if ((checked != expected_scenarios)); then
     printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
         "$checked" "$expected_scenarios" >&2

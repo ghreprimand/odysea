@@ -25,6 +25,48 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-28 -- The public record describes this project in its own terms
+
+The design overview opened with a survey of a field, a named list of projects in
+it, a stated weakness for each group, and this project placed in the gap between
+two of them. The readme carried the same argument with the names removed. Four
+shipped source comments and one test name justified a decision by what other
+software does. All of it has been tracked since the first commit.
+
+The category rules added alongside this change passed every line of it, because
+none of that text carries a hosted-source reference, a derivation phrase, or a
+crediting heading. That was recorded as the rules' stated gap; it turned out to
+be a live one.
+
+What replaces it says the same useful things without the comparison. The design
+overview now opens with what OdySea is — local and immediate, GPU-rendered,
+keyboard-complete, and integrated through the freedesktop specifications rather
+than through any one desktop's conventions — followed by scope boundaries stated
+as scope rather than as a rebuttal. The readme describes what the application is
+for. The thumbnail comments now cite the authority that actually binds them: the
+cache file name is the digest of an exact byte sequence, so the escaping is
+fixed by the shared cache key, and a divergence produces a private cache nothing
+else on the system can read. That is a stronger statement than the one it
+replaced, because it says why the bytes are what they are.
+
+Two rules were added so the structure cannot return. The enumerated peer group —
+a qualifier such as "most" or "existing" in front of the project category — is
+refused, while interoperability prose about what other software can read is not,
+because the shared cache makes that a required subject. And a positioning
+argument is refused by its structure: a field noun attached to this project's
+category, a placement into a gap, the two-poles-and-a-middle construction, and a
+section heading whose subject is placement. Written without a single name, that
+paragraph passes every other rule, and it makes the same claim.
+
+Self-test 51 to 59 scenarios, floor raised with it; 26 mutations planted and
+diffed, 25 caught, 1 equivalent and recorded. Two limits stand. A bare name with
+none of these structures around it is still undetected, which is the cost of
+enforcing a category rather than a list. And the tip is not the history: the
+removed text remains in every commit that published it, and in the archived
+record, where entries are immutable by rule.
+
+---
+
 ## 2026-08-28 -- Tracked text describes this project and no other
 
 Tracked text states what OdySea does, why, how it was verified, and where it

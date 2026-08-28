@@ -230,14 +230,18 @@ fi
 #
 # The weak comparatives are the reason this rule is written the way it is.
 # "unlike", "compared to" and "similar to" all have ordinary technical uses in
-# prose about this project's own behaviour, and the category noun is worse: the
-# thumbnail cache is interoperable precisely because its escaping matches what
-# other desktop file managers produce, and saying so is a specification
-# statement. Matching either on its own would report correct prose several
-# times over, and a check that reports correct prose is one people route
-# around. So a weak comparative is matched only in the construction that makes
-# it a comparison - the comparative immediately governing a set this project is
-# being placed within or against.
+# prose about this project's own behaviour. Matching them on their own would
+# report correct prose several times over, and a check that reports correct
+# prose is one people route around. So a weak comparative is matched only in
+# the construction that makes it a comparison - the comparative immediately
+# governing a set this project is being placed within or against.
+#
+# The peer-category noun is matched, and only that noun. Interoperability is a
+# real and frequent subject here: the thumbnail cache is shared, so prose about
+# what the rest of the system can read is required and stays permitted. What is
+# refused is the enumerated peer group - a qualifier such as "most" or
+# "existing" in front of the project category itself - because there is no way
+# to write that except as a statement about a set of peers.
 #
 # One limitation, stated rather than hidden: the search is line-oriented, so a
 # phrase broken across a wrapped line is not matched. Wrapping cannot be
@@ -245,18 +249,32 @@ fi
 # wrapped, but it is a gap in the pattern rather than in the rule.
 report_matches "derivative or comparative framing is tracked" \
     guard_corpus_grep -nI -iE \
-    '(inspired by|inspiration (from|for)|takes? (its )?cues? from|borrowed from|lifted from|cribbed from|ported from|a port of|modell?ed (on|after)|patterned after|in the style of|re-?implementation|re-?implements|drop-in replacement|feature parity with|prior art|competitors?\b|(competing|rival) (projects?|applications?|implementations?|file managers?)|\bfork of\b|(unlike|similar to|compared to|compared with|better than|worse than|nicer than|cleaner than|faster than) +(other|another|existing|most|many|comparable|competing|rival|third-party)\b|\bas (do )?(other|most|many) +[a-z-]+ +(file managers?|projects?|applications?|tools?|implementations?))' \
+    '(inspired by|inspiration (from|for)|takes? (its )?cues? from|borrowed from|lifted from|cribbed from|ported from|a port of|modell?ed (on|after)|patterned after|in the style of|re-?implementation|re-?implements|drop-in (clone|replacement)|feature parity with|prior art|competitors?\b|(competing|rival) (projects?|applications?|implementations?|file managers?)|\bfork of\b|(unlike|similar to|compared to|compared with|better than|worse than|nicer than|cleaner than|faster than) +(other|another|existing|most|many|comparable|competing|rival|third-party)\b|\bas (do )?(other|most|many) +[a-z-]+ +(file managers?|projects?|applications?|tools?|implementations?)|\b(most|many|other|another|existing|mainstream|popular|established|conventional|competing|rival|comparable) +([a-z-]+ +)?file managers?\b|\b(other|established|existing|mainstream) +(desktop|terminal) +(implementations?|applications?)\b)' \
     -- "${self_excluding_pathspec[@]}"
 
-# A section that exists to credit or to survey other work. The heading is the
-# whole signal: the words below are unremarkable in running prose - one of them
-# appears in this repository as an ordinary verb - and only become a survey of
-# other projects when they head a section. "Attribution" is deliberately absent
-# because commit attribution is a policy this project documents under that
-# name.
-report_matches "a credits or prior-work section heading is tracked" \
+# Placing this project within a field. The rule above catches a sentence that
+# names or characterises a peer; this one catches the paragraph that needs no
+# peer at all - a survey of a field, a gap identified inside it, and this
+# project set in that gap. Written without a single name it passes every check
+# above, and it is the same claim.
+#
+# The phrases are structural rather than topical: a field noun attached to this
+# project's category, a placement verb, and the two-poles-and-a-middle
+# construction that a positioning argument almost always reaches for.
+report_matches "comparative positioning within a field is tracked" \
     guard_corpus_grep -nI -iE \
-    '^#{1,6}[[:space:]]+(credits?|acknowledge?ments?|inspirations?|thanks|related (projects?|work)|see also|alternatives|prior work|prior art|comparisons?)[[:space:]]*$' \
+    '((file[- ]manager|application|product|tool)s?[- ](landscape|market|ecosystem)|occupies the (gap|space|middle|niche|ground)|the middle ground|tends? to (sit|fall|land|cluster) +(at|in|into)\b|two extremes|\bas +[a-z]+ +as any +[a-z-]+( +[a-z-]+)? +(file managers?|applications?|tools?|programs?|implementations?))' \
+    -- "${self_excluding_pathspec[@]}"
+
+# A section that exists to credit other work, to survey it, or to place this
+# project relative to it. The heading is the whole signal: the words below are
+# unremarkable in running prose - one of them appears in this repository as an
+# ordinary verb - and only become a survey of other projects when they head a
+# section. "Attribution" is deliberately absent because commit attribution is a
+# policy this project documents under that name.
+report_matches "a credits, prior-work, or positioning section heading is tracked" \
+    guard_corpus_grep -nI -iE \
+    '^#{1,6}[[:space:]]+(credits?|acknowledge?ments?|inspirations?|thanks|related (projects?|work)|see also|alternatives|prior work|prior art|comparisons?|positioning|landscape|competition|market|where it fits|how it compares)[[:space:]]*$' \
     -- "${self_excluding_pathspec[@]}"
 
 # Attribution must use the account-scoped GitHub no-reply form

@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-28 -- The public record describes this project in its own terms
 ## 2026-08-28 -- Tracked text describes this project and no other
 ## 2026-08-28 -- Give the live development record room before the ceiling
 ## 2026-08-28 -- A bare refusal line cannot turn a GPU gap green

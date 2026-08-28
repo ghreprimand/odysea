@@ -18,11 +18,12 @@ namespace {
 
 /// Bytes left literal in a file URI. Alphanumerics are handled separately.
 ///
-/// This set is what other desktop file managers produce, and it is not the same
-/// as the set the trash specification wants: `;` is escaped here, while `$&+,=`
-/// and the commercial-at byte are not. The cache file name is the digest of
-/// these exact bytes, so a divergence would silently produce a private cache
-/// that no other application could find, and vice versa.
+/// This is the set the shared thumbnail cache is keyed on, and it is not the
+/// same as the set the trash specification wants: `;` is escaped here, while
+/// `$&+,=` and the commercial-at byte are not. The cache file name is the
+/// digest of these exact bytes, so a divergence would silently produce a
+/// private cache that nothing else on the system can find, and would leave this
+/// application blind to the entries already there.
 ///
 /// The commercial-at byte is spelled as an escape because tracked text in this
 /// repository keeps that character out of prose and literals.

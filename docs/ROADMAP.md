@@ -57,7 +57,7 @@ graphical shell grows around it.
       Qt-free and cancellable; the overlay is reachable by keyboard shortcut
       and through the shared action surfaces, and results open by keyboard or
       by pointer.
-- [ ] Optional modal (vim-style) keybindings.
+- [ ] Optional modal keybindings.
 
 ## M4 — Terminal integration
 

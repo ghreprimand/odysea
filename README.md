@@ -9,23 +9,21 @@ complete keyboard *and* pointer interaction (neither treated as an
 afterthought), and tight integration with the terminal.
 
 It is a full graphical desktop application — icons, thumbnails, drag-and-drop,
-context menus — not a terminal UI. The "keyboard" emphasis means every action is
-*also* reachable from the keyboard, so power users never have to reach for the
-mouse; it does not mean the mouse is second-class.
+and context menus. The "keyboard" emphasis means every action is *also*
+reachable from the keyboard, so power users never have to reach for the mouse;
+it does not mean the mouse is second-class.
 
 > **Status:** early development. The toolkit-agnostic filesystem core and a
 > minimal GPU-rendered listing view are in place; the richer shell is under
 > active design. Not yet ready for daily use.
 
-## Why OdySea
+## What OdySea is for
 
-Desktop file managers tend to sit at two extremes: feature-dense environment
-suites, or minimal terminal tools. OdySea aims for the middle ground — the speed
-and keyboard ergonomics of a terminal file manager, presented through a
-GPU-rendered graphical surface where mouse and keyboard are equally
-first-class — thumbnails, rubber-band selection, drag-and-drop, and context
-menus on one hand; a command palette, type-ahead, and a shortcut for every
-action on the other. It is local-first and Linux-focused.
+Browsing a local filesystem quickly, with the pointer and the keyboard equally
+capable. Thumbnails, rubber-band selection, drag-and-drop, and context menus on
+one hand; a command palette, type-ahead, and a shortcut for every action on the
+other. The listing stays responsive on a large directory, and the shell is drawn
+through a GPU scene graph. It is local-first and Linux-focused.
 
 ## Goals
 
@@ -46,7 +44,7 @@ action on the other. It is local-first and Linux-focused.
 
 - A cloud or peer-to-peer virtual filesystem, or cross-device sync.
 - An embedded web browser or general-purpose plugin platform.
-- A drop-in clone of any specific existing file manager.
+- A general-purpose scripting host or a remote administration console.
 
 ## Architecture at a glance
 

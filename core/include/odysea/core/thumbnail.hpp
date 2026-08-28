@@ -78,10 +78,12 @@ struct StoredThumbnail {
 
 /// The canonical `file://` URI for a local path.
 ///
-/// The escaping matches what other desktop file managers produce, because the
-/// cache file name is derived from these exact bytes: alphanumerics, the bytes
-/// `!$&'()*+,-./:=_~`, and the commercial-at byte stay literal, while every
-/// other byte is percent-encoded with uppercase hexadecimal. Path bytes are
+/// The thumbnail cache is a shared, on-disk location keyed by the digest of
+/// this URI, so the escaping is fixed by that key rather than chosen here:
+/// alphanumerics, the bytes `!$&'()*+,-./:=_~`, and the commercial-at byte stay
+/// literal, while every other byte is percent-encoded with uppercase
+/// hexadecimal. A single differing byte yields a different digest, a different
+/// cache file name, and a cache no longer shared. Path bytes are
 /// escaped as they are, without assuming any character encoding, since a Linux
 /// file name is a byte string.
 ///
