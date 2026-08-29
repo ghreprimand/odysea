@@ -738,13 +738,16 @@ set_tests_properties(
 
 # The scaled-layout pass of the validation suite: identical software
 # environment plus the doubled scale factor, so logical-coordinate layout and
-# mask assertions are checked under doubled scaling. The offscreen surface
-# still rasterizes at 1x; the name deliberately does not present this entry as
-# genuine device-resolution evidence.
+# mask assertions are checked under doubled scaling. The declared scale is
+# exposed to the suite so it can assert that Qt applied the defining condition;
+# on the software backend this checks Screen.devicePixelRatio only, not the
+# rasterized frame size. The offscreen surface still rasterizes at 1x, so the
+# name deliberately does not present this entry as genuine device-resolution
+# evidence.
 set_tests_properties(
     shell_visual_validation_scaled_layout
     PROPERTIES ENVIRONMENT
-    "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+    "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2;ODYSEA_EXPECTED_FRAME_SCALE=2;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 # The presentation suite does not pin a scene-graph backend. The offscreen
 # platform selects the software scene graph by default, where the

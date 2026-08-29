@@ -184,6 +184,17 @@ Item {
         function initTestCase() {
             dpr = Screen.devicePixelRatio;
             verify(dpr >= 1);
+            // The software scaled-layout entry declares the factor it asked
+            // Qt to apply. Its offscreen frame still rasterizes at logical
+            // resolution, so this proves only that the logical-scale
+            // condition took effect; it is not device-resolution evidence.
+            // The compositor entry uses the same declaration as a minimum
+            // frame-density bound below, where a screen's native scale may
+            // compose with the forced factor and therefore is not compared
+            // for exact equality here.
+            if (layer.softwareBackend && harness.expectedFrameScale > 0) {
+                compare(dpr, harness.expectedFrameScale, "the software scaled-layout entry must reach its declared logical scale");
+            }
             verify(layer.wellMaskUsesLinearSampling, "the protected-well mask must retain filtered edge coverage");
             wells.registerWell(thumbWell);
             wells.registerWell(gutterWell);

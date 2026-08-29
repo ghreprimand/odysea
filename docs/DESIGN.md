@@ -628,7 +628,13 @@ shell scene, so its claims regress loudly instead of visually:
   protected-well registry scale with the viewport at most, never with the
   entry count.
 - **Device pixels.** Well-mask geometry is logical-coordinate math at every
-  scale, and on the GPU path a protected well's entire border is compared
+  scale and is exercised by the software validation entries at their declared
+  1x and 2x logical scales. The doubled entry asserts that Qt reports the
+  declared scale before crediting any layout result; its offscreen frame still
+  rasterizes at logical resolution, so that assertion is not device-resolution
+  evidence. The same logical-geometry function remains in the RHI entry to keep
+  its TestCase filter complete, but it performs no frame grab and contributes
+  no GPU evidence. On the GPU path a protected well's entire border is compared
   byte for byte against the plain path, armed by an emitter ring so a mask
   misaligned in any direction fails. A second well, separated from its
   emitter frame by a dark gutter, arms the opposite direction: the ring one
@@ -648,6 +654,11 @@ shell scene, so its claims regress loudly instead of visually:
 The high-contrast contrast matrix in the appearance tests and the software
 scene-graph fallback suite complete the matrix; the fallback keeps content,
 controls, and protected regions intact with the pipeline disengaged.
+These are independently measured axes: high contrast is not currently crossed
+with the layout-breakpoint, focus-traversal, effects-off, or large-directory
+virtualization cases. The four device-pixel frame cases skip by design inside
+both passing software validation entries and are reported as unexercised there,
+rather than being credited through the entry-level pass.
 
 ### GPU-path gates and the platform matrix
 
@@ -710,6 +721,11 @@ axes, each of which either exercises the comparisons or reports a visible skip
   can allocate a 2x surface the gate skips (77) exactly like the other
   compositor gate, so the 2x device-resolution claim rests on a run that
   actually reached that surface rather than on an offscreen approximation.
+  Until that entry reaches an owned compositor, its strict software-fallback
+  failure branch and the presentation suite's real-compositor frame sentinel
+  are also unexercised. They remain separate declared evidence gaps: a missing
+  framebuffer does not prove that the enforcement which rejects a wrong
+  backend has executed.
 
 Which combinations are required versus best-effort:
 

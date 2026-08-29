@@ -25,6 +25,38 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Scaled-layout validation proves the scale it claims
+
+The software scaled-layout entry now declares the scale it expects alongside
+`QT_SCALE_FACTOR=2`. Before any layout result is credited, the device-scaling
+suite asserts that Qt reports that exact ratio on the software backend. This is
+an assertion about the logical-scale condition, not the grabbed frame: the
+offscreen surface continues to rasterize at logical resolution and contributes
+no doubled-device-pixel evidence.
+
+The discriminator was measured in both directions. With the factor present,
+the entry passed at a reported ratio of 2. Removing only `QT_SCALE_FACTOR=2`
+made `DevicePixelScaling::initTestCase` fail with an actual ratio of 1 against
+the declared 2; restoring it passed the same entry. The ordinary 1x entry stays
+undeclared and unchanged.
+
+The device-scaling filter remains complete, so its logical well-mask geometry
+function still executes on the RHI entry, but it is not counted as GPU
+evidence: it performs no frame grab and measures only rectangle equality. The
+four frame-dependent functions skip by design inside each passing software
+entry and are reported as such. High contrast remains an independently tested
+axis rather than a cross-product with layout, focus, effects-off, or large-
+directory virtualization.
+
+The refresh ran from current main on the authorized `DISPLAY=:0` path. The RHI
+surfaces reported device-pixel ratio 1.0; no compositor was started and no test
+window was activated in the login session. Release registered 73 entries and
+passed all 71 that executed. ASan/UBSan registered the same 73, disabled static
+analysis by preset policy, and passed all 70 that executed. Both batteries
+declined only the two declared real-compositor entries. Genuine 2x framebuffer
+rendering, fractional frame-ratio divergence, independent per-axis rounding,
+the strict software-fallback failure branches, and the presentation suite's
+real-compositor frame sentinel remain explicitly unmeasured.
 ## 2026-08-29 -- Completed operations carry the terms of their own reversal
 
 Copy, move, rename, and delete-to-trash are now recorded in a bounded journal
