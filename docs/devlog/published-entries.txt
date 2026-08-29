@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-29 -- All-or-nothing was all-but-one, and vocabulary meant file contents
 ## 2026-08-29 -- Context glow is one bounded phosphor source
 ## 2026-08-29 -- Scaled-layout validation proves the scale it claims
 ## 2026-08-29 -- Completed operations carry the terms of their own reversal

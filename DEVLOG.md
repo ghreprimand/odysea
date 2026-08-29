@@ -25,6 +25,72 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- All-or-nothing was all-but-one, and vocabulary meant file contents
+
+The enumeration rule stands a candidate down when every name in it is already
+part of this project's own vocabulary. It was checking every name but one.
+
+The names reach the check in reverse order and arrive without a trailing
+newline, and the loop reading them stopped as soon as the final read reported
+end of input. The last name read is the run's first name, so the first name of
+every enumeration went unexamined. The consequence is not theoretical: a run
+whose single unrecognised name sat in that position stood down, so a survey of
+four names this program implements plus one it does not passed the guard as
+long as the foreign name was written first. Moving the same name one position
+to the right reported it. The loop now accepts the final unterminated read, and
+a fixture places the foreign name exactly where it used to be lost. A second
+fixture holds the same shape with every name recognised, so the first is known
+to report the name rather than the position.
+
+Vocabulary now means what the code says rather than what its files contain.
+The rule's own argument is that a survey cannot establish vocabulary because
+vocabulary is established by the code that implements a word, and documentation
+was excluded on exactly that basis. Comments and string literals were not, so
+the same sentence moved from a paragraph into a comment above a function
+established vocabulary after all. Comments and prose literals are now removed
+before a name is looked up, which takes this repository from 1,710 distinct
+capitalised words to 976. A quoted literal is kept when it holds no whitespace,
+because a shortcut or a role name is a token the program uses, and dropped when
+it holds whitespace, because a sentence in a string is prose in the only sense
+that matters. The removal can only ever delete text, so a name it wrongly
+discards is reported rather than excused; it cannot invent vocabulary.
+
+The vocabulary is now read once into a single index rather than re-scanned for
+every name, which is also what the rule always should have done: a candidate
+carries a handful of names and the corpus carries hundreds of sources.
+
+Verification. The self-test grows from 117 scenarios to 129, and the count
+floor caught an off-by-one in that arithmetic while the scenarios were being
+added. Nine new corpus scenarios pin the first-name position, the case, whole
+word and whole-corpus properties of the lookup, and each direction of the
+comment, block-comment, prose-literal and token-literal strip. Two patched-guard
+scenarios pin the scan-integrity branches: a scan that examined nothing over a
+non-empty corpus, and a scan that failed to run. The corpus-size read needs no
+fixture of its own, because the first of those two has a non-empty corpus and an
+examined count of zero and would stop reporting if the size stopped being read.
+
+A mutation battery plants sixteen defects one at a time and requires the suite
+to fail for each: fourteen are caught and two are declared equivalent. The
+literal-match flag is one of them, and the reason is measured rather than
+asserted -- grep reads basic expressions by default, and no character a name may
+contain is a metacharacter in them, so removing the flag changes no lookup. That
+argument is a precondition rather than a proof, so the precondition is enforced:
+a scenario reads the name grammar out of the guard and fails if it ever admits a
+metacharacter, which is the moment the flag stops being free insurance. The
+other is a branch guarding a candidate with no names, which cannot occur while
+both thresholds require two capitalised items and every capitalised item
+contributes a name.
+
+Known gaps. Only capitalised items are collected, which is consistent with every
+threshold, so no candidate is currently judged on a subset of its names. It is
+recorded at the collection site as the seam a future relaxation would open: a
+threshold that starts counting lowercase items has to start collecting them too,
+or the all-or-nothing condition silently becomes all-but-some again. A survey
+laid out inside a source comment remains outside the table rule, which reads
+prose files only.
+
+---
+
 ## 2026-08-29 -- Context glow is one bounded phosphor source
 
 The active tab, focused directory pane, and current selected entry now add a

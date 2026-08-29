@@ -1073,6 +1073,122 @@ expect_reason_outcome table_of_project_vocabulary accept "$enumeration_message" 
 | Ctrl+Z | Reverses the last operation, though not every kind |" \
         app/src/keys.cpp 'const char *keys[] = {"Ctrl+C", "Ctrl+V", "Ctrl+Z"};')"
 
+# --- Every name in the run, and the name lookup itself ----------------------
+# All-or-nothing has to mean every name. The names reach the lookup in reverse,
+# so the run's first name is the last one read, and a loop that stops when the
+# final unterminated read fails judged a candidate on all of its names but one.
+# A survey whose single unrecognised name sat in that position stood down. The
+# fixture puts the foreign name exactly there.
+readonly first_name_line='- **Profiles** - Sl'"ate, Ha""lo, Dr""ift, and Ve""il. Every profile is honoured, but a weak GPU falls back silently."
+readonly first_name_foreign_line='- **Profiles** - Au'"re""lia, Ha""lo, Dr""ift, and Ve""il. Every profile is honoured, but a weak GPU falls back silently."
+readonly first_name_source='enum class Profile { Sl'"ate, Ha""lo, Dr""ift, Ve""il };"
+
+expect_reason_outcome unrecognised_name_first_in_the_run reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_first_name \
+        docs/DESIGN.md "## Effects
+
+$first_name_foreign_line" \
+        app/src/effects.cpp "$first_name_source")"
+
+# The same fixture with every name recognised, so the scenario above is known
+# to be reporting the foreign name rather than the position.
+expect_reason_outcome every_name_recognised_in_the_run accept "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_first_name_known \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "$first_name_source")"
+
+# A comment is prose that happens to sit in a source file. If it established
+# vocabulary, a survey would authorise itself by writing the same sentence
+# above a function instead of in a paragraph.
+expect_reason_outcome vocabulary_established_only_in_a_comment reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_comment_only \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "// $first_name_source
+$unrelated_source")"
+
+# A sentence inside a string literal is prose in the only sense that matters.
+expect_reason_outcome vocabulary_established_only_in_a_block_comment reject \
+    "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_block_comment \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "/* $first_name_source */
+$unrelated_source")"
+
+expect_reason_outcome vocabulary_established_only_in_a_sentence_literal reject \
+    "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_prose_literal \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "const char *hint = \"$first_name_source\";
+$unrelated_source")"
+
+# A literal holding no whitespace is a token the program uses, and is
+# vocabulary. Without this the strip above could delete every literal and the
+# scenario before it would still pass.
+expect_reason_outcome vocabulary_from_a_token_literal accept "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_token_literal \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "const char *names[] = {\"Sl""ate\", \"Ha""lo\", \"Dr""ift\", \"Ve""il\"};")"
+
+# The lookup matches literal text rather than a pattern, and with the name
+# grammar as it stands that costs nothing to prove and cannot be demonstrated
+# by a fixture: a name may hold letters, digits, underscore, plus, apostrophe
+# and hyphen, and none of those is a metacharacter in the basic expressions
+# grep reads by default. Removing the literal flag therefore changes no
+# lookup, which was measured rather than assumed.
+#
+# So the flag is pinned by its precondition instead of by an outcome. Widen the
+# name grammar to admit a metacharacter and this fails, which is the moment the
+# flag stops being free insurance and starts being load-bearing.
+checked=$((checked + 1))
+guard_name_charset="$(sed -n 's/^ *capitalised = "\[A-Z\]\[\([^]]*\)\].*/\1/p' "$guard")"
+if [[ -z "$guard_name_charset" ]]; then
+    printf 'public_repository_guard_self_test: the collected-name character class could not be read, so the literal-match argument was not measured\n' >&2
+    status=1
+elif [[ "$guard_name_charset" =~ [.*[\^$\\] ]]; then
+    printf 'public_repository_guard_self_test: the collected-name character class %s admits a pattern metacharacter, so the vocabulary lookup must be pinned by an outcome rather than by this argument\n' \
+        "$guard_name_charset" >&2
+    status=1
+fi
+
+# The lookup is case-sensitive. A peer product whose name differs only in case
+# from an ordinary lowercase word would otherwise be recognised by it.
+expect_reason_outcome vocabulary_differing_only_in_case reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_case \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "enum class Profile { sl""ate, ha""lo, dr""ift, ve""il };")"
+
+# The lookup matches whole words. A name that merely sits inside a longer
+# identifier is not vocabulary.
+expect_reason_outcome vocabulary_inside_a_longer_identifier reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_substring \
+        docs/DESIGN.md "## Effects
+
+$first_name_line" \
+        app/src/effects.cpp "enum class Profile { Sl""ateProfile, Ha""loProfile, Dr""iftProfile, Ve""ilProfile };")"
+
+# The lookup matches literal text. Read as a pattern, a name carrying a regular
+# expression operator would match something it is not.
+# Read as a pattern, "Ctrl+C" is "Ctr", one or more "l", then "C", which the
+# identifier CtrlC satisfies. Read as the literal text it is, it is absent.
+expect_reason_outcome vocabulary_read_as_a_pattern reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_pattern \
+        docs/KEYS.md "## Shortcuts
+
+Only three shortcuts are bound, but they are Ctrl+C, Ctrl+V, and Ctrl+Z." \
+        app/src/keys.cpp 'const char *keys[] = {"CtrlC", "CtrlV", "CtrlZ"};')"
+
 # --- Text this project has no authority to rewrite --------------------------
 # The two shape rules, and only these two, read a narrower corpus. They match
 # on form rather than word choice, so they can land on the GPL, on an upstream
@@ -1192,6 +1308,33 @@ expect_patched_guard_rejection forge_scan_that_cannot_run \
 expect_patched_guard_rejection own_owner_filter_that_cannot_run \
     'the own-owner forge filter failed to run' \
     "s|^own_forge_reference_re=.*|own_forge_reference_re='[unterminated'|" \
+    "$clean_root"
+
+# The two shape rules answer "no block was reported" from two different states:
+# a corpus with nothing in it to judge, and a scan that stopped working. Both
+# produce the same silence, and only the corpus size tells them apart. The
+# empty-corpus direction has its own scenarios; these are the other direction,
+# and without them the whole distinction can be deleted with the suite green.
+#
+# A corpus that has lines and a scan that examined none of them is the state
+# that must be reported. The patch breaks the counter rather than the scan, so
+# the corpus stays non-empty and only the examined count goes to zero.
+expect_patched_guard_rejection shape_scan_that_examined_nothing \
+    'the block enumeration scan examined no corpus line' \
+    's|^    scanned++$|    scanned += 0|' \
+    "$clean_root"
+
+# The corpus size is what makes that report conditional, and the scenario above
+# is what pins it: the fixture has a non-empty corpus and an examined count of
+# zero, so a corpus size that stopped being read would take the condition false
+# and that scenario would stop reporting. It needs no separate fixture, and one
+# written for it would only re-measure the empty-corpus direction.
+#
+# The scan reports its own failure status separately, because a scan that could
+# not run is not a corpus that holds nothing.
+expect_patched_guard_rejection shape_scan_that_failed_to_run \
+    'the shape-rule corpus scan failed with status' \
+    "s|-nI -E '\\^' --|-nI -E '[unterminated' --|" \
     "$clean_root"
 
 # --- A peer named by its standing rather than by its name -------------------
@@ -1365,7 +1508,7 @@ fi
 
 # A floor on the suite's own reporting. A scenario that stops running leaves
 # the remaining ones green, and the summary line below would still be printed.
-readonly expected_scenarios=117
+readonly expected_scenarios=129
 if ((checked != expected_scenarios)); then
     printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
         "$checked" "$expected_scenarios" >&2

@@ -492,6 +492,15 @@ BEGIN {
 # "Custom. Every" rather than as "Custom". Truncating at the sentence break is
 # also the strict direction - a name cut short is a name that will not be
 # found, and an unfound name is reported rather than excused.
+#
+# Only capitalised fields reach here: both call sites require ^[A-Z]. That is
+# consistent with every threshold below, which counts capitalised names, so no
+# candidate currently exists whose names this misses. It is a seam rather than
+# a hole, and it is the seam a future relaxation would open: admit lowercase
+# items to a threshold without admitting them here, and the vocabulary check
+# would judge a candidate on a subset of its own names, which is the same
+# all-but-one failure the read loop had. A threshold that starts counting
+# lowercase items has to start collecting them too.
 function collect_name(field) {
     sub(/[.;].*$/, "", field)
     sub(/[ \t]*\(.*$/, "", field)
@@ -676,12 +685,33 @@ fi
 # that surveys it. Nothing else in the tree has any use for it.
 #
 # So a candidate stands down only when every name in it is already part of this
-# project's own vocabulary, and vocabulary means the product sources - C and
-# C++, QML, build and resource definitions. Documentation deliberately does not
-# count. If prose counted, a survey would authorise itself: name six programs
-# in a table and mention them once in a paragraph, and the table would be
-# excused by the paragraph. The vocabulary has to be established by the code
-# that implements it, which is something a survey of other work can never do.
+# project's own vocabulary, and vocabulary means what the product sources
+# declare - C and C++, QML, build and resource definitions. Documentation
+# deliberately does not count. If prose counted, a survey would authorise
+# itself: name six programs in a table and mention them once in a paragraph,
+# and the table would be excused by the paragraph.
+#
+# Vocabulary is what the code says, not what the files contain. Comments and
+# prose literals are removed before a name is looked up, because a comment is
+# prose that happens to sit in a source file and a survey can write one as
+# easily as it can write a paragraph. Without that removal the rule contradicts
+# itself: the paragraph is excluded from the vocabulary corpus and the same
+# sentence pasted into a comment above a function is not. It is also the
+# difference between a word this program implements and a word it merely
+# mentions - a sentence-opening "Total" in a doc comment, or a "Double" inside
+# a translated button label, implements nothing.
+#
+# A quoted literal is kept when it holds no whitespace and dropped when it
+# does. A shortcut, a role name, or a key is a token the program uses and is
+# every bit as much its vocabulary as an identifier; a sentence in a string is
+# prose in the only sense that matters here. Removing comments and prose
+# literals takes this repository's vocabulary from 1,710 distinct capitalised
+# words to 976.
+#
+# The removal is deliberately approximate, and its errors are safe by
+# construction: it can only ever delete text, so a name it wrongly discards is
+# a name that will not be found, and an unfound name is reported rather than
+# excused. It cannot invent vocabulary.
 #
 # The vendored dependency tree is excluded for the same reason: an upstream's
 # identifiers are its vocabulary, not this project's.
@@ -697,8 +727,84 @@ vocabulary_pathspec=(
     '!app/third_party/*'
 )
 
+# Deletes comments and quoted literals, leaving the code's own tokens. Only
+# ever removes: see the safety argument above.
+vocabulary_strip_program='
+BEGIN { single_quote = sprintf("%c", 39) }
+{
+    remaining = $0
+    kept = ""
+    position = 1
+    width = length(remaining)
+    while (position <= width) {
+        character = substr(remaining, position, 1)
+        pair = substr(remaining, position, 2)
+        if (inside_block_comment) {
+            if (pair == "*/") { inside_block_comment = 0; position += 2 }
+            else { position++ }
+            continue
+        }
+        if (pair == "/*") { inside_block_comment = 1; position += 2; continue }
+        if (pair == "//") { break }
+        if (character == "\"" || character == single_quote) {
+            quote = character
+            position++
+            literal = ""
+            while (position <= width) {
+                inner = substr(remaining, position, 1)
+                if (inner == "\\") { literal = literal " "; position += 2; continue }
+                if (inner == quote) { position++; break }
+                literal = literal inner
+                position++
+            }
+            # A literal holding no whitespace is a token the program uses -
+            # a shortcut, a role name, a key. A literal holding whitespace is
+            # a sentence, and a sentence in a string is prose exactly as a
+            # sentence in a comment is: a translated button label that reads
+            # like an instruction would otherwise contribute its opening word.
+            # The surrounding spaces keep the tokens either side separate.
+            if (literal != "" && literal !~ /[ \t]/) {
+                kept = kept " " literal " "
+            } else {
+                kept = kept " "
+            }
+            continue
+        }
+        kept = kept character
+        position++
+    }
+    print kept
+}
+'
+
+# The vocabulary is read once into a file rather than re-scanned per name. A
+# candidate carries up to a handful of names and the corpus has hundreds of
+# sources, so the per-name scan was the dominant cost of this rule.
+vocabulary_index="$(mktemp)"
+trap 'rm -f "$vocabulary_index"' EXIT
+
+vocabulary_paths=()
+mapfile -d '' -t vocabulary_paths < <(
+    guard_corpus_list "${vocabulary_pathspec[@]}" 2>/dev/null
+)
+if ((${#vocabulary_paths[@]} > 0)); then
+    for vocabulary_path in "${vocabulary_paths[@]}"; do
+        if guard_corpus_is_git; then
+            git show ":$vocabulary_path" 2>/dev/null
+        else
+            cat -- "$vocabulary_path" 2>/dev/null
+        fi
+    done | awk "$vocabulary_strip_program" >"$vocabulary_index"
+fi
+
+# -w so a name is not recognised by sitting inside a longer identifier, and -F
+# so a name is matched as the literal text it is rather than as a pattern. The
+# lookup is case-sensitive: the names this rule collects are capitalised, and
+# matching them against lowercase text would recognise a peer product by an
+# unrelated common word, which is how "Files" and "Finder" would become
+# vocabulary. Each of those three properties is pinned by its own scenario.
 name_is_project_vocabulary() {
-    guard_corpus_grep -qwF "$1" -- "${vocabulary_pathspec[@]}" 2>/dev/null
+    grep -qwF -- "$1" "$vocabulary_index" 2>/dev/null
 }
 
 block_enumeration_matches=""
@@ -706,8 +812,20 @@ while IFS=$'\t' read -r marker reference names text; do
     [[ "$marker" == "candidate" ]] || continue
 
     every_name_is_ours=1
+    # A candidate carrying no names cannot presently occur: both thresholds
+    # above require at least two capitalised items, and every capitalised item
+    # contributes a name, because the trimming can only remove characters from
+    # a field that begins with a capital. The branch is kept because the
+    # alternative is a candidate standing down on an empty set, which is the
+    # worst available failure, and no mutation of it can be caught while the
+    # state stays unreachable.
     [[ -n "$names" ]] || every_name_is_ours=0
-    while IFS= read -r name; do
+    # The final name arrives without a trailing newline, so the loop condition
+    # has to accept the last read as well as every successful one. Reading only
+    # while `read` succeeds silently dropped one name from every candidate,
+    # which made the all-or-nothing condition all-but-one and stood down any
+    # run whose single unrecognised name happened to land in that position.
+    while IFS= read -r name || [[ -n "$name" ]]; do
         [[ -n "$name" ]] || continue
         if ! name_is_project_vocabulary "$name"; then
             every_name_is_ours=0
