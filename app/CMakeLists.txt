@@ -76,6 +76,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/EffectBlurPass.qml
         qml/EffectBrightPass.qml
         qml/EffectComposite.qml
+        qml/EntryIcon.qml
         qml/FuzzyFindOverlay.qml
         qml/Main.qml
         qml/MillerColumnsView.qml

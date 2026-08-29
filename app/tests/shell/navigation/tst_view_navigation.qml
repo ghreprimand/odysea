@@ -400,15 +400,21 @@ Support.ShellTestCase {
         fakeModel.setProperty(0, "isDir", true);
         fakeModel.setProperty(1, "isSymlink", true);
 
-        compare(child("entryIcon-0").name, "folder");
-        compare(child("entryIcon-1").name, "symlink");
-        compare(child("entryIcon-2").name, "file");
+        compare(child("entryIcon-0").semanticName, "folder");
+        compare(child("entryIcon-0").semanticInk, testCase.shellWindow.shellTheme.dirInk);
+        compare(child("entryIcon-1").semanticName, "symlink");
+        compare(child("entryIcon-1").semanticInk, testCase.shellWindow.shellTheme.linkInk);
+        compare(child("entryIcon-2").semanticName, "file");
+        compare(child("entryIcon-2").semanticInk, testCase.shellWindow.shellTheme.textFaint);
 
         mouseClick(child("gridViewButton"));
         tryCompare(child("directoryGrid"), "visible", true);
-        compare(child("entryCellIcon-0").name, "folder");
-        compare(child("entryCellIcon-1").name, "symlink");
-        compare(child("entryCellIcon-2").name, "file");
+        compare(child("entryCellIcon-0").semanticName, "folder");
+        compare(child("entryCellIcon-0").semanticInk, testCase.shellWindow.shellTheme.dirInk);
+        compare(child("entryCellIcon-1").semanticName, "symlink");
+        compare(child("entryCellIcon-1").semanticInk, testCase.shellWindow.shellTheme.linkInk);
+        compare(child("entryCellIcon-2").semanticName, "file");
+        compare(child("entryCellIcon-2").semanticInk, testCase.shellWindow.shellTheme.textFaint);
     }
 
     function test_directoryViewsExposeAccessibleEntriesAndSelection() {

@@ -288,12 +288,15 @@ FocusScope {
                 anchors.rightMargin: 10
                 spacing: 10
 
-                VectorIcon {
+                EntryIcon {
                     objectName: "entryIcon-" + entryRow.index
                     implicitWidth: pane.entryFontPixelSize + 4
                     implicitHeight: implicitWidth
-                    name: entryRow.isSymlink ? "symlink" : (entryRow.isDir ? "folder" : "file")
-                    ink: entryRow.isSymlink ? pane.linkInkColor : (entryRow.isDir ? pane.dirInkColor : pane.fileInkColor)
+                    directory: entryRow.isDir
+                    symbolicLink: entryRow.isSymlink
+                    directoryInk: pane.dirInkColor
+                    fileInk: pane.fileInkColor
+                    symbolicLinkInk: pane.linkInkColor
                     highContrast: pane.highContrast
                 }
                 Text {

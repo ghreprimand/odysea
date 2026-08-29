@@ -11,6 +11,7 @@ Item {
     property string name: ""
     property color ink: "#808080"
     property bool highContrast: false
+    property real outlineStrokeWidth: highContrast ? 2.2 : 1.7
     readonly property string pathData: {
         switch (name) {
         case "folder":
@@ -74,7 +75,7 @@ Item {
 
         ShapePath {
             strokeColor: icon.ink
-            strokeWidth: icon.highContrast ? 2.2 : 1.7
+            strokeWidth: icon.outlineStrokeWidth
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
             fillColor: "transparent"

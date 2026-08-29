@@ -25,14 +25,28 @@ Item {
         highContrast: theme.highContrast
     }
 
+    EntryIcon {
+        id: entrySample
+
+        x: 70
+        y: 20
+        width: 18
+        height: 18
+        directoryInk: theme.dirInk
+        fileInk: theme.textFaint
+        symbolicLinkInk: theme.linkInk
+        highContrast: theme.highContrast
+    }
+
     TestCase {
         name: "VectorIconography"
         when: windowShown
 
         function hasDrawnPixel(image) {
+            const background = image.pixel(0, 0);
             for (let y = 0; y < image.height; ++y) {
                 for (let x = 0; x < image.width; ++x) {
-                    if (image.pixel(x, y).a > 0) {
+                    if (!Qt.colorEqual(image.pixel(x, y), background)) {
                         return true;
                     }
                 }
@@ -40,11 +54,28 @@ Item {
             return false;
         }
 
+        function drawnPixelCount(image) {
+            let count = 0;
+            const background = image.pixel(0, 0);
+            for (let y = 0; y < image.height; ++y) {
+                for (let x = 0; x < image.width; ++x) {
+                    if (!Qt.colorEqual(image.pixel(x, y), background)) {
+                        ++count;
+                    }
+                }
+            }
+            return count;
+        }
+
         function init() {
             theme.resetToDefaults();
             sample.name = "folder";
             sample.width = 18;
             sample.height = 18;
+            entrySample.directory = false;
+            entrySample.symbolicLink = false;
+            entrySample.width = 18;
+            entrySample.height = 18;
         }
 
         function test_everySemanticSymbolHasVectorGeometry() {
@@ -80,6 +111,86 @@ Item {
             compare(sample.pathData, path);
             compare(sample.ink, theme.text);
             verify(sample.ink.toString() !== normalInk);
+        }
+
+        function test_entryKindOwnsGeometryAndSemanticInk() {
+            compare(entrySample.semanticName, "file");
+            compare(entrySample.name, "file");
+            compare(entrySample.semanticInk, theme.textFaint);
+            compare(entrySample.ink, theme.textFaint);
+
+            entrySample.directory = true;
+            compare(entrySample.semanticName, "folder");
+            compare(entrySample.name, "folder");
+            compare(entrySample.semanticInk, theme.dirInk);
+            compare(entrySample.ink, theme.dirInk);
+
+            entrySample.symbolicLink = true;
+            compare(entrySample.semanticName, "symlink");
+            compare(entrySample.name, "symlink");
+            compare(entrySample.semanticInk, theme.linkInk);
+            compare(entrySample.ink, theme.linkInk);
+        }
+
+        function test_entryOutlineStaysThinAndOpenAtOneAndTwoTimesScale() {
+            entrySample.directory = true;
+            const path = entrySample.pathData;
+            compare(entrySample.outlineStrokeWidth, 1.45);
+
+            waitForRendering(harness);
+            const oneX = grabImage(entrySample);
+            const oneXDrawn = drawnPixelCount(oneX);
+            verify(oneXDrawn > 0);
+            verify(oneXDrawn < oneX.width * oneX.height / 2, "the outline must not become a filled glyph at 1x");
+
+            entrySample.width = 36;
+            entrySample.height = 36;
+            waitForRendering(harness);
+            const twoX = grabImage(entrySample);
+            const twoXDrawn = drawnPixelCount(twoX);
+            verify(twoXDrawn > oneXDrawn * 2, "the scaled outline must retain visible stroke coverage");
+            verify(twoXDrawn < twoX.width * twoX.height / 2, "the outline must not become a filled glyph at 2x");
+            compare(entrySample.pathData, path);
+            compare(twoX.width, oneX.width * 2);
+            compare(twoX.height, oneX.height * 2);
+        }
+
+        function test_entryOutlineSurvivesEveryProfileAndHighContrast() {
+            entrySample.symbolicLink = true;
+            const path = entrySample.pathData;
+            const profiles = [ShellTheme.Off, ShellTheme.Minimal, ShellTheme.Balanced, ShellTheme.Strong, ShellTheme.Custom];
+            for (let index = 0; index < profiles.length; ++index) {
+                theme.profile = profiles[index];
+                compare(entrySample.pathData, path);
+                compare(entrySample.ink, theme.linkInk);
+                waitForRendering(harness);
+                verify(hasDrawnPixel(grabImage(entrySample)));
+            }
+
+            theme.highContrast = true;
+            compare(entrySample.pathData, path);
+            compare(entrySample.ink, theme.linkInk);
+            compare(entrySample.outlineStrokeWidth, 2.2);
+            waitForRendering(harness);
+            verify(hasDrawnPixel(grabImage(entrySample)));
+        }
+
+        function test_entryRoleInkDoesNotFollowAccentPresets() {
+            const initial = [theme.dirInk.toString(), theme.textFaint.toString(), theme.linkInk.toString()];
+            for (let index = 0; index < theme.accentPresets.length; ++index) {
+                theme.accentPresetIndex = index;
+                compare(theme.dirInk.toString(), initial[0]);
+                compare(theme.textFaint.toString(), initial[1]);
+                compare(theme.linkInk.toString(), initial[2]);
+
+                entrySample.directory = true;
+                entrySample.symbolicLink = false;
+                compare(entrySample.ink, theme.dirInk);
+                entrySample.directory = false;
+                compare(entrySample.ink, theme.textFaint);
+                entrySample.symbolicLink = true;
+                compare(entrySample.ink, theme.linkInk);
+            }
         }
     }
 }

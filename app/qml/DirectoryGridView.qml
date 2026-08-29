@@ -415,14 +415,17 @@ FocusScope {
                         }
                     }
 
-                    VectorIcon {
+                    EntryIcon {
                         objectName: "entryCellIcon-" + entryCell.index
                         anchors.centerIn: parent
                         visible: thumbnail.status !== Image.Ready && !entryCell.thumbnailLoading
                         width: Math.max(34, pane.entryFontPixelSize * 2.4)
                         height: width
-                        name: entryCell.isSymlink ? "symlink" : (entryCell.isDir ? "folder" : "file")
-                        ink: entryCell.isSymlink ? pane.linkInkColor : (entryCell.isDir ? pane.dirInkColor : pane.fileInkColor)
+                        directory: entryCell.isDir
+                        symbolicLink: entryCell.isSymlink
+                        directoryInk: pane.dirInkColor
+                        fileInk: pane.fileInkColor
+                        symbolicLinkInk: pane.linkInkColor
                         highContrast: pane.highContrast
                     }
 

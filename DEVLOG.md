@@ -25,6 +25,36 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Entry outlines carry one semantic type contract
+
+Directory, file, and symbolic-link glyphs now pass through one entry-icon
+component. The component selects both its code-native outline geometry and its
+ink from entry metadata, using the existing directory, neutral-file, and link
+roles. List and grid delegates no longer repeat that mapping, so a view cannot
+quietly assign a different color meaning to the same entry type. No palette
+role or second file-type vocabulary was introduced.
+
+The normal outline is thinner than the general chrome stroke, while high
+contrast deliberately strengthens it. Effects-off and software paths retain
+the same geometry and semantic ink. Rendered tests exercise every entry kind,
+prove the outline stays open at one- and two-times logical size, keep the
+geometry stable under high contrast and effects-off, and verify the consumer
+ink remains fixed while every live accent preset changes. The shell tests also
+assert that both list and grid delegates expose the centralized semantic name
+and ink.
+
+Release and ASan/UBSan builds are warning-clean. Release registered 73 entries
+and passed all 71 that executed. ASan/UBSan registered the same 73, disabled
+static analysis by preset policy, and passed all 70 that executed. Both
+batteries declined only the two declared real-compositor entries. The 1x RHI
+records were exact: a 640x480 frame for a 640x480 logical surface and a 320x240
+frame for a 320x240 logical surface, both at device-pixel ratio 1.0. Those
+passing entries declared three narrower paths unexercised: fractional
+frame-ratio divergence, independent per-axis rounding, and the function that
+requires real-compositor GPU frames. The software scaled-layout entry remains
+logical-scale evidence only. The isolated real-compositor 2x entry is still
+declined by its declared session-safety boundary, so genuine
+doubled-device-pixel rasterization remains unmeasured.
 ## 2026-08-29 -- A table walked past every category rule, and shape was never the discriminator
 
 Five rules read the shape of prose: a survey sentence, a placement verb, a

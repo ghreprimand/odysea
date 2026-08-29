@@ -473,7 +473,14 @@ there is no apply step.
   selection, transfer, rename, delete, and open symbols share code-native
   vector paths in a 24-unit coordinate space. They recolor through semantic
   theme ink, retain the same geometry at 1x and 2x scale, and gain stroke
-  weight under high contrast. Normal dark-palette icon ink remains below the
+  weight under high contrast. Entry icons use a dedicated thin-stroke
+  component that owns the mapping from directory, file, and symbolic-link
+  metadata to both outline geometry and the existing file-type ink roles.
+  List and grid consumers therefore cannot drift into separate type-to-color
+  tables, and changing the live accent leaves entry recognition unchanged.
+  Effects-off and software rendering keep the same vector geometry and role
+  ink; high contrast strengthens the outline without replacing its semantic
+  role. Normal dark-palette icon ink remains below the
   Strong bright-pass threshold so orientation chrome does not become an
   unintended emitter; high contrast deliberately promotes it to primary text.
   The ink under that cap is a curated per-family hue rather than a derivation
