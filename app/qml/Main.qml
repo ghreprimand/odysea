@@ -385,6 +385,7 @@ ApplicationWindow {
                 shellModel: root.activeShellModel
                 registry: root.actions
                 theme: root.shellTheme
+                glowEnabled: presentationLayer.contextGlowAvailable
             }
 
             ActionBar {
@@ -413,6 +414,7 @@ ApplicationWindow {
                 gridMode: root.gridMode
                 columnsMode: root.columnsMode
                 persistenceDurationMs: presentationLayer.motionDurationMs
+                glowEnabled: presentationLayer.contextGlowAvailable
                 wellLayer: wellMaskLayer
                 onPaneActivationRequested: paneIndex => root.activatePane(paneIndex)
                 onSplitRatioCommitted: ratio => root.shellTheme.splitRatio = ratio

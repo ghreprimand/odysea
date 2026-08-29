@@ -36,6 +36,9 @@ FocusScope {
     /// Zero renders instantly; the shell binds this to the presentation
     /// layer's motion token so reduced motion disables the decay.
     property int persistenceDurationMs: 0
+    /// One current selected row can emit. Other selected rows retain their
+    /// bed only, so batch selection never scales the phosphor source.
+    property bool glowEnabled: false
 
     readonly property int selectionGutterWidth: 28
     property alias contentY: directoryList.contentY
@@ -280,6 +283,20 @@ FocusScope {
                         duration: pane.persistenceDurationMs
                     }
                 }
+            }
+
+            GlowFrame {
+                objectName: "entryGlow-" + entryRow.index
+                anchors.fill: parent
+                accentColor: pane.accentColor
+                focusedSurface: directoryList.activeFocus && pane.shellModel.currentIndex === entryRow.index
+                selected: entryRow.selected && pane.shellModel.currentIndex === entryRow.index
+                glowEnabled: pane.glowEnabled
+                // The existing current-row ring owns persistence. This
+                // emitter changes immediately, avoiding a second motion path
+                // and avoiding a lingering bright-pass source during a fade.
+                visible: pane.shellModel.currentIndex === entryRow.index
+                radius: 4
             }
 
             RowLayout {

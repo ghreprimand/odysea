@@ -81,6 +81,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/Main.qml
         qml/MillerColumnsView.qml
         qml/FilesystemDialogs.qml
+        qml/GlowFrame.qml
         qml/LongFormText.qml
         qml/PanePlaceholder.qml
         qml/PathNavigator.qml

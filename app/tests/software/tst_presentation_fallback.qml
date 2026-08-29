@@ -89,6 +89,7 @@ Item {
             // the pipeline stays disengaged instead of drawing nothing.
             verify(!layer.active);
             verify(!layer.emissionActive);
+            verify(!layer.contextGlowAvailable);
             const composite = findChild(layer, "presentationComposite");
             verify(composite !== null);
             verify(!composite.visible);

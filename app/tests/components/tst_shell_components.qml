@@ -391,6 +391,16 @@ Item {
         }
     }
 
+    Component {
+        id: glowFrameFactory
+
+        GlowFrame {
+            width: 160
+            height: 36
+            accentColor: theme.accent
+        }
+    }
+
     TestCase {
         id: testCase
 
@@ -738,6 +748,61 @@ Item {
             verify(closeButton.enabled, "three tabs are open, closing is allowed");
             mouseClick(closeButton);
             compare(model.calls[model.calls.length - 1], "closeTab:0");
+        }
+
+        function test_boundedGlowComposesOverlapsIntoOneAccentEmitter() {
+            const frame = createTemporaryObject(glowFrameFactory, harness, {
+                "glowEnabled": true
+            });
+            verify(frame !== null);
+            compare(frame.requestedTreatmentCount, 0);
+            compare(frame.compositionLevel, 0);
+            verify(!frame.glowEmitting);
+
+            frame.activeTab = true;
+            compare(frame.requestedTreatmentCount, 1);
+            compare(frame.compositionLevel, 1);
+            verify(frame.glowEmitting);
+            compare(frame.emitterColor, theme.accent);
+
+            // A focus request and a current selection join the same source.
+            // If composition changes to a sum, this exact overlap fails.
+            frame.focusedSurface = true;
+            frame.selected = true;
+            compare(frame.requestedTreatmentCount, 3);
+            compare(frame.compositionLevel, 1);
+            verify(frame.glowEmitting);
+
+            // The frame remains a crisp focus marker while the pipeline is
+            // unavailable; only the emission treatment is absent.
+            frame.glowEnabled = false;
+            verify(frame.requested);
+            verify(!frame.glowEmitting);
+        }
+
+        function test_activeTabUsesTheBoundedGlowFrame() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const strip = createTemporaryObject(tabStripFactory, harness, {
+                "shellModel": model,
+                "registry": makeRegistry(model, controller),
+                "glowEnabled": true
+            });
+            verify(strip !== null);
+            flush();
+
+            const active = findChild(strip, "tabGlow-0");
+            const inactive = findChild(strip, "tabGlow-1");
+            verify(active !== null && inactive !== null);
+            verify(active.glowEmitting);
+            verify(!inactive.glowEmitting);
+            compare(active.compositionLevel, 1);
+            compare(active.emitterColor, theme.accent);
+
+            model.activeTab = 1;
+            tryVerify(function () {
+                return inactive.glowEmitting && !active.glowEmitting;
+            });
         }
 
         function test_actionBarGatesOnSelectionAndBusyState() {

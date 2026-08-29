@@ -29,6 +29,9 @@ FocusScope {
     /// The shell binds the presentation layer's motion token; zero renders
     /// instantly under reduced motion.
     property int persistenceDurationMs: 0
+    /// The shell supplies this from the presentation layer. The views use it
+    /// for their one current-selection marker, never for every selected row.
+    property bool glowEnabled: false
     /// Optional protected-content mask layer for grid thumbnails.
     property WellMaskLayer wellLayer: null
     readonly property MillerColumnsView millerView: millerLoader.item as MillerColumnsView
@@ -136,6 +139,7 @@ FocusScope {
         captionFontPixelSize: pane.theme.captionFontPixelSize
         highContrast: pane.theme.highContrast
         persistenceDurationMs: pane.persistenceDurationMs
+        glowEnabled: pane.glowEnabled
         actionMenu: pane.actionMenu
     }
 
@@ -168,6 +172,7 @@ FocusScope {
         cellWidth: pane.theme.gridCellWidth
         cellHeight: pane.theme.gridCellHeight
         persistenceDurationMs: pane.persistenceDurationMs
+        glowEnabled: pane.glowEnabled
         wellLayer: pane.wellLayer
         actionMenu: pane.actionMenu
     }

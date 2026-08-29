@@ -592,6 +592,22 @@ is unchanged.
   views consume for the current-item ring's decay trail. Reduced motion
   zeroes the effective persistence, so every consumer becomes instant
   through the same path the renderer already trusts.
+- **Bounded context phosphor.** The active tab, the focused directory pane,
+  and the current selected entry add one transparent accent emitter to the
+  existing bright pass; the two existing blur chains supply any visible
+  phosphor halo. The ordinary outline remains in its owning surface, so
+  keyboard and pointer affordances stay crisp when the emitter is absent. A
+  context frame collapses active-tab, focus, and selection requests to one
+  fixed source level rather than adding their gains. Selection supplies that
+  source only at the current selected entry, never once per selected entry,
+  so a bulk selection cannot grow either the glow energy or presentation
+  cost. The emitter uses the resolved accent token, whose shared render-site
+  samples already cover the window, panel, hovered, pressed, and selected
+  surfaces; no separate color or contrast calculation exists. Profiles with
+  no bloom, high contrast, shader failure, and software fallback omit the
+  emitter altogether. It has no animation of its own, while the established
+  current-item ring continues to take its duration from the reduced-motion
+  token.
 - **Silent capability fallback.** On the software scene graph, and on any
   backend where a shader stage fails to build, the pipeline never engages:
   content renders on the plain path with tokens, typography, material

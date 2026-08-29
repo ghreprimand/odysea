@@ -62,6 +62,10 @@ Item {
 
     readonly property bool emissionActive: layer.pipelineAvailable && (layer.coreIntensity > 0.001 || layer.wideIntensity > 0.001)
     readonly property bool active: layer.pipelineAvailable && (layer.emissionActive || layer.scanIntensity > 0.001 || layer.vignetteIntensity > 0.001)
+    // Context markers do not own a second halo path. They emit only through
+    // this layer's bright pass and two existing blur chains. High contrast
+    // keeps the crisp marker but declines the extra emission treatment.
+    readonly property bool contextGlowAvailable: layer.emissionActive && !layer.theme.highContrast
 
     ShaderEffectSource {
         id: contentSrc

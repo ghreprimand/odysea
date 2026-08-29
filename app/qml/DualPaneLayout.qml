@@ -18,6 +18,7 @@ Item {
     property bool gridMode: false
     property bool columnsMode: false
     property int persistenceDurationMs: 0
+    property bool glowEnabled: false
     property var wellLayer: null
     property real minimumPaneWidth: 240
     readonly property real splitterWidth: 18
@@ -87,6 +88,7 @@ Item {
         gridMode: layout.gridMode
         columnsMode: layout.columnsMode
         persistenceDurationMs: layout.persistenceDurationMs
+        glowEnabled: layout.glowEnabled
         wellLayer: layout.wellLayer
         onActivationRequested: paneIndex => layout.paneActivationRequested(paneIndex)
     }
@@ -156,6 +158,7 @@ Item {
             gridMode: layout.gridMode
             columnsMode: layout.columnsMode
             persistenceDurationMs: layout.persistenceDurationMs
+            glowEnabled: layout.glowEnabled
             wellLayer: layout.wellLayer
             onActivationRequested: paneIndex => layout.paneActivationRequested(paneIndex)
         }

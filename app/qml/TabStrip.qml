@@ -14,6 +14,9 @@ ChromeStrip {
 
     required property var shellModel
     required property ActionRegistry registry
+    /// Supplied by the presentation layer through the shell. Standalone
+    /// consumers keep the crisp tab markers unless they opt into a pipeline.
+    property bool glowEnabled: false
 
     implicitHeight: Math.max(40, strip.theme.chromeFontPixelSize + 18)
 
@@ -59,10 +62,23 @@ ChromeStrip {
                         verticalAlignment: Text.AlignVCenter
                     }
 
-                    background: Rectangle {
-                        color: tabButton.checked ? strip.theme.background : strip.theme.panel
-                        border.color: tabButton.checked ? strip.theme.accent : strip.theme.border
-                        radius: 5
+                    background: Item {
+                        Rectangle {
+                            anchors.fill: parent
+                            color: tabButton.checked ? strip.theme.background : strip.theme.panel
+                            border.color: tabButton.checked ? strip.theme.accent : strip.theme.border
+                            radius: 5
+                        }
+
+                        GlowFrame {
+                            objectName: "tabGlow-" + tabButton.index
+                            anchors.fill: parent
+                            accentColor: strip.theme.accent
+                            activeTab: tabButton.checked
+                            focusedSurface: tabButton.activeFocus
+                            glowEnabled: strip.glowEnabled
+                            radius: 5
+                        }
                     }
 
                     MouseArea {

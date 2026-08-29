@@ -19,6 +19,7 @@ FocusScope {
     property bool gridMode: false
     property bool columnsMode: false
     property int persistenceDurationMs: 0
+    property bool glowEnabled: false
     property var wellLayer: null
     readonly property var entryModel: directoryPane.entryModel
     readonly property bool entryModelReady: directoryPane.entryModelReady
@@ -40,6 +41,16 @@ FocusScope {
         color: "transparent"
         border.color: frame.activePane ? frame.theme.focus : frame.theme.border
         border.width: frame.activePane ? 2 : 1
+        radius: 6
+    }
+
+    GlowFrame {
+        objectName: "paneGlow-" + frame.paneIndex
+        anchors.fill: parent
+        accentColor: frame.theme.accent
+        focusedSurface: frame.activePane
+        glowEnabled: frame.glowEnabled
+        activeBorderWidth: 2
         radius: 6
     }
 
@@ -126,6 +137,7 @@ FocusScope {
         gridMode: frame.gridMode
         columnsMode: frame.columnsMode
         persistenceDurationMs: frame.persistenceDurationMs
+        glowEnabled: frame.glowEnabled
         wellLayer: frame.wellLayer
 
         onActiveFocusChanged: {

@@ -39,6 +39,9 @@ FocusScope {
     /// Zero renders instantly; the shell binds this to the presentation
     /// layer's motion token so reduced motion disables the decay.
     property int persistenceDurationMs: 0
+    /// One current selected cell can emit. Other selected cells retain their
+    /// bed only, so batch selection never scales the phosphor source.
+    property bool glowEnabled: false
     /// Optional protected-content mask layer. When bound, every loaded
     /// thumbnail registers its pixels as color-true wells the presentation
     /// pipeline must not process.
@@ -369,6 +372,21 @@ FocusScope {
                         duration: pane.persistenceDurationMs
                     }
                 }
+            }
+
+            GlowFrame {
+                objectName: "entryGlow-" + entryCell.index
+                anchors.fill: parent
+                anchors.margins: 4
+                accentColor: pane.accentColor
+                focusedSurface: directoryGrid.activeFocus && pane.shellModel.currentIndex === entryCell.index
+                selected: entryCell.selected && pane.shellModel.currentIndex === entryCell.index
+                glowEnabled: pane.glowEnabled
+                // The existing current-item ring owns persistence. This
+                // emitter changes immediately, avoiding a second motion path
+                // and avoiding a lingering bright-pass source during a fade.
+                visible: pane.shellModel.currentIndex === entryCell.index
+                radius: 6
             }
 
             ColumnLayout {

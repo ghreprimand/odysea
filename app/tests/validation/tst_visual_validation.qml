@@ -367,6 +367,43 @@ Support.ShellTestCase {
         });
     }
 
+    function test_boundedGlowKeepsOneCurrentSelectionSource() {
+        requireWindowActivation();
+        const layer = child("presentationLayer");
+        const tabGlow = child("tabGlow-0");
+        const paneGlow = child("paneGlow-0");
+
+        // This software entry proves the fallback boundary rather than
+        // pretending it rendered a halo: the semantic outlines remain, but
+        // no context marker can emit without the existing pipeline.
+        verify(layer.softwareBackend);
+        verify(!layer.contextGlowAvailable);
+        verify(!tabGlow.glowEmitting);
+        verify(!paneGlow.glowEmitting);
+
+        // Only the current selected row requests the selection marker. A
+        // second selection retains its semantic bed but cannot add another
+        // glow source, so the source count is bounded independently of the
+        // number of selected entries.
+        clickRow(1, Qt.LeftButton, Qt.NoModifier);
+        clickRow(2, Qt.LeftButton, Qt.ControlModifier);
+        compare(selectedRows(), [1, 2]);
+        const first = child("entryGlow-1");
+        const current = child("entryGlow-2");
+        verify(!first.selected);
+        verify(current.selected);
+        verify(current.requestedTreatmentCount >= 1);
+        compare(current.compositionLevel, 1);
+        verify(!first.glowEmitting && !current.glowEmitting);
+
+        // Off is stronger than a dimmer treatment: no pipeline, no emitter.
+        theme().profile = ShellTheme.Off;
+        tryVerify(function () {
+            return !layer.active && !layer.contextGlowAvailable;
+        });
+        verify(!tabGlow.glowEmitting && !paneGlow.glowEmitting && !current.glowEmitting);
+    }
+
     function contrastRatio(first, second) {
         function linear(channel) {
             return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);

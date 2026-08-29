@@ -25,6 +25,32 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Context glow is one bounded phosphor source
+
+The active tab, focused directory pane, and current selected entry now add a
+transparent accent emitter to the existing bright-pass and dual-blur pipeline.
+The normal tab, pane, and current-item outlines remain in their own surfaces,
+so keyboard and pointer orientation stays crisp when no emitter is available.
+No additional blur, shadow, or animation path was added.
+
+The reusable context frame treats active-tab, focus, and selection as one
+boolean source, not three additive gains. A current selected item inside a
+focused pane therefore cannot become brighter by satisfying more than one
+state, and selection supplies that source only at the current entry. Adding
+more selected entries changes neither its intensity nor its presentation cost.
+
+The emitter uses the resolved accent token already measured at its rendering
+surfaces. Profiles with no bloom, high contrast, shader fallback, and software
+rendering omit the emitter rather than dimming it; the semantic outline stays
+available. The context source has no transition of its own, while the existing
+current-item ring remains governed by the reduced-motion duration.
+
+Component and rendered-shell tests assert the one-source composition, active
+tab routing, current-selection bound, effects-off absence, software fallback,
+and the existing emission capability boundary.
+
+---
+
 ## 2026-08-29 -- Scaled-layout validation proves the scale it claims
 
 The software scaled-layout entry now declares the scale it expects alongside
@@ -57,6 +83,9 @@ declined only the two declared real-compositor entries. Genuine 2x framebuffer
 rendering, fractional frame-ratio divergence, independent per-axis rounding,
 the strict software-fallback failure branches, and the presentation suite's
 real-compositor frame sentinel remain explicitly unmeasured.
+
+---
+
 ## 2026-08-29 -- Completed operations carry the terms of their own reversal
 
 Copy, move, rename, and delete-to-trash are now recorded in a bounded journal

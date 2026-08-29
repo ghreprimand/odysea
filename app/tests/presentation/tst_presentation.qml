@@ -240,6 +240,38 @@ Item {
             verify(layer.pipelineAvailable, "the pipeline must be available on the real GPU path so the frame comparisons run");
         }
 
+        function test_contextGlowUsesOnlyTheExistingEmissionCapability() {
+            // The marker path has no shader of its own. It may become an
+            // emitter only while this layer's established bloom source is
+            // active, and high contrast deliberately keeps it crisp.
+            if (layer.softwareBackend) {
+                verify(!layer.contextGlowAvailable);
+                return;
+            }
+
+            verify(layer.emissionActive);
+            verify(layer.contextGlowAvailable);
+
+            theme.profile = ShellTheme.Minimal;
+            compare(theme.effectiveBloomCore, 0);
+            compare(theme.effectiveBloomWide, 0);
+            verify(!layer.contextGlowAvailable);
+
+            theme.profile = ShellTheme.Balanced;
+            verify(layer.emissionActive);
+            verify(layer.contextGlowAvailable);
+            theme.highContrast = true;
+            verify(!layer.contextGlowAvailable);
+
+            // Reduced motion only removes transition time. The contextual
+            // marker has no animation and remains governed by the same bloom
+            // capability rather than creating a motion-specific path.
+            theme.highContrast = false;
+            theme.reducedMotion = true;
+            compare(layer.motionDurationMs, 0);
+            verify(layer.contextGlowAvailable);
+        }
+
         // Records the coordinate-basis divergence the run actually reached, so
         // a run that never met it cannot read as an equal pass to one that
         // did. The defect this gate exists for only appears on a surface whose
