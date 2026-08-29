@@ -158,8 +158,9 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
 
 - **`core/` (pure C++20, no Qt).** Directory reading, stable entry identity,
   cancellable scanning, incremental directory watching, transactional copy,
-  move, and rename, freedesktop trash support, and thumbnail cache policy and
-  scheduling. It has no GUI dependency and is unit-tested headless. This is
+  move, and rename, freedesktop trash support, a bounded journal that reverses
+  completed operations, and thumbnail cache policy and scheduling. It has no
+  GUI dependency and is unit-tested headless. This is
   where the performance-critical work lives, deliberately free of framework
   overhead.
 - **Entry kind is unresolved; navigability is resolved.** An entry's kind
@@ -371,6 +372,39 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   the same filesystem re-presents directories the walk has already entered
   without crossing any boundary and without any link involved. The cost is
   bounded by the number of directories, far below the number of files.
+- **A completed operation is recorded with the terms of its own reversal.**
+  Copy, move, rename, and delete-to-trash are recorded in a bounded journal
+  that performs them rather than being told about them afterwards, which is
+  what lets it see a destination before an operation runs and the result
+  immediately after. That difference is the whole safety argument for reversing
+  a copy: reversing one removes the entry the copy created and never an entry
+  that was already there. The newest record is the only one a reversal acts on,
+  because reversing an older operation while a newer one still stands would
+  produce a state the filesystem never held.
+- **Whether an operation can be reversed is settled when it is recorded.** A
+  record that can never be reversed carries the reason as part of itself, so it
+  is never offered as reversible and refused afterwards. Four situations settle
+  that as the operation completes. An operation that replaced an existing entry
+  discarded what it replaced, so reversing it would restore half of a state
+  that never existed and the whole reversal is refused. An operation that
+  resolved to the entry it was given changed nothing, and treating its result
+  as something the operation created would delete the only copy. A copied tree
+  larger than the journal will remember cannot be confirmed unchanged later. A
+  move between filesystems copies the data and removes the original, so an
+  entry that had more than one name arrives as a new one, and nothing rejoins
+  it to the names that kept the old data.
+- **A reversal that cannot be certain does nothing.** Returning an entry
+  requires it to still be the entry that moved, compared by identity rather
+  than by path, because a path can be reoccupied by something that looks
+  exactly like what left it. Removing what a copy created is held to a stricter
+  test because it destroys: every entry the copy made must still carry the
+  identity and the modification time it had when the copy finished, which
+  detects an entry added, removed, or written since. Every step of a reversal
+  refuses a name that is already taken rather than displacing what holds it, so
+  a reversal can fail but cannot overwrite. What that leaves uncovered is
+  stated rather than implied: a rewrite that does not disturb the modification
+  time is invisible, times are compared in whole seconds, and the journal is a
+  convenience over a filesystem other programs share rather than a transaction.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

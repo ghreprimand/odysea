@@ -25,6 +25,67 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Completed operations carry the terms of their own reversal
+
+Copy, move, rename, and delete-to-trash are now recorded in a bounded journal
+in the Qt-free core, and the newest record can be reversed. The journal
+performs the operations rather than being told about them afterwards, which is
+what lets it see a destination before an operation runs and the result
+immediately after. That difference separates an entry a copy created from one
+that was already there, and reversing a copy removes only the first.
+
+Whether an operation can be reversed is settled when it is recorded, and the
+reason travels in the record instead of surfacing as a refusal later. An
+operation that replaced an existing entry discarded what it replaced, so the
+whole reversal is refused rather than restoring half of a state that never
+existed. An operation that resolved to the entry it was given changed nothing,
+and treating its result as something the operation created would delete the
+only copy. A copied tree larger than the journal will remember cannot be
+confirmed unchanged afterwards. A move between filesystems copies the data and
+removes the original, so an entry that had more than one name arrives as a new
+one that nothing rejoins to the names that kept the old data.
+
+A reversal that cannot be certain does nothing. The result must still be the
+entry the operation produced, compared by identity rather than by path, because
+a path can be reoccupied by something that looks exactly like what left it.
+Removing what a copy created is held to a stricter test because it destroys:
+every entry the copy made must still carry the identity and the modification
+time it had when the copy finished. Every step refuses a name that is already
+taken rather than displacing what holds it, so a reversal can fail but cannot
+overwrite. A reversal across two directories is two relocations, and one that
+completes the first and fails the second reports the failure, keeps its record,
+and points that record at where the entry actually is, so a second attempt
+starts from there rather than from a path that no longer holds anything.
+
+Verification. Thirty-three headless scenarios exercise recording, the bounded
+history, every barrier, every refusal, and the partial reversal in turn. The
+suite fails by name when it runs fewer scenarios than its table holds, and a
+scenario that cannot run on a given machine prints the precondition it needed
+instead of disappearing. A mutation battery plants twenty-nine defects one at a
+time, requires each to change the file before it is built, and requires the
+suite to fail for each: twenty-six are caught, one is equivalent because the
+bound on the tree scan and the comparison that follows it both refuse a grown
+tree and the bound decides only which of them reports it, and two guard states
+no scenario can produce and are declared below rather than counted as caught.
+One instrument was removed rather than left standing after the battery showed
+it could not change an outcome — an explicit check that the origin was free
+duplicated what every relocation step already refuses on its own.
+
+Known gaps. There is no keyboard or pointer surface for undo yet; this is the
+core contract, and the shell surface follows it. A rewrite that leaves the
+modification time undisturbed is invisible to the copy check, and modification
+times are compared in whole seconds, so a rewrite within the same second as the
+copy is not detected. Two guards have no automated coverage, and the battery
+measures that rather than the record asserting it: a result that cannot be
+examined at all is recorded as unreversible, and so is an operation that did
+not reach the destination it was expected to reach. Both need the filesystem to
+change underneath a running operation, or a result that a just-completed
+operation cannot examine, and neither can be produced from a test. They are
+kept because without them an operation that quietly replaced something could be
+offered as reversible, which is the one outcome the design exists to prevent.
+
+---
+
 ## 2026-08-29 -- Accent coverage makes the accepted matrix explicit
 
 An accent preset's model color is an authored hue input, while the active

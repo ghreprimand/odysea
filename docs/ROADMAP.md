@@ -51,6 +51,12 @@ graphical shell grows around it.
 - [x] Interactive storage-usage maps with cancellable scanning and accessible
       list equivalents.
 - [x] Hardened filesystem entry identity for Btrfs subvolume roots.
+- [ ] Undoable operation journal. The Qt-free core half is in place: copy,
+      move, rename, and delete-to-trash are recorded in a bounded history, an
+      operation that can never be reversed carries the reason as part of its
+      record rather than being refused later, and a reversal that cannot
+      confirm the result refuses instead of acting. The keyboard and pointer
+      surfaces for undo are still to come, so the item stays open.
 - [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
       Btrfs snapshot discovery.
 - [x] Built-in fuzzy find across the current tree. Matching and ranking are

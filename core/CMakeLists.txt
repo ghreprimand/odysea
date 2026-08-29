@@ -12,6 +12,7 @@ add_library(odysea_core
     src/entry_metadata.cpp
     src/file_operations.cpp
     src/fuzzy_find.cpp
+    src/operation_journal.cpp
     src/storage_usage.cpp
     src/thumbnail.cpp
     src/thumbnail_service.cpp
