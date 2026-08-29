@@ -38,6 +38,16 @@ Item {
         highContrast: theme.highContrast
     }
 
+    ApplicationMark {
+        id: identitySample
+
+        x: 45
+        y: 52
+        width: 18
+        height: 18
+        theme: theme
+    }
+
     TestCase {
         name: "VectorIconography"
         when: windowShown
@@ -79,13 +89,31 @@ Item {
         }
 
         function test_everySemanticSymbolHasVectorGeometry() {
-            const names = ["folder", "file", "symlink", "back", "forward", "up", "refresh", "panes", "list", "grid", "appearance", "add", "close", "select-all", "copy", "move", "rename", "trash", "open", "commands", "search"];
+            const names = ["identity", "folder", "file", "symlink", "back", "forward", "up", "refresh", "panes", "list", "grid", "columns", "appearance", "add", "close", "select-all", "copy", "move", "rename", "trash", "open", "commands", "search"];
             for (let index = 0; index < names.length; ++index) {
                 sample.name = names[index];
                 verify(sample.pathData.length > 0, names[index]);
             }
             sample.name = "unknown";
             compare(sample.pathData, "");
+        }
+
+        function test_identityMarkUsesSharedAccentIndependentIconRole() {
+            const path = identitySample.pathData;
+            const ink = identitySample.ink.toString();
+            compare(identitySample.name, "identity");
+            verify(path.length > 0);
+            for (let index = 0; index < theme.accentPresets.length; ++index) {
+                theme.accentPresetIndex = index;
+                compare(identitySample.pathData, path);
+                compare(identitySample.ink.toString(), ink);
+                compare(identitySample.ink, theme.iconInk);
+            }
+
+            theme.highContrast = true;
+            compare(identitySample.pathData, path);
+            compare(identitySample.ink, theme.text);
+            compare(identitySample.outlineStrokeWidth, 2.35);
         }
 
         function test_sameGeometryRendersAtOneAndTwoTimesScale() {

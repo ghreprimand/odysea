@@ -32,6 +32,8 @@ graphical shell grows around it.
 - [x] Calm path orientation, direct entry and completion, configurable Places,
       bounded recent destinations, and direct ancestor/shortcut jumps.
 - [x] Command palette.
+- [x] Application identity mark and scalable desktop icon, with a monochrome
+      symbolic form and measured 16–48 pixel rendering at 1x and 2x.
 - [ ] Visual foundation acceptance. Automated coverage holds layout integrity
       across every density's measured compact breakpoint, pointer and keyboard
       focus visibility, reduced motion, contrast at the surfaces the views

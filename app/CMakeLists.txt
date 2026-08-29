@@ -64,6 +64,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/ActionButton.qml
         qml/ActionMenu.qml
         qml/ActionRegistry.qml
+        qml/ApplicationMark.qml
         qml/AppearancePanel.qml
         qml/BreadcrumbBar.qml
         qml/ChromeStrip.qml
@@ -100,6 +101,8 @@ qt_add_qml_module(odysea_shell_qml
         qml/VectorIcon.qml
         qml/WellMaskLayer.qml
     RESOURCES
+        resources/icons/odysea.svg
+        resources/icons/odysea-symbolic.svg
         third_party/victor-mono/OFL.txt
         third_party/victor-mono/README.md
         third_party/victor-mono/VictorMono-Bold.otf
@@ -144,6 +147,10 @@ target_link_libraries(odysea
         odysea_warnings odysea_sanitizers)
 
 install(TARGETS odysea RUNTIME DESTINATION bin)
+install(FILES
+    resources/icons/odysea.svg
+    resources/icons/odysea-symbolic.svg
+    DESTINATION share/icons/hicolor/scalable/apps)
 
 qt_add_executable(odysea_app_tests
     tests/tst_directory_list_model.cpp)
@@ -233,6 +240,19 @@ target_link_libraries(odysea_theme_controller_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_theme_controller COMMAND odysea_theme_controller_tests)
+
+qt_add_executable(odysea_application_icon_tests
+    tests/tst_application_icon.cpp)
+
+target_compile_definitions(odysea_application_icon_tests
+    PRIVATE ODYSEA_ICON_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
+
+target_link_libraries(odysea_application_icon_tests
+    PRIVATE
+        Qt6::Gui Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_application_icon_raster COMMAND odysea_application_icon_tests)
 
 qt_add_executable(odysea_storage_usage_model_tests
     tests/tst_storage_usage_model.cpp)

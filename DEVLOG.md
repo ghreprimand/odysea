@@ -25,6 +25,40 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- One ring and one wave carry the application identity
+
+OdySea now has a compact application mark: an O-shaped ring crossed by one
+horizon wave. The toolbar renders it through the shared `VectorIcon` component
+and the semantic icon ink, so the mark gains the existing high-contrast stroke
+lift, follows every fallback profile, and stays independent of the selectable
+accent. It is orientation rather than an action, so the window title remains
+its accessible name and the mark adds no inert focus stop.
+
+The desktop form uses the default family's window-ground and primary-text
+roles. A matching symbolic SVG renders the same geometry as one neutral stroke
+for monochrome and high-contrast icon themes. Both scalable assets install into
+the desktop icon theme; the installed theme remains authoritative, with the
+bundled desktop asset as the application window's fallback. No raster fallback
+or second in-application drawing path was added.
+
+The rendered-shell gate exercises 16, 20, 24, 32, and 48 logical-pixel marks,
+all effect profiles, every accent preset, high contrast, and toolbar bounds.
+Its ordinary pass records a real 1x child-item render. The software scaled pass
+proves that Qt applied the declared 2x monitor scale and checks logical geometry
+and requested SVG source size, but explicitly declines child-item pixel grabs
+because that backend returns them empty at 2x. A separate non-vacuous raster
+gate renders both shipped SVGs at the exact 1x and 2x device sizes and asserts
+the symbolic output uses one neutral ink.
+
+Release registered 75 entries and passed all 71 that executed. ASan/UBSan
+registered the same 75, disabled static analysis by preset policy, and passed
+all 70 that executed. Both presets declined the four declared rendering-
+capability entries: the presentation and visual-validation RHI launchers and
+their real-compositor counterparts. The offscreen software smoke launch passed
+in both presets.
+
+---
+
 ## 2026-08-29 -- All-or-nothing was all-but-one, and vocabulary meant file contents
 
 The enumeration rule stands a candidate down when every name in it is already

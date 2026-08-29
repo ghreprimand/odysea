@@ -14,6 +14,8 @@ Item {
     property real outlineStrokeWidth: highContrast ? 2.2 : 1.7
     readonly property string pathData: {
         switch (name) {
+        case "identity":
+            return "M12 3 A9 9 0 1 0 12 21 A9 9 0 1 0 12 3 M5 13 C7.25 10 9.5 10 12 13 C14.5 16 16.75 16 19 13";
         case "folder":
             return "M3 7 L9 7 L11 9 L21 9 L21 19 L3 19 Z";
         case "file":

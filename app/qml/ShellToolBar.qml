@@ -29,6 +29,13 @@ ToolBar {
         anchors.margins: 6
         spacing: 6
 
+        ApplicationMark {
+            objectName: "applicationIdentityMark"
+            theme: bar.theme
+            Layout.leftMargin: 2
+            Accessible.ignored: true
+        }
+
         ActionButton {
             objectName: "backButton"
             theme: bar.theme

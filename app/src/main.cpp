@@ -5,6 +5,7 @@
 // directory to display (defaults to the user's home directory).
 #include <QDir>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QStandardPaths>
 #include <QStringList>
@@ -41,6 +42,9 @@ int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName("OdySea");
     QGuiApplication::setOrganizationName("Odyssey");
+    QGuiApplication::setWindowIcon(
+        QIcon::fromTheme(QStringLiteral("odysea"),
+                         QIcon(QStringLiteral(":/qt/qml/OdySea/resources/icons/odysea.svg"))));
 
     const QStringList args = QGuiApplication::arguments();
     const QString start = args.size() > 1 ? args.at(1) : QDir::homePath();

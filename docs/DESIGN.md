@@ -529,6 +529,19 @@ there is no apply step.
   whose faint ink peaks in a low-luminance channel would land its capped
   symbols below the measured pressed-bed floor, and the neutral families
   choose a hue whose capped form stays measurable on every control bed.
+- **Application identity mark.** A circular O carries one horizon wave. The
+  toolbar renders that geometry through `VectorIcon`, using the semantic icon
+  ink and the established high-contrast stroke lift; it never follows the
+  selectable accent. The desktop asset uses the default family's window-ground
+  and primary-text roles, while its symbolic companion is the same geometry in
+  one neutral stroke for monochrome and high-contrast icon themes. Both assets
+  stay scalable SVGs, so there is no raster fallback or parallel in-application
+  drawing path. The installed icon theme remains authoritative when it provides
+  an `odysea` icon, and the bundled desktop asset is the window-icon fallback.
+  Tests rasterize both assets at 16, 20, 24, 32, and 48 logical pixels at 1x
+  and 2x device sizes, assert the symbolic rendering is one neutral ink, and
+  exercise the live mark across every effect profile, accent preset, and
+  high-contrast state.
 - **Versioned persistence.** Appearance, accessibility, Places, and recent
   navigation preferences serialize to one small key=value file, so independent
   surfaces cannot overwrite each other through competing stores. Repeated
