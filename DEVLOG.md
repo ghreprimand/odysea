@@ -25,6 +25,38 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- The shell palette family carries the flagship terminal ground
+
+The Odyssey palette family is shared across the suite, and two of its members
+were not represented faithfully here.
+
+`odyssey-default` had drifted from the family definition on four roles while
+the rest of the family was carried across exactly. The window ground, the
+frame, the search bed and the inactive icon ink now match the family values.
+The search bed is the visible one: it had become a warm brown where the family
+defines a green, so a match highlight read as a different colour from every
+other surface in the same theme. Measured readability improves rather than
+holding: primary text against the ground moves from 11.93:1 to 12.46:1.
+
+`odyssey` itself was absent. It is the family's navy ground with cool neutral
+text. The derivation is the established one: ground, deep, frame, search,
+cursor and status roles carry across directly, secondary ink is the measured
+blend of the family foreground toward its inactive tone, and the selection
+bed is chosen for this application instead of reusing a terminal role.
+
+One role needed a value the family does not state. Icon ink is capped to a
+maximum channel so toolbar symbols stay below the bright-pass threshold, and
+a blue-dominant ink loses too much luminance under that cap to clear the
+pressed-control floor in high contrast. A less saturated ink of the same hue
+clears it at 2.12:1 against a floor of 2.0. The cap is what the ink has to
+survive, so the ink is chosen in its capped form.
+
+The palette roster assertion moves from six to seven deliberately. It exists
+so a family member cannot be added or lost without a decision being recorded,
+and this is that decision.
+
+---
+
 ## 2026-08-29 -- One ring and one wave carry the application identity
 
 OdySea now has a compact application mark: an O-shaped ring crossed by one
