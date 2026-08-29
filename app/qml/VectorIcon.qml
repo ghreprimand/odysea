@@ -30,6 +30,8 @@ Item {
             return "M12 20 L12 5 M6 11 L12 5 L18 11";
         case "refresh":
             return "M20 7 L20 3 L16 3 M20 3 L16.5 6.5 A8 8 0 1 0 20 14";
+        case "undo":
+            return "M9 8 L4 12 L9 16 M4 12 L14 12 C18 12 20 14 20 18";
         case "panes":
             return "M3 5 L21 5 L21 19 L3 19 Z M12 5 L12 19";
         case "list":

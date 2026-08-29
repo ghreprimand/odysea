@@ -39,6 +39,7 @@ class DirectoryListModelInteractionTest : public QObject {
     void activationBreadcrumbsAndDropContracts();
     void symlinkTargetDirectoryChangesRefreshRole();
     void operationsReachCoreAndReportFailures();
+    void operationJournalUndoUpdatesSurfaceAndReportsBarrier();
     void retainedRecoveryRemainsVisibleDuringOperation();
 };
 void DirectoryListModelInteractionTest::selectionSurvivesSortFilterAndRefresh() {
@@ -535,6 +536,52 @@ void DirectoryListModelInteractionTest::operationsReachCoreAndReportFailures() {
                       DirectoryListModel::ConflictFail);
     QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
     QVERIFY(!model.operationErrorString().isEmpty());
+}
+void DirectoryListModelInteractionTest::operationJournalUndoUpdatesSurfaceAndReportsBarrier() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const fs::path root = fixture.path().toStdString();
+    const fs::path source = root / "source";
+    const fs::path destination = root / "destination";
+    fs::create_directories(source);
+    fs::create_directories(destination);
+    writeFile(source / "reversible.txt", "reversible");
+
+    DirectoryListModel model;
+    model.setPath(QString::fromStdString(source.string()));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    QVERIFY(!model.canUndo());
+    QCOMPARE(model.undoDisabledReason(),
+             QStringLiteral("No filesystem operation is available to undo."));
+
+    model.selectRow(rowForName(model, QStringLiteral("reversible.txt")), Qt::NoModifier);
+    model.performCopy(QString::fromStdString(destination.string()),
+                      DirectoryListModel::ConflictFail);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
+    QVERIFY(fs::exists(destination / "reversible.txt"));
+    QTRY_VERIFY(model.canUndo());
+    QCOMPARE(model.undoDisabledReason(), QString{});
+
+    model.performUndo();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
+    QVERIFY(!fs::exists(destination / "reversible.txt"));
+    QTRY_VERIFY(!model.canUndo());
+    QCOMPARE(model.undoDisabledReason(),
+             QStringLiteral("No filesystem operation is available to undo."));
+
+    writeFile(source / "replace.txt", "replacement");
+    writeFile(destination / "replace.txt", "existing");
+    model.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000);
+    model.selectRow(rowForName(model, QStringLiteral("replace.txt")), Qt::NoModifier);
+    model.performCopy(QString::fromStdString(destination.string()),
+                      DirectoryListModel::ConflictOverwrite);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.operationBusy(), 5000);
+    QCOMPARE(QString::fromStdString(readFile(destination / "replace.txt")),
+             QStringLiteral("replacement"));
+    QTRY_VERIFY(!model.canUndo());
+    QCOMPARE(model.undoDisabledReason(),
+             QStringLiteral("The last operation replaced an entry that is no longer present."));
 }
 void DirectoryListModelInteractionTest::retainedRecoveryRemainsVisibleDuringOperation() {
     QTemporaryDir fixture;

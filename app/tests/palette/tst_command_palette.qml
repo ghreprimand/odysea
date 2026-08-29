@@ -26,6 +26,8 @@ Item {
         property var calls: []
         property int selectedCount: 0
         property bool operationBusy: false
+        property bool canUndo: false
+        property string undoDisabledReason: "No filesystem operation is available to undo."
         property bool showHidden: false
         property bool canGoBack: false
         property bool canGoForward: false
@@ -54,6 +56,9 @@ Item {
         }
         function refresh() {
             record("refresh");
+        }
+        function performUndo() {
+            record("performUndo");
         }
         function activate(row) {
             record("activate:" + row);
@@ -266,6 +271,8 @@ Item {
             fakeModel.calls = [];
             fakeModel.selectedCount = 0;
             fakeModel.operationBusy = false;
+            fakeModel.canUndo = false;
+            fakeModel.undoDisabledReason = "No filesystem operation is available to undo.";
             fakeModel.tabCount = 1;
             fakeModel.paneCount = 1;
             fakeShell.calls = [];
@@ -447,6 +454,23 @@ Item {
             verify(reasonText.visible);
             compare(reasonText.text, "Nothing is selected");
             palette.close();
+            tryCompare(palette, "visible", false);
+        }
+
+        function test_undoRowUsesTheJournalReasonAndSharedHandler() {
+            fakeModel.undoDisabledReason = "The copied tree exceeds the reversible-entry limit.";
+            openPalette();
+            filterField().text = "Undo";
+            const row = rowByName("paletteEntry-edit.undo");
+            verify(row !== null);
+            compare(row.actionEnabled, false);
+            compare(row.reason, "The copied tree exceeds the reversible-entry limit.");
+
+            fakeModel.canUndo = true;
+            fakeModel.undoDisabledReason = "";
+            tryCompare(row, "actionEnabled", true);
+            mouseClick(row);
+            compare(fakeModel.calls.join(","), "performUndo");
             tryCompare(palette, "visible", false);
         }
 

@@ -200,6 +200,20 @@ ActionRegistry {
         perform: () => actionSet.entryModel.refresh()
     }
     ShellAction {
+        actionId: "edit.undo"
+        label: qsTr("Undo")
+        iconName: "undo"
+        surfaces: ["canvas"]
+        enabled: !actionSet.entryModel.operationBusy && actionSet.entryModel.canUndo
+        disabledReasonFor: () => actionSet.entryModel.operationBusy ? qsTr("An operation is already running") : actionSet.entryModel.undoDisabledReason
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Z"
+            }
+        ]
+        perform: () => actionSet.entryModel.performUndo()
+    }
+    ShellAction {
         actionId: "nav.up"
         label: qsTr("Up one level")
         shortLabel: qsTr("Up")

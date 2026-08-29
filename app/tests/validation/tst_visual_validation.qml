@@ -24,7 +24,7 @@ Support.ShellTestCase {
 
     name: "VisualValidation"
 
-    readonly property var chromeControls: ["applicationIdentityMark", "backButton", "forwardButton", "upButton", "refreshButton", "paneToggleButton", "listViewButton", "gridViewButton", "columnsViewButton", "treeSearchButton", "paletteButton", "appearanceButton", "filterField", "sortModeBox", "hiddenToggle", "selectAllButton", "copyButton", "moveButton", "renameButton", "trashButton", "newTabButton", "statusMessageText", "pathNavigator"]
+    readonly property var chromeControls: ["applicationIdentityMark", "backButton", "forwardButton", "upButton", "refreshButton", "undoButton", "paneToggleButton", "listViewButton", "gridViewButton", "columnsViewButton", "treeSearchButton", "paletteButton", "appearanceButton", "filterField", "sortModeBox", "hiddenToggle", "selectAllButton", "copyButton", "moveButton", "renameButton", "trashButton", "newTabButton", "statusMessageText", "pathNavigator"]
 
     function theme() {
         return testCase.shellWindow.shellTheme;

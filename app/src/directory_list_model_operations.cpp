@@ -1,5 +1,6 @@
 #include "directory_list_model.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QtConcurrentRun>
 
@@ -28,8 +29,63 @@ QString operationName(FilesystemOperationKind kind) {
         return QStringLiteral("Rename");
     case FilesystemOperationKind::Trash:
         return QStringLiteral("Move to Trash");
+    case FilesystemOperationKind::Undo:
+        return QStringLiteral("Undo");
     }
     return QStringLiteral("Filesystem operation");
+}
+
+QString barrierReason(odysea::core::ReversalBarrier barrier) {
+    using Barrier = odysea::core::ReversalBarrier;
+    switch (barrier) {
+    case Barrier::None:
+        return {};
+    case Barrier::NothingChanged:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "The last operation changed nothing.");
+    case Barrier::ReplacedEntryDiscarded:
+        return QCoreApplication::translate(
+            "DirectoryListModel",
+            "The last operation replaced an entry that is no longer present.");
+    case Barrier::ResultNotIdentified:
+        return QCoreApplication::translate(
+            "DirectoryListModel",
+            "The result of the last operation could not be identified safely.");
+    case Barrier::CreatedTreeTooLarge:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "The copied tree exceeds the reversible-entry limit.");
+    case Barrier::HardLinksNotRestorable:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "The last move cannot restore its linked entries.");
+    }
+    return QCoreApplication::translate("DirectoryListModel",
+                                       "The last operation cannot be undone safely.");
+}
+
+QString undoFailureReason(const odysea::core::UndoOutcome& outcome) {
+    using Status = odysea::core::UndoStatus;
+    switch (outcome.status) {
+    case Status::Reversed:
+        return {};
+    case Status::HistoryEmpty:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "No filesystem operation is available to undo.");
+    case Status::Barred:
+        return barrierReason(outcome.barrier);
+    case Status::ResultChanged:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "The result changed after the operation completed.");
+    case Status::OriginOccupied:
+        return QCoreApplication::translate("DirectoryListModel",
+                                           "The original location is now occupied.");
+    case Status::Failed:
+        return outcome.error
+                   ? QString::fromStdString(outcome.error.message())
+                   : QCoreApplication::translate("DirectoryListModel",
+                                                 "The filesystem could not complete the undo.");
+    }
+    return QCoreApplication::translate("DirectoryListModel",
+                                       "The filesystem could not complete the undo.");
 }
 
 bool isSameOrDescendant(const fs::path& candidate, const fs::path& ancestor) {
@@ -55,6 +111,14 @@ bool DirectoryListModel::operationBusy() const noexcept {
 
 QString DirectoryListModel::operationErrorString() const {
     return operationErrorString_;
+}
+
+bool DirectoryListModel::canUndo() const noexcept {
+    return canUndo_;
+}
+
+QString DirectoryListModel::undoDisabledReason() const {
+    return undoDisabledReason_;
 }
 
 void DirectoryListModel::requestCopy() {
@@ -213,6 +277,18 @@ void DirectoryListModel::performTrash() {
     startOperation(std::move(request));
 }
 
+void DirectoryListModel::performUndo() {
+    if (operationBusy_) {
+        setStatusMessage(tr("Wait for the current filesystem operation to finish."));
+        return;
+    }
+    if (!canUndo_) {
+        setStatusMessage(undoDisabledReason_);
+        return;
+    }
+    startUndo();
+}
+
 void DirectoryListModel::startOperation(FilesystemOperationRequest request) {
     if (operationBusy_) {
         setStatusMessage(tr("Wait for the current filesystem operation to finish."));
@@ -232,12 +308,45 @@ void DirectoryListModel::startOperation(FilesystemOperationRequest request) {
     watchRefreshPending_ = false;
     const QString name = operationName(request.kind);
     setStatusMessage(tr("%1 in progress…").arg(name));
-    operationWatcher_.setFuture(QtConcurrent::run(
-        [request = std::move(request)] { return executeFilesystemOperation(request); }));
+    const std::shared_ptr<odysea::core::OperationJournal> journal = operationJournal_;
+    operationWatcher_.setFuture(QtConcurrent::run([request = std::move(request), journal] {
+        return executeFilesystemOperation(request, *journal);
+    }));
+}
+
+void DirectoryListModel::startUndo() {
+    setOperationErrorString({});
+    setOperationBusy(true);
+    watchRefreshPending_ = false;
+    setStatusMessage(tr("Undo in progress…"));
+    const std::shared_ptr<odysea::core::OperationJournal> journal = operationJournal_;
+    operationWatcher_.setFuture(
+        QtConcurrent::run([journal] { return executeFilesystemUndo(*journal); }));
 }
 
 void DirectoryListModel::finishOperation(FilesystemOperationResult result) {
     setOperationBusy(false);
+
+    if (result.kind == FilesystemOperationKind::Undo) {
+        const odysea::core::UndoOutcome outcome = result.undoOutcome.value_or(
+            odysea::core::UndoOutcome{.status = odysea::core::UndoStatus::HistoryEmpty,
+                                      .barrier = odysea::core::ReversalBarrier::None,
+                                      .error = {},
+                                      .restored_path = {}});
+        refreshUndoState();
+        if (outcome.succeeded()) {
+            setOperationErrorString({});
+            setStatusMessage(tr("Undo completed."));
+            watchRefreshPending_ = false;
+            startScan();
+            return;
+        }
+        const QString reason = undoFailureReason(outcome);
+        setOperationErrorString(reason);
+        setStatusMessage(tr("Undo could not be completed."));
+        watchRefreshPending_ = false;
+        return;
+    }
 
     int failureCount = 0;
     QString firstFailure;
@@ -265,8 +374,25 @@ void DirectoryListModel::finishOperation(FilesystemOperationResult result) {
                              .arg(static_cast<qulonglong>(result.items.size())));
     }
 
+    refreshUndoState();
     watchRefreshPending_ = false;
     startScan();
+}
+
+void DirectoryListModel::refreshUndoState() {
+    const bool nextCanUndo = operationJournal_->can_undo();
+    QString nextDisabledReason;
+    if (!nextCanUndo) {
+        const odysea::core::OperationRecord* newest = operationJournal_->newest();
+        nextDisabledReason = newest == nullptr ? tr("No filesystem operation is available to undo.")
+                                               : barrierReason(newest->barrier);
+    }
+    if (canUndo_ == nextCanUndo && undoDisabledReason_ == nextDisabledReason) {
+        return;
+    }
+    canUndo_ = nextCanUndo;
+    undoDisabledReason_ = std::move(nextDisabledReason);
+    emit undoStateChanged();
 }
 
 void DirectoryListModel::setOperationBusy(bool busy) {

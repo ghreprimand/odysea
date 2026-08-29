@@ -13,21 +13,19 @@ ToolBar {
     required property ActionRegistry registry
     required property var theme
 
-    /// Below this width the workspace toggles drop their labels and render
-    /// icons only, so every control stays reachable down to the window's
-    /// minimum width. The bound is the measured implicit width of the fully
-    /// labeled row at 1x, scaled with the interface; the labels stay
-    /// available through each button's accessible name and tooltip.
-    readonly property bool compact: bar.width < 1040 * bar.theme.uiScale
-
     background: ChromeStrip {
         theme: bar.theme
     }
 
+    // Below the full-row width, workspace toggles render as icons
+    // only. Their accessible names and tooltips retain the action labels.
     RowLayout {
+        id: toolbarRow
+
         anchors.fill: parent
         anchors.margins: 6
         spacing: 6
+        property bool compactLayout: width < 1100 * bar.theme.uiScale
 
         ApplicationMark {
             objectName: "applicationIdentityMark"
@@ -64,6 +62,13 @@ ToolBar {
             actionId: "nav.refresh"
             showLabel: false
         }
+        ActionButton {
+            objectName: "undoButton"
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "edit.undo"
+            showLabel: false
+        }
 
         Item {
             Layout.fillWidth: true
@@ -74,49 +79,49 @@ ToolBar {
             theme: bar.theme
             registry: bar.registry
             actionId: "pane.toggleDual"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "listViewButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "view.list"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "gridViewButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "view.grid"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "columnsViewButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "view.columns"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "treeSearchButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "find.tree"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "paletteButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "palette.open"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
         ActionButton {
             objectName: "appearanceButton"
             theme: bar.theme
             registry: bar.registry
             actionId: "appearance.open"
-            showLabel: !bar.compact
+            showLabel: !toolbarRow.compactLayout
         }
     }
 }

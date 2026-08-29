@@ -24,6 +24,8 @@ Item {
         property var calls: []
         property int selectedCount: 0
         property bool operationBusy: false
+        property bool canUndo: false
+        property string undoDisabledReason: "No filesystem operation is available to undo."
         property bool showHidden: false
         property bool canGoBack: false
         property bool canGoForward: false
@@ -52,6 +54,9 @@ Item {
         }
         function refresh() {
             record("refresh");
+        }
+        function performUndo() {
+            record("performUndo");
         }
         function activate(row) {
             record("activate:" + row);
@@ -313,11 +318,15 @@ Item {
             fakeModel.calls = [];
             fakeModel.selectedCount = 0;
             fakeModel.operationBusy = false;
+            fakeModel.canUndo = false;
+            fakeModel.undoDisabledReason = "No filesystem operation is available to undo.";
             fakeModel.tabCount = 1;
             fakeModel.paneCount = 1;
             focusedEntryModel.calls = [];
             focusedEntryModel.selectedCount = 0;
             focusedEntryModel.operationBusy = false;
+            focusedEntryModel.canUndo = false;
+            focusedEntryModel.undoDisabledReason = "No filesystem operation is available to undo.";
             shellActions.entryModel = fakeModel;
             fakeShell.calls = [];
             fakeShell.gridMode = false;
@@ -477,9 +486,28 @@ Item {
 
         function test_canvasSurfaceListsWorkspaceActions() {
             const ids = shellActions.actionsFor(shellActions.canvasContext("/synthetic/fixture")).map(action => action.actionId);
-            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,nav.up,storage.openUsage,tab.new");
+            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,edit.undo,nav.up,storage.openUsage,tab.new");
             compare(shellActions.trigger("storage.openUsage", shellActions.canvasContext("/synthetic/fixture")), true);
             compare(fakeShell.calls.join(","), "openStorageUsage");
+        }
+
+        function test_undoActionUsesLiveJournalStateAndTheDeclaredShortcut() {
+            const undo = shellActions.find("edit.undo");
+            verify(undo !== null);
+            compare(undo.shortcuts[0].sequence, "Ctrl+Z");
+            compare(shellActions.isEnabled(undo, shellActions.globalContext(undefined)), false);
+            compare(shellActions.disabledReason(undo, shellActions.globalContext(undefined)), "No filesystem operation is available to undo.");
+            compare(shellActions.trigger("edit.undo", shellActions.globalContext(undefined)), false);
+
+            fakeModel.canUndo = true;
+            fakeModel.undoDisabledReason = "";
+            compare(shellActions.isEnabled(undo, shellActions.globalContext(undefined)), true);
+            compare(shellActions.trigger("edit.undo", shellActions.globalContext(undefined)), true);
+            compare(fakeModel.calls.join(","), "performUndo");
+
+            fakeModel.operationBusy = true;
+            compare(shellActions.isEnabled(undo, shellActions.globalContext(undefined)), false);
+            compare(shellActions.disabledReason(undo, shellActions.globalContext(undefined)), "An operation is already running");
         }
 
         function test_treeSearchHasKeyboardAndSharedActionRoutes() {
@@ -676,6 +704,10 @@ Item {
             menu.openFor(shellActions.canvasContext("/synthetic"), anchorSurface, Qt.point(0, 0), null);
             tryCompare(menu, "opened", true);
             verify(menuItemByName("menuAction-selection.all") !== null);
+            const undoItem = menuItemByName("menuAction-edit.undo");
+            verify(undoItem !== null);
+            compare(undoItem.enabled, false);
+            compare(undoItem.disabledReason, "No filesystem operation is available to undo.");
             verify(menuItemByName("menuAction-entry.open") === null);
             verify(menuItemByName("menuAction-selection.trash") === null);
             menu.close();
@@ -690,6 +722,19 @@ Item {
             fakeModel.tabCount = 2;
             tryCompare(closeItem, "enabled", true);
             menu.close();
+            tryCompare(menu, "visible", false);
+        }
+
+        function test_canvasMenuRoutesUndoThroughTheSharedAction() {
+            fakeModel.canUndo = true;
+            fakeModel.undoDisabledReason = "";
+            menu.openFor(shellActions.canvasContext("/synthetic"), anchorSurface, Qt.point(0, 0), null);
+            tryCompare(menu, "opened", true);
+            const undoItem = menuItemByName("menuAction-edit.undo");
+            verify(undoItem !== null);
+            compare(undoItem.enabled, true);
+            mouseClick(undoItem);
+            compare(fakeModel.calls.join(","), "performUndo");
             tryCompare(menu, "visible", false);
         }
     }

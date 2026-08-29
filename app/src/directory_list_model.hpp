@@ -60,6 +60,8 @@ class DirectoryListModel : public QAbstractListModel {
     Q_PROPERTY(bool operationBusy READ operationBusy NOTIFY operationBusyChanged)
     Q_PROPERTY(
         QString operationErrorString READ operationErrorString NOTIFY operationErrorStringChanged)
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoStateChanged)
+    Q_PROPERTY(QString undoDisabledReason READ undoDisabledReason NOTIFY undoStateChanged)
 
   public:
     enum Roles {
@@ -119,6 +121,8 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QString statusMessage() const;
     [[nodiscard]] bool operationBusy() const noexcept;
     [[nodiscard]] QString operationErrorString() const;
+    [[nodiscard]] bool canUndo() const noexcept;
+    [[nodiscard]] QString undoDisabledReason() const;
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void goBack();
@@ -167,6 +171,7 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void performMove(const QString& destinationDirectory, int conflictMode);
     Q_INVOKABLE void performRename(const QString& newName, int conflictMode);
     Q_INVOKABLE void performTrash();
+    Q_INVOKABLE void performUndo();
 
   signals:
     void pathChanged();
@@ -184,6 +189,7 @@ class DirectoryListModel : public QAbstractListModel {
     void statusMessageChanged();
     void operationBusyChanged();
     void operationErrorStringChanged();
+    void undoStateChanged();
     void openRequested(const QString& path);
     void filesystemOperationRequested(const QString& operation, const QStringList& paths);
 
@@ -292,7 +298,9 @@ class DirectoryListModel : public QAbstractListModel {
     void notifySelectionRoles();
     void requestOperation(const QString& operation);
     void startOperation(FilesystemOperationRequest request);
+    void startUndo();
     void finishOperation(FilesystemOperationResult result);
+    void refreshUndoState();
     void postScanBatch(std::uint64_t token, std::vector<odysea::core::Entry> entries);
     void postScanComplete(odysea::core::ScanSummary summary);
     void postWatchUpdate(DirectoryWatchUpdate update);
@@ -371,6 +379,11 @@ class DirectoryListModel : public QAbstractListModel {
     std::vector<PaneState> panes_{PaneState{}, PaneState{}};
     odysea::core::DirectoryScanner scanner_;
     DirectoryWatchService watchService_;
+    // The background operation owns a shared reference while it calls the
+    // core journal. The model may disappear before that job returns, so the
+    // journal must outlive the QObject without any app-layer replay state.
+    std::shared_ptr<odysea::core::OperationJournal> operationJournal_ =
+        std::make_shared<odysea::core::OperationJournal>();
     QFutureWatcher<FilesystemOperationResult> operationWatcher_;
     ThumbnailImageProvider* thumbnailProvider_ = nullptr;
     EntryLauncher* entryLauncher_ = nullptr;
@@ -393,6 +406,8 @@ class DirectoryListModel : public QAbstractListModel {
     int paneCount_ = 1;
     bool busy_ = false;
     bool operationBusy_ = false;
+    bool canUndo_ = false;
+    QString undoDisabledReason_ = QStringLiteral("No filesystem operation is available to undo.");
     bool showHidden_ = false;
     bool rubberBandActive_ = false;
     bool watchRefreshPending_ = false;

@@ -24,10 +24,12 @@ ShellButton {
     // missing-property analysis even though the property exists.
     readonly property var shellAction: button.registry.find(button.actionId)
     readonly property string sequenceHint: button.registry.primarySequence(button.shellAction)
+    readonly property bool actionEnabled: button.registry.isEnabled(button.shellAction, button.actionContext)
+    readonly property string disabledReason: button.registry.disabledReason(button.shellAction, button.actionContext)
 
     text: button.showLabel ? button.shellAction.shortLabel : ""
     iconName: button.registry.iconFor(button.shellAction, button.actionContext)
-    enabled: button.shellAction.enabled && (button.shellAction.enabledFor === null || button.shellAction.enabledFor(button.actionContext) === true)
+    enabled: button.actionEnabled
     checkable: button.shellAction.checkable
     Accessible.name: button.shellAction.shortLabel
 
@@ -39,6 +41,6 @@ ShellButton {
         value: button.shellAction.checked
     }
     ToolTip.visible: hovered
-    ToolTip.text: button.registry.labelFor(button.shellAction, button.actionContext) + (button.sequenceHint.length > 0 ? " (" + button.sequenceHint + ")" : "")
+    ToolTip.text: button.disabledReason.length > 0 ? button.disabledReason : button.registry.labelFor(button.shellAction, button.actionContext) + (button.sequenceHint.length > 0 ? " (" + button.sequenceHint + ")" : "")
     onClicked: button.registry.trigger(button.actionId, button.actionContext)
 }

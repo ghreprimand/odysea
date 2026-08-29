@@ -24,8 +24,10 @@ bool FilesystemOperationResult::succeeded() const {
     return true;
 }
 
-FilesystemOperationResult executeFilesystemOperation(const FilesystemOperationRequest& request) {
-    FilesystemOperationResult result{.kind = request.kind, .items = {}};
+FilesystemOperationResult executeFilesystemOperation(const FilesystemOperationRequest& request,
+                                                     odysea::core::OperationJournal& journal) {
+    FilesystemOperationResult result{
+        .kind = request.kind, .items = {}, .undoOutcome = std::nullopt};
     if (request.sources.empty()) {
         result.items.push_back(invalidItem({}));
         return result;
@@ -42,23 +44,25 @@ FilesystemOperationResult executeFilesystemOperation(const FilesystemOperationRe
         FilesystemOperationItem item{.source = source, .destination = {}, .error = {}};
         if (request.kind == FilesystemOperationKind::Copy) {
             const odysea::core::OperationOutcome outcome =
-                odysea::core::copy_into(source, request.destinationDirectory, request.options);
+                journal.copy_into(source, request.destinationDirectory, request.options);
             item.destination = outcome.destination;
             item.error = outcome.error;
         } else if (request.kind == FilesystemOperationKind::Move) {
             const odysea::core::OperationOutcome outcome =
-                odysea::core::move_into(source, request.destinationDirectory, request.options);
+                journal.move_into(source, request.destinationDirectory, request.options);
             item.destination = outcome.destination;
             item.error = outcome.error;
         } else if (request.kind == FilesystemOperationKind::Rename) {
             const odysea::core::OperationOutcome outcome =
-                odysea::core::rename_entry(source, request.newName, request.options);
+                journal.rename_entry(source, request.newName, request.options);
             item.destination = outcome.destination;
             item.error = outcome.error;
-        } else {
-            const odysea::core::TrashOutcome outcome = odysea::core::move_to_trash(source);
+        } else if (request.kind == FilesystemOperationKind::Trash) {
+            const odysea::core::TrashOutcome outcome = journal.move_to_trash(source);
             item.destination = outcome.trashed_path;
             item.error = outcome.error;
+        } else {
+            item = invalidItem(source);
         }
         result.items.push_back(std::move(item));
 
@@ -68,4 +72,12 @@ FilesystemOperationResult executeFilesystemOperation(const FilesystemOperationRe
     }
 
     return result;
+}
+
+FilesystemOperationResult executeFilesystemUndo(odysea::core::OperationJournal& journal) {
+    return FilesystemOperationResult{
+        .kind = FilesystemOperationKind::Undo,
+        .items = {},
+        .undoOutcome = journal.undo(),
+    };
 }

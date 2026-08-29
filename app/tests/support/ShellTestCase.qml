@@ -33,6 +33,8 @@ TestCase {
         property int activePane: 0
         property bool operationBusy: false
         property string operationErrorString: ""
+        property bool canUndo: false
+        property string undoDisabledReason: "No filesystem operation is available to undo."
         property int selectRowCalls: 0
         property int selectedRow: -1
         property int selectedModifiers: Qt.NoModifier
@@ -82,6 +84,7 @@ TestCase {
         property int performMoveCalls: 0
         property int performRenameCalls: 0
         property int performTrashCalls: 0
+        property int performUndoCalls: 0
         property string performedDestination: ""
         property string performedName: ""
         property int performedConflictMode: -1
@@ -268,6 +271,9 @@ TestCase {
         function performTrash() {
             performTrashCalls += 1;
         }
+        function performUndo() {
+            performUndoCalls += 1;
+        }
         function selectAll() {
             selectAllCalls += 1;
             for (let row = 0; row < count; ++row) {
@@ -397,6 +403,7 @@ TestCase {
             performMoveCalls = 0;
             performRenameCalls = 0;
             performTrashCalls = 0;
+            performUndoCalls = 0;
             performedDestination = "";
             performedName = "";
             performedConflictMode = -1;
@@ -425,6 +432,8 @@ TestCase {
         fakeModelObject.tabCount = 1;
         fakeModelObject.activeTab = 0;
         fakeModelObject.operationErrorString = "";
+        fakeModelObject.canUndo = false;
+        fakeModelObject.undoDisabledReason = "No filesystem operation is available to undo.";
         shellWindow.shellTheme.dualPaneEnabled = false;
         shellWindow.shellTheme.splitRatio = 0.5;
         shellWindow.activePaneIndex = 0;

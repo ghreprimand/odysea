@@ -104,6 +104,19 @@ Support.ShellTestCase {
         });
     }
 
+    function test_undoKeyboardAndPointerParity() {
+        fakeModel.canUndo = true;
+        fakeModel.undoDisabledReason = "";
+        const list = child("directoryList");
+        list.forceActiveFocus();
+
+        keySequence("Ctrl+Z");
+        tryCompare(fakeModel, "performUndoCalls", 1);
+
+        mouseClick(child("undoButton"));
+        tryCompare(fakeModel, "performUndoCalls", 2);
+    }
+
     function test_pathOrientationAndDirectEntryKeyboardAndPointerParity() {
         const navigator = child("pathNavigator");
         const editor = child("pathEditorRow");

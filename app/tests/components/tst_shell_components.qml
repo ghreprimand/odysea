@@ -37,6 +37,8 @@ Item {
         property int selectedCount: 0
         property bool busy: false
         property bool operationBusy: false
+        property bool canUndo: false
+        property string undoDisabledReason: "No filesystem operation is available to undo."
         property string operationErrorString: ""
         property string errorString: ""
         property string statusMessage: "ready"
@@ -64,6 +66,9 @@ Item {
         }
         function refresh() {
             record("refresh");
+        }
+        function performUndo() {
+            record("performUndo");
         }
         function setDualPaneEnabled(enabled) {
             record("setDualPaneEnabled:" + enabled);
@@ -484,6 +489,28 @@ Item {
             verify(back.enabled);
             mouseClick(back);
             compare(model.calls[model.calls.length - 1], "goBack");
+        }
+
+        function test_toolBarUndoUsesTheSharedAvailabilityAndReason() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const bar = createTemporaryObject(toolBarFactory, harness, {
+                "shellModel": model,
+                "registry": makeRegistry(model, controller)
+            });
+            verify(bar !== null);
+            flush();
+
+            const undo = findChild(bar, "undoButton");
+            verify(undo !== null);
+            compare(undo.enabled, false);
+            compare(undo.disabledReason, "No filesystem operation is available to undo.");
+
+            model.canUndo = true;
+            model.undoDisabledReason = "";
+            tryCompare(undo, "enabled", true);
+            mouseClick(undo);
+            compare(model.calls[model.calls.length - 1], "performUndo");
         }
 
         function test_toolBarViewToggleDrivesController() {

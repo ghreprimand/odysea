@@ -25,6 +25,27 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Undo is one action across every shell surface
+
+The shell now declares Undo once. `Ctrl+Z`, the toolbar, the blank-canvas
+context menu, and the command palette all invoke that declaration against the
+active listing adapter. The same declaration reads the adapter's live
+availability, so an operation in progress and a journal state that does not
+offer undo both disable every surface together.
+
+Disabled presentation keeps the adapter's current reason. Toolbar hover text,
+the context-menu accessibility description, and the command-palette reason
+therefore describe the same action state rather than each surface inventing
+its own condition.
+
+Verification adds an adapter scenario for a copied entry that is removed by
+Undo and for an overwrite state that disables it with the recorded reason.
+Action, palette, component, and full-shell input cases cover the shared
+declaration, disabled state, canvas-menu pointer route, toolbar pointer route,
+palette route, and `Ctrl+Z` route.
+
+---
+
 ## 2026-08-29 -- What protects a copied file cannot depend on how deep it sits
 
 Reversing a copy removes what the copy created, so every check standing between
