@@ -469,6 +469,13 @@ falls short. Write every feature from the requirement it satisfies.
   by what the group cannot do. Both shapes are refused without any name being
   known, because the label and the list carry the claim on their own.
 
+- Do not lay the same survey out as a table. A column of names beside a column
+  of assessments is the shortest form that claim has, and it is the form
+  reached for once prose is refused. A table is read as its own block: its
+  cells are the items, a limitation anywhere in it qualifies it, and the header
+  row is not counted, because a header names the columns rather than the
+  subject. Ordinary reference tables keep passing.
+
 - Do not attribute a decision to a peer named by its standing. Calling an
   implementation established, mainstream, conventional, comparable or popular
   is a claim about where it sits among others, and a decision presented as
@@ -514,6 +521,41 @@ the line — and when the block around it states a limitation, so ordinary prose
 that names three inputs and then says what they do keeps passing. Singular
 self-reference is permitted throughout: every legitimate sentence here is about
 this one program.
+
+Shape alone cannot separate a survey from the way this project describes its
+own settings. The design document's bullet on the effect profiles names five of
+them, closes the list with a full stop, and then says what happens on a weak
+GPU. That is a run of capitalised names closed by a sentence break beside a
+stated limitation, and so is a survey of other work. What differs is the names:
+those five are identifiers this program implements, and they appear throughout
+its sources. A name from elsewhere appears in exactly one place, the sentence
+that mentions it. So a run stands down only when every name in it is already
+part of this project's vocabulary,
+and vocabulary means the product sources — C and C++, QML, build and resource
+definitions. Documentation deliberately does not count, because if it did a
+survey would authorise itself by mentioning its own names in a paragraph. The
+vendored dependency tree does not count either: an upstream's identifiers are
+its vocabulary, not this project's. One unrecognised name puts the whole run
+back in the report.
+
+Write freely in the project's own vocabulary. If a list is refused, the reason
+is that at least one name in it is not defined anywhere in the sources, which
+is worth knowing before the text is published.
+
+The two shape rules, and only these two, read a narrower corpus than the rest
+of the guard. They match on form rather than word choice, so they can land on
+text this project has no authority to rewrite: `LICENSE`, which is reproduced
+verbatim as its own terms require; `app/third_party/`, where an upstream
+license requires verbatim distribution and editing it to satisfy a check here
+would breach it; and `docs/devlog/`, where the archive gate refuses any
+in-place modification of a published entry. The boundary is authority, not
+convenience. `DEVLOG.md` and every documentation file are still scanned, which
+puts the seam in the right place: an entry is held to these rules while it can
+still be reworded, and stops being scanned only once it has been archived and
+made immutable. Measured against the tracked corpus the three exclusions
+currently excuse nothing at all — they are preventive, and
+`public_repository_guard_self_test` is what holds them to their stated width,
+since the identical text one directory outside each scope is still reported.
 
 ## Engineering record
 

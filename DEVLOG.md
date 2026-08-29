@@ -25,6 +25,148 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- A table walked past every category rule, and shape was never the discriminator
+
+Five rules read the shape of prose: a survey sentence, a placement verb, a
+section heading, a group label, and a run of names qualified by a limitation. A
+Markdown table walks past all five at once. The label rule needs a list marker
+that a table row does not have, and a run has to close its clause, while a run
+inside a cell is closed by a cell wall instead. A column of names beside a
+column of assessments therefore passed cleanly, and it is the shortest form the
+claim has — the form left over once prose is refused.
+
+A table is now read as its own block. Its cells are the items, a limitation
+anywhere in it qualifies it, and it ends where the rows do. Two details keep
+ordinary documentation out of the report. The header row and its delimiter are
+not counted, because a header names the columns rather than the subject. The
+item-count half of the prose threshold is not applied either, because the
+number of cells in a table is decided by how many columns it has rather than by
+what was written, so only the count of name-shaped cells carries a signal
+there.
+
+A cell is a name, or a list of names, or prose, and only the first two count.
+Reading names out of the middle of prose counts the first word of every
+assessment written beside a name, since an assessment starts a sentence and a
+sentence starts with a capital — which turned a two-name table into a
+three-name report on the first attempt. A cell contributes its comma-separated
+parts only when every one of them is name-shaped.
+
+The harder half was that the enumeration rule reported this project's own
+writing. The design document's bullet on the effect profiles names five of
+them, closes the list with a full stop, and then says what happens on a weak
+GPU. That is the same shape as a survey, and it is correct prose written here
+constantly. It survived only by accident: the accent preset bullet wraps
+between its last comma and its final name, and the effect profile names carry
+backticks that put them outside the name pattern. Reflow either paragraph and
+the guard reports the design document.
+
+Shape was never the discriminator. What separates the two is the names. The
+profile names are identifiers this program implements and they appear
+throughout its sources, while a name from elsewhere appears in exactly one
+place: the sentence that mentions it. So a run stands down only when every name
+in it is already part of this project's vocabulary, and vocabulary means the
+product sources — C and C++, QML, build and resource definitions. Documentation
+deliberately does not count, because if it did a survey would authorise itself
+by naming a group in a table and mentioning it once in a paragraph. The
+vendored dependency tree does not count either, since an upstream's identifiers
+are its vocabulary rather than this one's. The condition is all or nothing, so
+a survey cannot be smuggled in beside four words that happen to be settings.
+
+Measured against the tracked corpus with its sources present: the design
+document's effect-profile and accent-preset bullets, reflowed onto single
+lines, are accepted; the same bullet with one foreign name substituted is
+reported at its line number; and the comparative section removed earlier,
+restored into the corpus for the measurement, is still reported by the
+enumeration rule itself rather than only by the rules that read framing.
+
+The two shape rules, and only these two, now read a narrower corpus. They match
+on form rather than word choice, so they can land on text this project has no
+authority to rewrite: the license, reproduced verbatim as its own terms
+require; the vendored tree, where an upstream license requires verbatim
+distribution and editing it to satisfy a check here would breach it; and the
+archived record, where a separate gate refuses any in-place modification of a
+published entry, so a hit there is a contradiction between two hard gates with
+no move between them. The boundary is authority, not convenience. The live
+record and every documentation file are still scanned, which puts the seam in
+the right place: an entry is held to these rules while it can still be
+reworded, and stops being scanned only once it has been archived. The cost is
+stated rather than hidden — a survey that survives review into the archive is
+beyond these two rules afterwards — and it is bounded, because every other rule
+in the guard still reads the archive.
+
+Those exclusions currently excuse nothing. Dropping all three and re-running
+reports the same clean corpus, and so does lowering the threshold a notch, so
+they are preventive rather than remedial. An exclusion that excuses nothing
+cannot be shown to be narrow by the corpus, so it is held to its width by
+scenarios instead: the identical text one directory outside each scope is
+reported, and the same text in the live record is reported while the archived
+copy is not.
+
+Narrowing the corpus introduced a state that could not exist before. A tree
+holding nothing but a license, or nothing but archived entries, leaves these
+two rules with no line to judge, and the floor that fails when nothing was
+examined then fires on a corpus that is legitimately empty. The size of the
+narrowed corpus is now measured first and is what decides which of the two
+conditions holds, because reading both off one number makes a broken scan
+indistinguishable from a license file on its own.
+
+Two apparatus faults were closed alongside. The hosted-source search ended in a
+tolerated failure eleven lines below the comment warning against exactly that,
+so a pattern that will not compile looked identical to a clean corpus; its
+status is now read, with an empty result accepted and a failure to search
+reported. That scan and the own-owner filter are both pinned by scenarios that
+damage a copy of the guard deliberately, compare the copy against the original
+first so a patch that failed to apply cannot read as a pass, and assert the
+exit status and the reason.
+
+One fixture was a decoration rather than a scenario. It was named for the
+blank-line block boundary, but its limitation sat past a blank line and past
+the start of another list item at once, so the list-item boundary alone held it
+accepted and the blank-line clause could be deleted with the suite green. One
+character was the difference. The criterion that missed it — whether the
+fixture carries a list the rule matches — is necessary and not sufficient. What
+a fixture has to prove is that the condition it is named for is the one
+deciding its outcome, and the fixtures added here were built to that criterion.
+
+Self-test 95 to 117 scenarios with the floor raised. Thirty-five mutations were
+planted, each one diffed against the file it edits so an edit that failed to
+apply reads as unmeasured rather than as a survivor; thirty-three are caught by
+name. One had to be rewritten: reverting the hosted-source scan by breaking its
+quoting left the guard unparseable and failed every scenario at once, which
+measures nothing about whether a status is read, so it was replaced by a
+faithful revert to the tolerated failure and is caught by that one scenario
+alone.
+
+Two survived, and both are disclosed rather than argued away. Counting the
+delimiter row of a table changes nothing, because a delimiter cell holds only
+dashes, colons and spaces and can never be name-shaped. Treating a candidate
+that carries no names at all as recognised vocabulary changes nothing either,
+because every threshold that produces a candidate already requires two
+capitalised names. Both are defaults that no corpus can reach, and both stay:
+removing the second would turn an impossible state from a report into a silent
+pardon, which is the wrong direction for a default to fail in.
+
+The strongest accepting fixture caught the contributor guide while this was
+being written. It copies the real tracked files that cite upstream dependencies
+into a repository holding nothing else, so those files are judged with no
+sources present and no vocabulary to belong to. A profile list quoted verbatim
+into the guide was reported there — correctly, and it is a constraint worth
+stating: tracked prose in those files must stand on its own shape rather than
+lean on the vocabulary stand-down, because a reader of one of them has no
+sources in front of them either.
+
+The stated limits are unchanged and worth restating. The table scan reads the
+two extensions tracked prose is written in, so a survey laid out inside a
+source comment is outside it; the alternative reads a continued shell pipeline
+as a table row, and two tracked lines are exactly that. The vocabulary lookup
+is a whole-word search of the sources, so a name that happens to be a word this
+program already uses is excused, which is why the rule is a floor under review
+rather than a replacement for it. And a run of lowercase names is still not
+refused, for the reason recorded before: loosening the item shape to reach it
+reports 484 lines across 105 files.
+
+---
+
 ## 2026-08-28 -- Two residuals in the category rules, and one exemption
 
 The serial comma is optional in English, and omitting it defeated the

@@ -204,10 +204,24 @@ own_forge_reference_re="${forge_host_re}[/:]${own_forge_owner}\\b"
 # compile prints nothing, and nothing is indistinguishable from a clean corpus
 # once the failure has been swallowed - which is how a delimiter collision in
 # this very expression first passed for a green run.
+#
+# The search itself is read the same way, for the same reason. A search tool
+# separates "found nothing" from "could not run": status 1 is an empty result
+# and anything above it is a failure to search at all. Collapsing both into
+# `|| true` - which this line did, eleven lines below the comment warning
+# against it - makes a pattern that will not compile look exactly like a clean
+# corpus. Status 1 is accepted because an empty result is the expected state;
+# a higher status is a scan that never happened and is reported as one.
+forge_scan_status=0
 forge_scan="$(
     guard_corpus_grep -nI -E "$forge_reference_re" \
-        -- "${self_excluding_pathspec[@]}" '!app/third_party/*' 2>/dev/null || true
-)"
+        -- "${self_excluding_pathspec[@]}" '!app/third_party/*' 2>/dev/null
+)" || forge_scan_status=$?
+if ((forge_scan_status > 1)); then
+    printf 'public_repository_guard: the forge reference scan failed with status %d, so no reference was judged\n' \
+        "$forge_scan_status" >&2
+    failed=1
+fi
 if ! forge_scan_without_own="$(
     printf '%s' "$forge_scan" | sed -E "s#${own_forge_reference_re}##g"
 )"; then
@@ -354,12 +368,46 @@ report_matches "comparative positioning within a field is tracked" \
 # plural label is refused. The label has to be closed, by emphasis marks or by
 # a colon or dash, so that an ordinary sentence running through the same words
 # is not read as a heading for a group.
+#
+# The two shape rules, and only these two, read a narrower corpus than the
+# rules above them. They match on the form of a list rather than on any word
+# choice, so they can land on text this project has no authority to rewrite,
+# and a rule that stands permanently red over text nobody may edit is a rule
+# that gets deleted rather than obeyed. Three path scopes are excluded:
+#
+#   LICENSE                 the GPL, reproduced verbatim as its own terms
+#                           require. It enumerates and it qualifies, because
+#                           legal prose does that, and not one character of it
+#                           may be changed to satisfy a lint.
+#   app/third_party/*       upstream provenance and license text, reproduced
+#                           verbatim for the same reason. The bundled typeface
+#                           license requires verbatim distribution; editing it
+#                           to pass a check here would breach it.
+#   docs/devlog/*           the archived record. A separate gate refuses any
+#                           in-place modification of a published entry, so a
+#                           hit inside the archive is a contradiction between
+#                           two hard gates with no legal move between them.
+#
+# The live record, `DEVLOG.md`, is deliberately not excluded, and neither is
+# any other documentation. That is where the seam sits: an entry is scanned by
+# these rules while it can still be reworded, and stops being scanned only once
+# it has been archived and made immutable. The cost is stated rather than
+# hidden - a survey that survives review into the archive is beyond these two
+# rules afterwards - and it is bounded by the fact that every other rule in
+# this file, including all four framing rules, still reads the archive.
+shape_rule_pathspec=(
+    "${self_excluding_pathspec[@]}"
+    '!LICENSE'
+    '!app/third_party/*'
+    '!docs/devlog/*'
+)
+
 prose_category_label_re="((([A-Za-z][A-Za-z0-9/-]*[[:space:]]+){1,3}(file[ -]managers?|explorers?|browsers?))|file[ -]managers|explorers|browsers)"
 prose_emphasis_re='(\*\*|__|\*|_)'
 report_matches "a list item is labelled as a class of file manager" \
     guard_corpus_grep -nI -iE \
     "^[[:space:]]*([-*+]|[0-9]+[.)])[[:space:]]+(${prose_emphasis_re}[[:space:]]*${prose_category_label_re}[[:space:]]*${prose_emphasis_re}|${prose_category_label_re}[[:space:]]*[:—–-])" \
-    -- "${self_excluding_pathspec[@]}"
+    -- "${shape_rule_pathspec[@]}"
 
 # The second is the enumeration. "A, B, C. Fast, but limited" is a survey of
 # other work whatever A, B and C turn out to be, so the rule counts the shape
@@ -390,10 +438,36 @@ report_matches "a list item is labelled as a class of file manager" \
 # three capitalised items, or four items of which at least two are
 # capitalised. It reports both halves of the enumeration that prompted it.
 #
+# A Markdown table is the same survey in a layout the prose rule cannot see.
+# Every condition above is written for running text: the label rule needs a
+# list marker a table row does not have, and the enumeration needs its run to
+# close a clause, while a run inside a cell is closed by a cell wall. A table
+# holding a column of names and a column of assessments therefore passed all
+# five rules, which is the shape a writer reaches for the moment prose is
+# refused. A table is read here as its own block: its cells are the items, a
+# limitation anywhere in the table qualifies it, and the table ends where the
+# rows do.
+#
+# Two details keep the table reading from turning ordinary documentation into
+# a failure. The header row and its delimiter are not counted - a header names
+# the columns and is a property of the layout rather than of the writing - and
+# the item-count half of the prose threshold is not applied, because the number
+# of cells in a table is decided by how many columns it has. Only the count of
+# name-shaped cells carries a signal there, so only that count is used.
+#
+# The scan is restricted to the two extensions tracked prose is written in, so
+# that a table cannot simply be moved out of Markdown. It is not run over
+# sources: two tracked shell lines begin with a pipe because a pipeline was
+# continued onto the next line, and scoping by extension is more honest than
+# adding a condition that pretends to tell a pipeline from a table.
+#
 # The awk program is run on its own with its exit status read, and it reports
 # how many lines it examined. A pattern that fails to compile prints nothing,
 # and nothing is indistinguishable from a clean corpus once the failure has
 # been swallowed.
+#
+# The unit separator below carries the names out of awk for the vocabulary
+# check that follows. It is a control character, so it cannot occur in a name.
 block_enumeration_program='
 BEGIN {
     capitalised = "[A-Z][A-Za-z0-9_+'"'"'-]*( [A-Z][A-Za-z0-9_+'"'"'-]*)*( \\([^)]*\\))?"
@@ -406,27 +480,103 @@ BEGIN {
     enumeration = item separator item join item "(" join item ")*" closing
     limitation = "(^|[^A-Za-z])(but|though|however|yet|whereas|constrained|tied to|limited|restricted)([^A-Za-z]|$)"
     item_boundary = ",|[ \t]+(and|or)[ \t]+"
+    anchored_name = "^" capitalised "$"
+    table_row = "^[ \t]*\\|.*\\|"
+    table_delimiter = "^[ \t]*\\|[ \t:|-]*$"
+    unit = "\037"
 }
-function count_items(run, capitals_only,   fields, index_, total) {
+# Records one name for the vocabulary check. A parenthetical qualifier and the
+# punctuation that closes a clause are not part of the name being looked up,
+# and neither is the first word of whatever sentence follows: the matched run
+# extends one character past the full stop, so the last item arrives as
+# "Custom. Every" rather than as "Custom". Truncating at the sentence break is
+# also the strict direction - a name cut short is a name that will not be
+# found, and an unfound name is reported rather than excused.
+function collect_name(field) {
+    sub(/[.;].*$/, "", field)
+    sub(/[ \t]*\(.*$/, "", field)
+    sub(/^[ \t*_`]+/, "", field)
+    sub(/[ \t*_`,:]+$/, "", field)
+    if (field != "") {
+        collected_items = collected_items unit field
+    }
+}
+function count_items(run, capitals_only,   fields, index_, total, field) {
     total = 0
     for (index_ = split(run, fields, item_boundary); index_ > 0; index_--) {
-        sub(/^[ \t]*(and |or )?/, "", fields[index_])
+        field = fields[index_]
+        sub(/^[ \t]*(and |or )?/, "", field)
         # A comma immediately followed by the conjunction splits twice and
         # leaves an empty field between them. Counting it would inflate the
         # item total by one for every serial comma in the run, which is the
         # difference between a three-item list and the four-item threshold.
-        if (fields[index_] ~ /^[ \t]*$/) continue
-        if (!capitals_only || fields[index_] ~ /^[A-Z]/) total++
+        if (field ~ /^[ \t]*$/) continue
+        if (!capitals_only || field ~ /^[A-Z]/) total++
+        if (capitals_only && field ~ /^[A-Z]/) collect_name(field)
     }
     return total
 }
+function emit(reference, text) {
+    print "candidate" "\t" reference "\t" substr(collected_items, 2) "\t" text
+}
 function end_block() {
     if (enumeration_reference != "" && block_states_a_limitation) {
-        print enumeration_reference ":" enumeration_text
+        collected_items = enumeration_items
+        emit(enumeration_reference, enumeration_text)
     }
     enumeration_reference = ""
     enumeration_text = ""
+    enumeration_items = ""
     block_states_a_limitation = 0
+}
+# The names in one cell. A cell is a name, or a list of names, or prose - and
+# only the first two count. Reading a name out of the middle of prose would
+# count the first word of every assessment written beside a name, because an
+# assessment starts a sentence and a sentence starts with a capital: "Fast, but
+# limited" would contribute "Fast" and a two-name table would report as three.
+# So a cell contributes its comma-separated parts only when every one of them
+# is name-shaped, and contributes nothing otherwise.
+function names_in_cell(cell,   parts, part_count, part_index, field, names) {
+    part_count = split(cell, parts, ",")
+    names = 0
+    for (part_index = 1; part_index <= part_count; part_index++) {
+        field = parts[part_index]
+        sub(/^[ \t*_`]+/, "", field)
+        sub(/[ \t*_`.;:]+$/, "", field)
+        if (field == "") continue
+        if (field !~ anchored_name) return 0
+        cell_names[++names] = field
+    }
+    return names
+}
+# Counts the name-shaped cells of one table, skipping the delimiter row and the
+# header row that sits directly above it.
+function count_table_names(   row, cells, cell_count, cell_index,
+                              found, name_index, names) {
+    names = 0
+    collected_items = ""
+    for (row = 1; row <= table_rows; row++) {
+        if (table_text[row] ~ table_delimiter) continue
+        if (row < table_rows && table_text[row + 1] ~ table_delimiter) continue
+        cell_count = split(table_text[row], cells, "|")
+        for (cell_index = 1; cell_index <= cell_count; cell_index++) {
+            found = names_in_cell(cells[cell_index])
+            for (name_index = 1; name_index <= found; name_index++) {
+                names++
+                collect_name(cell_names[name_index])
+            }
+        }
+    }
+    return names
+}
+function end_table() {
+    if (table_rows > 0 && table_states_a_limitation && count_table_names() >= 3) {
+        emit(table_reference, table_first_text)
+    }
+    table_rows = 0
+    table_reference = ""
+    table_first_text = ""
+    table_states_a_limitation = 0
 }
 {
     scanned++
@@ -437,8 +587,23 @@ function end_block() {
 
     if (path != current_path) {
         end_block()
+        end_table()
         current_path = path
     }
+    if (path ~ /\.(md|txt)$/ && text ~ table_row) {
+        end_block()
+        if (table_rows == 0) {
+            table_reference = path ":" line_number
+            table_first_text = text
+        }
+        table_rows++
+        table_text[table_rows] = text
+        if (text ~ limitation) {
+            table_states_a_limitation = 1
+        }
+        next
+    }
+    end_table()
     if (text ~ /^[ \t]*$/ || text ~ /^[ \t]*#/ ||
         text ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/) {
         end_block()
@@ -448,21 +613,44 @@ function end_block() {
     }
     if (enumeration_reference == "" && match(text, enumeration)) {
         run = substr(text, RSTART, RLENGTH)
+        collected_items = ""
         capitals = count_items(run, 1)
         if (capitals >= 3 || (count_items(run, 0) >= 4 && capitals >= 2)) {
             enumeration_reference = path ":" line_number
             enumeration_text = text
+            enumeration_items = collected_items
         }
     }
 }
 END {
     end_block()
+    end_table()
     print "guard_scanned_lines=" scanned + 0
 }
 '
+# The corpus this pair reads can legitimately be empty, which it could not be
+# before the exclusions above existed: a tree holding nothing but a license, or
+# nothing but archived entries, has no line for these two rules to judge. So
+# the size of the narrowed corpus is measured first, and it is what decides
+# whether "no line was examined" is an empty corpus or a scan that stopped
+# working. Reading the two conditions off one number would make a broken scan
+# indistinguishable from a license file on its own.
+shape_corpus_size="$(
+    guard_corpus_list "${shape_rule_pathspec[@]}" | tr '\0' '\n' | grep -c . || true
+)"
+
+shape_scan_status=0
+shape_scan_input="$(
+    guard_corpus_grep -nI -E '^' -- "${shape_rule_pathspec[@]}" 2>/dev/null
+)" || shape_scan_status=$?
+if ((shape_scan_status > 1)); then
+    printf 'public_repository_guard: the shape-rule corpus scan failed with status %d, so no block was judged\n' \
+        "$shape_scan_status" >&2
+    failed=1
+fi
+
 if ! block_scan_output="$(
-    guard_corpus_grep -nI -E '^' -- "${self_excluding_pathspec[@]}" |
-        awk "$block_enumeration_program"
+    printf '%s' "$shape_scan_input" | awk "$block_enumeration_program"
 )"; then
     printf 'public_repository_guard: the block enumeration scan failed to run, so no block was judged\n' >&2
     failed=1
@@ -472,16 +660,67 @@ fi
 scanned_prose_lines="$(
     printf '%s\n' "$block_scan_output" | sed -n 's/^guard_scanned_lines=//p'
 )"
-if [[ ! "$scanned_prose_lines" =~ ^[0-9]+$ ]] || ((scanned_prose_lines == 0)); then
-    printf 'public_repository_guard: the block enumeration scan examined no corpus line\n' >&2
+if [[ ! "$scanned_prose_lines" =~ ^[0-9]+$ ]] ||
+    ((shape_corpus_size > 0 && scanned_prose_lines == 0)); then
+    printf 'public_repository_guard: the block enumeration scan examined no corpus line, over a corpus of %s path(s)\n' \
+        "$shape_corpus_size" >&2
     failed=1
 fi
 
-block_enumeration_matches="$(
-    printf '%s\n' "$block_scan_output" | grep -v '^guard_scanned_lines=' || true
-)"
+# What separates this project's own writing from a survey of other work is not
+# the shape of the list - both are a run of capitalised names closed by a full
+# stop, beside a sentence that states a limitation - but what the names are.
+# "Off, Minimal, Balanced, Strong, and Custom" is the effect-profile vocabulary
+# this program implements, and every one of those words is an identifier in its
+# sources. A peer product's name appears in exactly one place: the sentence
+# that surveys it. Nothing else in the tree has any use for it.
+#
+# So a candidate stands down only when every name in it is already part of this
+# project's own vocabulary, and vocabulary means the product sources - C and
+# C++, QML, build and resource definitions. Documentation deliberately does not
+# count. If prose counted, a survey would authorise itself: name six programs
+# in a table and mention them once in a paragraph, and the table would be
+# excused by the paragraph. The vocabulary has to be established by the code
+# that implements it, which is something a survey of other work can never do.
+#
+# The vendored dependency tree is excluded for the same reason: an upstream's
+# identifiers are its vocabulary, not this project's.
+#
+# The condition is all-or-nothing. One unrecognised name in the run puts the
+# whole candidate back in the report, so a survey cannot be smuggled in beside
+# four words that happen to be settings.
+vocabulary_pathspec=(
+    '*.c' '*.cc' '*.cpp' '*.cxx'
+    '*.h' '*.hh' '*.hpp' '*.hxx'
+    '*.qml' '*.js'
+    '*.cmake' '*CMakeLists.txt' '*.qrc' '*.json' '*.desktop'
+    '!app/third_party/*'
+)
+
+name_is_project_vocabulary() {
+    guard_corpus_grep -qwF "$1" -- "${vocabulary_pathspec[@]}" 2>/dev/null
+}
+
+block_enumeration_matches=""
+while IFS=$'\t' read -r marker reference names text; do
+    [[ "$marker" == "candidate" ]] || continue
+
+    every_name_is_ours=1
+    [[ -n "$names" ]] || every_name_is_ours=0
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        if ! name_is_project_vocabulary "$name"; then
+            every_name_is_ours=0
+            break
+        fi
+    done < <(printf '%s' "$names" | tr '\037' '\n')
+
+    ((every_name_is_ours == 1)) && continue
+    block_enumeration_matches+="${reference}:${text}"$'\n'
+done <<<"$block_scan_output"
+
 if [[ -n "$block_enumeration_matches" ]]; then
-    printf 'public_repository_guard: an enumeration of named items is qualified by a limitation\n%s\n' \
+    printf 'public_repository_guard: an enumeration of named items is qualified by a limitation\n%s' \
         "$block_enumeration_matches" >&2
     failed=1
 fi

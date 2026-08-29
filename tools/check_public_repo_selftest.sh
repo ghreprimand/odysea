@@ -761,13 +761,21 @@ expect_reason_outcome enumeration_without_a_limitation accept "$enumeration_mess
 # end of a file. Each of the four fixtures below states its limitation just past
 # one of those boundaries and nowhere else, so a boundary that stops being
 # honoured attaches the limitation to the list and the scenario fails.
+# The limitation below is plain prose rather than a second list item. Written
+# as a bullet it sat past two boundaries at once - the blank line and the start
+# of another item - so the list-item boundary alone held the fixture accepted
+# and the blank-line clause could be deleted with the suite still green. One
+# character was the difference between a scenario and a decoration, and the
+# criterion that missed it - "does the fixture carry a list the rule matches" -
+# is necessary but not sufficient. What a fixture has to prove is that the
+# condition it is named for is the one deciding its outcome.
 expect_reason_outcome limitation_after_a_blank_line accept "$enumeration_message" \
     "$(build_repository_named enumeration_split NOTES.md \
         "# Notes
 
 - Aure""lia, Bas""tion, Corv""ane.
 
-- The scan is bounded, but the bound is configurable.")"
+The scan is bounded, but the bound is configurable.")"
 
 expect_reason_outcome limitation_in_the_next_list_item accept "$enumeration_message" \
     "$(build_repository_named enumeration_next_item NOTES.md \
@@ -904,6 +912,287 @@ expect_reason_outcome three_items_with_a_serial_comma accept "$enumeration_messa
 
 The columns are Name, Size, and date. Their order is configurable, but the
 default is by name.")"
+
+# --- A table, which every prose rule reads straight past --------------------
+# A survey laid out as a table defeated all five rules at once. The label rule
+# needs a list marker a table row does not have, and the enumeration needs its
+# run to close a clause, while a run inside a cell is closed by a cell wall.
+# The rows below are the same claim as the bullets above them.
+#
+# Every fixture here commits a source file as well, so that none of these
+# rejections can be coming from an empty vocabulary corpus. A repository with
+# no sources in it has no vocabulary for anything to belong to, and a scenario
+# that passes for the absence of a file proves nothing about the rule.
+readonly unrelated_source='int main() { return 0; }'
+
+expect_reason_outcome table_of_named_items reject "$enumeration_message" \
+    "$(build_repository_at_paths table_named_items \
+        docs/NOTES.md "## Field notes
+
+| Program | Weakness |
+| --- | --- |
+| Aure""lia, Bas""tion, Corv""ane | Slow on large trees, but stable |
+| Nym""bus, Spr""igg, Tallow""mere | Fast on small ones |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# One name a row, which is the more natural way to write the same table and
+# the one a per-row item count would read straight past.
+expect_reason_outcome table_with_one_name_a_row reject "$enumeration_message" \
+    "$(build_repository_at_paths table_one_a_row \
+        docs/NOTES.md "## Field notes
+
+| Program | Weakness |
+| --- | --- |
+| Aure""lia | Fast, but limited |
+| Bas""tion | Quick, but tied to the grid |
+| Corv""ane | Complete, but heavy |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# The scope covers the two extensions tracked prose is written in, so moving
+# the table out of Markdown does not move it out of the rule.
+expect_reason_outcome table_in_a_text_file reject "$enumeration_message" \
+    "$(build_repository_at_paths table_text_file \
+        docs/NOTES.txt "Field notes
+
+| Program | Weakness |
+| --- | --- |
+| Aure""lia | Fast, but limited |
+| Bas""tion | Quick, but tied to the grid |
+| Corv""ane | Complete, but heavy |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# The discriminating directions. Each fixture below carries a table the scan
+# does read, so what decides its outcome is the one condition it is named for.
+#
+# A table with no limitation in it is a table, not an assessment of a field.
+expect_reason_outcome table_without_a_limitation accept "$enumeration_message" \
+    "$(build_repository_at_paths table_no_limitation \
+        docs/NOTES.md "## Field notes
+
+| Program | Behaviour |
+| --- | --- |
+| Aure""lia | Loads a directory off the main thread |
+| Bas""tion | Renders a grid |
+| Corv""ane | Watches for changes |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# The threshold from below. Two names and a limitation are a comparison of two
+# things, which prose does legitimately; three are a survey.
+expect_reason_outcome table_with_two_names accept "$enumeration_message" \
+    "$(build_repository_at_paths table_two_names \
+        docs/NOTES.md "## Field notes
+
+| Program | Weakness |
+| --- | --- |
+| Aure""lia | Fast, but limited |
+| Bas""tion | Quick, but tied to the grid |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# A header row names the columns. That is a property of the layout rather than
+# of the writing, so it is not counted - and this table has name-shaped cells
+# nowhere else, so counting the header would report it.
+expect_reason_outcome table_header_is_not_counted accept "$enumeration_message" \
+    "$(build_repository_at_paths table_header \
+        docs/NOTES.md "## Field notes
+
+| Aure""lia | Bas""tion | Corv""ane |
+| --- | --- | --- |
+| loads a directory | scans a tree, but stops at a mount | renders a grid |" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# A stated limit rather than a discovery. The table scan reads prose files
+# only, because two tracked shell lines begin with a pipe where a pipeline was
+# continued onto the next line, and a rule that pretended to tell a pipeline
+# from a table would be guessing. A survey laid out inside a source comment is
+# outside this rule and is caught by review.
+expect_reason_outcome table_shape_outside_prose_is_not_scanned accept "$enumeration_message" \
+    "$(build_repository_at_paths table_in_source \
+        app/src/notes.cpp "// | Aure""lia | Fast, but limited |
+// | Bas""tion | Quick, but tied to the grid |
+// | Corv""ane | Complete, but heavy |
+$unrelated_source")"
+
+# --- This project's own vocabulary, which is what the shape cannot tell -----
+# The refused shape and the shape this repository writes constantly are the
+# same shape: a run of capitalised names closed by a full stop, beside a
+# sentence stating a limitation. What separates them is that the names in one
+# of them are identifiers this program implements. A peer product's name
+# appears in exactly one place, the sentence that surveys it.
+readonly profile_line='- **Effect profiles** - Sl'"ate, Ha""lo, Dr""ift, Ve""il, and Be""am. Every profile is honoured, but a weak GPU falls back silently."
+readonly profile_source='enum class Profile { Sl'"ate, Ha""lo, Dr""ift, Ve""il, Be""am };"
+readonly partial_source='enum class Profile { Sl'"ate, Ha""lo, Dr""ift, Ve""il };"
+
+expect_reason_outcome own_vocabulary_enumeration accept "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_known \
+        docs/DESIGN.md "## Effects
+
+$profile_line" \
+        app/src/effects.cpp "$profile_source")"
+
+# All or nothing. One unrecognised name puts the whole run back in the report,
+# so a survey cannot be smuggled in beside four words that happen to be
+# settings.
+expect_reason_outcome one_name_outside_the_vocabulary reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_partial \
+        docs/DESIGN.md "## Effects
+
+$profile_line" \
+        app/src/effects.cpp "$partial_source")"
+
+# Documentation does not establish vocabulary. If it did, a survey would
+# authorise itself: name six programs in a table and mention them once in a
+# paragraph, and the paragraph would excuse the table.
+expect_reason_outcome vocabulary_established_only_in_prose reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_prose_only \
+        docs/DESIGN.md "## Effects
+
+$profile_line" \
+        docs/GLOSSARY.md "$profile_source" \
+        app/src/shell.cpp "$unrelated_source")"
+
+# An upstream's identifiers are its vocabulary, not this project's, so the
+# vendored tree is excluded from the lookup exactly as it is from the
+# hosted-source rule.
+expect_reason_outcome vocabulary_from_the_vendored_tree reject "$enumeration_message" \
+    "$(build_repository_at_paths vocabulary_vendored \
+        docs/DESIGN.md "## Effects
+
+$profile_line" \
+        app/third_party/vendor/vendor.cpp "$profile_source")"
+
+# The same discriminator carries the table rule. A reference table of this
+# program's own shortcuts is the shape the table rule would otherwise report.
+expect_reason_outcome table_of_project_vocabulary accept "$enumeration_message" \
+    "$(build_repository_at_paths table_vocabulary \
+        docs/KEYS.md "## Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Ctrl+C | Copies the selection, but not its paths |
+| Ctrl+V | Pastes into the current directory |
+| Ctrl+Z | Reverses the last operation, though not every kind |" \
+        app/src/keys.cpp 'const char *keys[] = {"Ctrl+C", "Ctrl+V", "Ctrl+Z"};')"
+
+# --- Text this project has no authority to rewrite --------------------------
+# The two shape rules, and only these two, read a narrower corpus. They match
+# on form rather than word choice, so they can land on the GPL, on an upstream
+# license that requires verbatim distribution, and on archived record entries a
+# separate gate refuses to let anyone modify. A rule that stands permanently
+# red over text nobody may edit is a rule that gets deleted.
+#
+# The boundary is authority, not convenience: documentation this project writes
+# and the live record are both still scanned, and the same text is reported
+# there. Measured against the tracked corpus the three exclusions currently
+# excuse nothing at all - they are preventive - so the scenarios below are the
+# only thing holding them to their stated width.
+readonly archived_exempt_line="establi""shed implementa""tion rather than from this one."
+
+expect_reason_outcome survey_in_the_license accept "$class_label_message" \
+    "$(build_repository_at_paths shape_license \
+        LICENSE "$framing_stripped_survey")"
+
+expect_reason_outcome survey_in_the_vendored_tree accept "$class_label_message" \
+    "$(build_repository_at_paths shape_vendored \
+        app/third_party/victor-mono/README.md "$framing_stripped_survey")"
+
+# One directory outside the vendored tree the identical text is still reported,
+# so the exclusion is a path scope rather than a pardon for the words.
+expect_reason_outcome survey_outside_the_vendored_tree reject "$class_label_message" \
+    "$(build_repository_at_paths shape_beside_vendored \
+        app/third_party.md "$framing_stripped_survey")"
+
+expect_reason_outcome survey_in_the_archived_record accept "$class_label_message" \
+    "$(build_repository_at_paths shape_archive \
+        docs/devlog/2026-01.md "$archived_exempt_line
+
+$framing_stripped_survey")"
+
+# The live record is not excluded, and that is where the seam sits: an entry is
+# scanned by these rules while it can still be reworded, and stops being
+# scanned only once it has been archived and made immutable.
+expect_reason_outcome survey_in_the_live_record reject "$class_label_message" \
+    "$(build_repository_at_paths shape_live_record \
+        DEVLOG.md "$framing_stripped_survey")"
+
+expect_reason_outcome survey_in_documentation reject "$class_label_message" \
+    "$(build_repository_at_paths shape_documentation \
+        docs/DESIGN.md "$framing_stripped_survey")"
+
+# The enumeration half of the same boundary, named separately, so reverting
+# either rule's exclusion fails its own scenario.
+expect_reason_outcome enumeration_in_the_archived_record accept "$enumeration_message" \
+    "$(build_repository_at_paths enumeration_archive \
+        docs/devlog/2026-01.md "$archived_exempt_line
+
+- Aure""lia, Bas""tion, Corv""ane. Capable, but bound to one grid." \
+        app/src/shell.cpp "$unrelated_source")"
+
+expect_reason_outcome enumeration_in_the_live_record reject "$enumeration_message" \
+    "$(build_repository_at_paths enumeration_live_record \
+        DEVLOG.md "- Aure""lia, Bas""tion, Corv""ane. Capable, but bound to one grid." \
+        app/src/shell.cpp "$unrelated_source")"
+
+# --- A scan whose status is never read --------------------------------------
+# A search tool separates "found nothing" from "could not run". Collapsing both
+# into a tolerated failure makes a pattern that will not compile look exactly
+# like a clean corpus, and both scans below print nothing when they fail.
+#
+# A filter that will not compile cannot be produced from a fixture; it has to
+# come from the guard itself. So a copy is damaged deliberately and its exit
+# status and reason are asserted. The copy is compared against the original
+# first: a patch that failed to apply would leave the working guard in place
+# and the scenario would report a pass for a mutation that never landed.
+readonly guard_library="$tools_directory/guard_corpus.sh"
+
+expect_patched_guard_rejection() {
+    local scenario="$1"
+    local reason="$2"
+    local patch="$3"
+    local root="$4"
+
+    checked=$((checked + 1))
+
+    local tools_copy="$workspace/$scenario-tools"
+    mkdir -p "$tools_copy"
+    cp "$guard" "$tools_copy/check_public_repo.sh"
+    cp "$guard_library" "$tools_copy/guard_corpus.sh"
+    sed -i "$patch" "$tools_copy/check_public_repo.sh"
+
+    if cmp -s "$guard" "$tools_copy/check_public_repo.sh"; then
+        printf 'public_repository_guard_self_test: %s did not change the guard, so nothing was measured\n' \
+            "$scenario" >&2
+        status=1
+        return
+    fi
+
+    local output=""
+    local exit_status=0
+    output="$(cd "$root" && bash "$tools_copy/check_public_repo.sh" 2>&1)" ||
+        exit_status=$?
+
+    if ((exit_status == 0)); then
+        printf 'public_repository_guard_self_test: %s should be rejected\n' \
+            "$scenario" >&2
+        status=1
+    elif [[ "$output" != *"$reason"* ]]; then
+        printf 'public_repository_guard_self_test: %s should be rejected for "%s", but the guard said: %s\n' \
+            "$scenario" "$reason" "$output" >&2
+        status=1
+    fi
+}
+
+clean_root="$(build_repository_named patched_guard_corpus NOTES.md \
+    'Ordinary prose with nothing in it for any rule to find.')"
+
+expect_patched_guard_rejection forge_scan_that_cannot_run \
+    'the forge reference scan failed with status' \
+    "s|^forge_reference_re=.*|forge_reference_re='[unterminated'|" \
+    "$clean_root"
+
+expect_patched_guard_rejection own_owner_filter_that_cannot_run \
+    'the own-owner forge filter failed to run' \
+    "s|^own_forge_reference_re=.*|own_forge_reference_re='[unterminated'|" \
+    "$clean_root"
 
 # --- A peer named by its standing rather than by its name -------------------
 # The qualifier carries the claim: calling an implementation established or
@@ -1076,7 +1365,7 @@ fi
 
 # A floor on the suite's own reporting. A scenario that stops running leaves
 # the remaining ones green, and the summary line below would still be printed.
-readonly expected_scenarios=95
+readonly expected_scenarios=117
 if ((checked != expected_scenarios)); then
     printf 'public_repository_guard_self_test: %d scenario(s) reported a result, expected %d; the suite did not run in full\n' \
         "$checked" "$expected_scenarios" >&2
