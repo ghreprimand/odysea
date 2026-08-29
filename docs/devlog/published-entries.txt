@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-29 -- What protects a copied file cannot depend on how deep it sits
 ## 2026-08-29 -- The shell palette family carries the flagship terminal ground
 ## 2026-08-29 -- One ring and one wave carry the application identity
 ## 2026-08-29 -- All-or-nothing was all-but-one, and vocabulary meant file contents

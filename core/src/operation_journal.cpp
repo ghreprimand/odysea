@@ -232,10 +232,23 @@ OperationOutcome OperationJournal::move_into(const fs::path& source,
         .destination_occupied = predicted_occupied});
 
     if (slot.record.barrier == ReversalBarrier::None && before.known &&
-        before.identity.device != after.identity.device && before.link_count > 1) {
+        before.identity.device != after.identity.device &&
+        !detail::mode_is_directory(before.mode) && before.link_count > 1) {
         // The data was copied to another filesystem and the original removed.
         // The names that shared the original still hold it; the entry that
         // arrived is a different one, and moving it back does not rejoin them.
+        //
+        // A directory is excluded because the condition cannot mean this of
+        // one. The kernel refuses a user hard link to a directory, so a
+        // directory never has a second name in the sense this barrier
+        // describes; its link count reports how many subdirectories it holds,
+        // and filesystems do not even agree on that - some count the entries
+        // and some report one regardless. Read without this exclusion the
+        // condition was true of almost every directory on a filesystem that
+        // counts, so every crossing directory move was barred with a recorded
+        // reason that was not the reason, and false of every directory on one
+        // that does not, which is why the machine this is developed on could
+        // not see it.
         slot.record.barrier = ReversalBarrier::HardLinksNotRestorable;
     }
 
@@ -333,8 +346,10 @@ JournalReversal::collect_created(const fs::path& root, std::size_t limit,
         if (collected.size() >= limit) {
             return TreeScan::TooLarge;
         }
-        collected.push_back(OperationJournal::CreatedEntry{
-            .identity = metadata.identity, .modified_seconds = metadata.modified_seconds});
+        collected.push_back(
+            OperationJournal::CreatedEntry{.identity = metadata.identity,
+                                           .modified_seconds = metadata.modified_seconds,
+                                           .size = metadata.apparent_bytes});
         iterator.increment(error);
         if (error) {
             return TreeScan::Unreadable;
@@ -350,11 +365,13 @@ bool JournalReversal::same_tree(std::vector<OperationJournal::CreatedEntry> reco
     }
 
     // A total order over recorded entries, so two records of one tree compare
-    // equal whatever order the filesystem reported them in.
+    // equal whatever order the filesystem reported them in. The key carries
+    // every recorded field: it is both the ordering and the comparison, so a
+    // field left out of it is a field no reversal ever checks.
     const auto key = [](const OperationJournal::CreatedEntry& entry) {
         return std::tuple(entry.identity.device, entry.identity.inode, entry.identity.birth_seconds,
                           entry.identity.birth_nanoseconds, entry.identity.birth_known,
-                          entry.modified_seconds);
+                          entry.modified_seconds, entry.size);
     };
     const auto order = [&key](const OperationJournal::CreatedEntry& left,
                               const OperationJournal::CreatedEntry& right) {

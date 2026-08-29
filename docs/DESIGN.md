@@ -390,21 +390,39 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   resolved to the entry it was given changed nothing, and treating its result
   as something the operation created would delete the only copy. A copied tree
   larger than the journal will remember cannot be confirmed unchanged later. A
-  move between filesystems copies the data and removes the original, so an
-  entry that had more than one name arrives as a new one, and nothing rejoins
-  it to the names that kept the old data.
+  move between filesystems copies the data and removes the original, so a file
+  that had more than one name arrives as a new one, and nothing rejoins it to
+  the names that kept the old data. That last barrier is about files and only
+  files: a directory cannot have a second name, because the kernel refuses a
+  user hard link to one, and the count that would suggest otherwise reports how
+  many subdirectories a directory holds rather than how many names it has.
+  Filesystems do not agree even on that, so a condition read from it barred
+  every crossing directory move on one filesystem and none on another.
 - **A reversal that cannot be certain does nothing.** Returning an entry
   requires it to still be the entry that moved, compared by identity rather
   than by path, because a path can be reoccupied by something that looks
   exactly like what left it. Removing what a copy created is held to a stricter
   test because it destroys: every entry the copy made must still carry the
-  identity and the modification time it had when the copy finished, which
-  detects an entry added, removed, or written since. Every step of a reversal
-  refuses a name that is already taken rather than displacing what holds it, so
-  a reversal can fail but cannot overwrite. What that leaves uncovered is
-  stated rather than implied: a rewrite that does not disturb the modification
-  time is invisible, times are compared in whole seconds, and the journal is a
-  convenience over a filesystem other programs share rather than a transaction.
+  identity, the modification time, and the size it had when the copy finished,
+  which detects an entry added, removed, or written since. That test is applied
+  to the root of a result and to every entry beneath it alike. A field recorded
+  for the root and omitted from the entries inside a tree protects the tree
+  more weakly than the root, and since a reversal removes the whole tree, what
+  protects an entry cannot depend on how deep in a copy it sits. Every step of
+  a reversal refuses a name that is already taken rather than displacing what
+  holds it, so a reversal can fail but cannot overwrite. What that leaves
+  uncovered is stated rather than implied: a rewrite that changes neither the
+  modification time nor the size is invisible, times are compared in whole
+  seconds, an identity is only as distinct as the filesystem makes it, and the
+  journal is a convenience over a filesystem other programs share rather than a
+  transaction.
+- **A guard that cannot be shown to matter is not a guard.** The journal's
+  tests show that a reversal refuses; they cannot show which check produced the
+  refusal, and a check that stopped being read would leave them all passing.
+  Each one is therefore deleted in turn by an automated gate that requires the
+  suite to fail, and the two checks with no reachable failing state are
+  declared to that gate and required to survive, so a declaration cannot
+  quietly become a free pass as the code around it changes.
 - **`tests/` (pure C++).** Headless verification of the core, runnable under
   AddressSanitizer.
 

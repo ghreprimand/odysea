@@ -25,6 +25,72 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- What protects a copied file cannot depend on how deep it sits
+
+Reversing a copy removes what the copy created, so every check standing between
+a reversal and a file is the difference between an undo and a deletion. Two of
+those checks were wrong, and a third class of them was untestable.
+
+A file inside a copied tree was protected more weakly than the copy's own root.
+The root was recorded with its identity, its modification time and its size; an
+entry inside the tree was recorded without a size, and the comparison that
+decides whether a tree is unchanged was built from the recorded fields, so the
+size was neither stored nor compared. The consequence is destructive rather
+than cosmetic. A file rewritten to a different length, with its modification
+time falling in the same whole second as the copy, is refused at the root and
+was deleted one level down -- the same edit, the same timing, only the position
+differing. Entries inside a tree now carry a size and the comparison reads it.
+
+A second check barred something it was never meant to describe. A move between
+filesystems copies the data and removes the original, so a file that had more
+than one name arrives as a new one and the reversal is refused. The condition
+was read from the entry's link count, which for a directory does not count
+names at all: the kernel refuses a user hard link to a directory, and the number
+reports how many subdirectories it holds. Filesystems disagree even on that,
+some counting the children and some reporting one regardless -- so on one
+filesystem every crossing directory move was barred with a recorded reason that
+was not the reason, and on another none was, which is why the machine this is
+developed on could not see it. The barrier now applies to files, and the
+directory case is covered by a scenario that records what the filesystem it ran
+on actually reports rather than assuming a convention.
+
+The third problem was that neither of those could have been caught by the tests
+as they stood. The suite shows that a reversal refuses; it cannot show which
+check produced the refusal, and a check that stops being read leaves every
+scenario green. So the checks are now deleted one at a time by an automated
+gate that requires the suite to fail for each -- twenty-one of them, in about
+eighteen seconds, compiled in a scratch directory so nothing tracked is touched
+and a parallel run cannot see it. The gate holds itself to the same standard it
+imposes: a mutation that does not change the source, or that fails to compile,
+is reported as having measured nothing rather than counted either way, and a
+floor fails the gate if it measures fewer checks than it lists.
+
+The two checks with no reachable failing state are declared to that gate rather
+than left out of it, and are required to survive. If one ever starts being
+caught the gate fails, because the declaration is then stale and the record
+describing it is wrong. That replaces a claim in the previous entry, which said
+a battery re-measured them while the battery itself lived outside the
+repository and could not be run by anyone reading it.
+
+Verification. The gate found a second instance of the first defect while being
+written: with the size added, the modification time of entries inside a tree
+could still be dropped with the suite green, because the new scenario moved
+both fields at once. It is now two scenarios, one moving the size alone and one
+moving the time alone. Both fixes were confirmed to discriminate by reverting
+each in turn and watching the suite fail by name. Thirty-six scenarios, with
+the table floor and the declining preconditions unchanged.
+
+Known gaps. A rewrite that changes neither the modification time nor the size
+is still invisible, and times are still compared in whole seconds. Identity is
+only as distinct as the filesystem makes it: where no creation time is
+reported it degrades to a device and inode pair, which can be reissued once the
+original is gone, and a reversal matching a recycled pair would remove an entry
+the operation never created. That is narrow, since the time and size must match
+too, but its consequence is destructive and it is now recorded where the
+destruction lives rather than only where identity is defined.
+
+---
+
 ## 2026-08-29 -- The shell palette family carries the flagship terminal ground
 
 The Odyssey palette family is shared across the suite, and two of its members

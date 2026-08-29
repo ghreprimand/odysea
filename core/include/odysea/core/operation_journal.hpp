@@ -27,13 +27,28 @@
 // where it came from requires the entry to still be the entry that moved, and
 // the place it is going back to to be free. Removing what a copy created is
 // held to a stricter test, because it destroys: every entry the copy made must
-// still carry the identity and the modification time it had when the copy
-// finished. That detects an entry added, removed, or written since. It does
-// not detect a rewrite that left the modification time unchanged, and
-// modification times are compared in whole seconds, so a rewrite within the
-// same second as the copy is invisible to it. Nothing available to a
-// filesystem consumer closes that window; a reversal is a convenience over a
-// filesystem that other programs share, not a transaction.
+// still carry the identity, the modification time, and the size it had when
+// the copy finished. That detects an entry added, removed, or written since,
+// and it is applied to the root of the result and to every entry beneath it
+// alike, because a reversal removes the whole tree and what protects an entry
+// cannot depend on how deep in the copy it sits.
+//
+// It does not detect a rewrite that left both the modification time and the
+// size unchanged, and modification times are compared in whole seconds, so a
+// same-size rewrite within the same second as the copy is invisible to it.
+// Nothing available to a filesystem consumer closes that window; a reversal is
+// a convenience over a filesystem that other programs share, not a
+// transaction.
+//
+// Identity carries one further limit, and it is recorded here because this is
+// where its consequence is destructive rather than merely confusing. An
+// identity is only as distinct as the filesystem makes it: where no creation
+// time is reported, identity degrades to a device and inode pair, and such a
+// pair can be reissued to an unrelated entry once the original is gone. A
+// reversal that matched a recycled pair would remove an entry the operation
+// never created. The modification time and size must also match for that to
+// happen, which makes it narrow, but narrow is not impossible and the cost is
+// data.
 #pragma once
 
 #include "odysea/core/directory_model.hpp"
@@ -270,9 +285,16 @@ class OperationJournal {
     friend struct detail::JournalReversal;
 
     /// One entry of a copied tree, as the copy left it.
+    ///
+    /// Carries everything the root of a result carries, because a reversal
+    /// removes the whole tree and every entry in it is equally destroyed. An
+    /// entry recorded with less than the root would be protected with less
+    /// than the root, and what protects a file cannot depend on how deep in a
+    /// copy it happens to sit.
     struct CreatedEntry {
         EntryIdentity identity;
         std::int64_t modified_seconds = 0;
+        std::uintmax_t size = 0;
     };
 
     /// What a reversal checks before it acts.

@@ -112,6 +112,13 @@ add_test(
 add_test(
     NAME file_length_guard_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_file_length_selftest.sh)
+# The journal's suite shows that a reversal refuses; it cannot show which guard
+# produced the refusal. This deletes each one in turn and requires the suite to
+# fail, because a reversal removes what a copy created and a verification field
+# that is recorded but never compared is a file deleted after being edited.
+add_test(
+    NAME journal_reversal_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_journal_reversal.sh)
 add_test(
     NAME devlog_archive_guard
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_devlog_archive.sh)

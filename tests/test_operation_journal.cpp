@@ -593,6 +593,63 @@ void test_a_copy_is_not_removed_once_it_has_changed_size() {
     check(journal.size() == 1, "a refused reversal keeps its record");
 }
 
+void test_a_file_inside_a_copied_tree_is_protected_like_the_root() {
+    const odysea::test::TemporaryTree tree("journal_copy_tree_resized");
+    tree.file("from/project/notes.txt", "contents");
+    const fs::path source = tree.root() / "from/project";
+    const fs::path target = tree.directory("to");
+
+    OperationJournal journal;
+    const OperationOutcome copied = journal.copy_into(source, target, fail_on_conflict);
+    check(copied.succeeded(), "the tree copy should run");
+
+    // Exactly the rewrite the single-file case refuses, one level down: the
+    // modification time is put back, so only the size can notice it. What is
+    // protected must not depend on how deep in the copy it sits, because a
+    // reversal removes the whole tree.
+    const fs::path inner = copied.destination / "notes.txt";
+    rewrite_keeping_the_time(inner, "contents and rather more besides");
+    check(fs::file_size(inner) != fs::file_size(source / "notes.txt"),
+          "the rewrite changed the size");
+
+    const UndoOutcome outcome = journal.undo();
+    check(outcome.status == UndoStatus::ResultChanged,
+          "a resized file inside the tree refuses the reversal");
+    check(fs::exists(inner), "the rewritten file is not destroyed");
+    check(odysea::test::read_text(inner) == "contents and rather more besides",
+          "and keeps the contents written after the copy");
+    check(journal.size() == 1, "a refused reversal keeps its record");
+}
+
+void test_a_file_inside_a_copied_tree_is_not_removed_once_rewritten() {
+    const odysea::test::TemporaryTree tree("journal_copy_tree_rewritten");
+    tree.file("from/project/notes.txt", "contents");
+    const fs::path source = tree.root() / "from/project";
+    const fs::path target = tree.directory("to");
+
+    OperationJournal journal;
+    const OperationOutcome copied = journal.copy_into(source, target, fail_on_conflict);
+    check(copied.succeeded(), "the tree copy should run");
+
+    // The companion to the case above: the same number of bytes, so the size
+    // cannot notice and only the modification time can. Both fields have to be
+    // compared for every entry of a tree, and a scenario that moved both at
+    // once would pass with either one of them unread.
+    const fs::path inner = copied.destination / "notes.txt";
+    tree.file("to/project/notes.txt", "CONTENTS");
+    age_forward(inner);
+    check(fs::file_size(inner) == fs::file_size(source / "notes.txt"),
+          "the rewrite left the size alone");
+
+    const UndoOutcome outcome = journal.undo();
+    check(outcome.status == UndoStatus::ResultChanged,
+          "a rewritten file inside the tree refuses the reversal");
+    check(fs::exists(inner), "the rewritten file is not destroyed");
+    check(odysea::test::read_text(inner) == "CONTENTS",
+          "and keeps the contents written after the copy");
+    check(journal.size() == 1, "a refused reversal keeps its record");
+}
+
 void test_a_copied_tree_beyond_the_limit_can_never_be_reversed() {
     const odysea::test::TemporaryTree tree("journal_copy_too_large");
     tree.file("from/project/one.txt", "one");
@@ -804,6 +861,58 @@ void test_a_cross_filesystem_move_of_a_shared_entry_can_never_be_reversed() {
     check(fs::exists(other_name), "the name that still holds the data is untouched");
 }
 
+void test_a_cross_filesystem_move_of_a_directory_is_reversible() {
+    const odysea::test::TemporaryTree tree("journal_cross_directory");
+    const fs::path elsewhere = other_filesystem_directory(tree.root(), "directory");
+    if (elsewhere.empty()) {
+        decline("a cross-filesystem move of a directory",
+                "no writable second filesystem is available");
+        return;
+    }
+    const ScratchDirectory scratch(elsewhere);
+
+    // A directory's link count is its subdirectory count, not a count of names
+    // for it: the kernel refuses a user hard link to a directory, so a
+    // directory can never have the second name the shared-entry barrier
+    // describes. Filesystems disagree on the number itself, so the fixture
+    // gives the directory a child and records what this one reports rather
+    // than assuming either convention.
+    const fs::path source = scratch.path() / "project";
+    std::error_code ec;
+    fs::create_directories(source / "sub", ec);
+    check(!ec, "a directory with a child can be made");
+    {
+        std::ofstream stream(source / "notes.txt", std::ios::binary | std::ios::trunc);
+        stream << "contents";
+    }
+    const std::uintmax_t reported_links = fs::hard_link_count(source, ec);
+    check(!ec, "the directory reports a link count");
+    const fs::path target = tree.directory("to");
+
+    OperationJournal journal;
+    check(journal.move_into(source, target, fail_on_conflict).succeeded(),
+          "the move across filesystems should succeed");
+
+    const OperationRecord* record = journal.newest();
+    check(record != nullptr && record->barrier != ReversalBarrier::HardLinksNotRestorable,
+          "a directory is never barred for having a second name it cannot have");
+    check(record != nullptr && record->reversible(), "so a crossing directory move is reversible");
+
+    const UndoOutcome outcome = journal.undo();
+    check(outcome.succeeded(), "the crossing directory move is reversed");
+    check(fs::exists(source / "notes.txt"), "the directory is back with its contents");
+    check(odysea::test::read_text(source / "notes.txt") == "contents", "and they are intact");
+    check(!fs::exists(target / "project"), "and nothing is left at the destination");
+
+    // States what this filesystem reported, so a machine where the barrier
+    // could not have fired does not read as evidence that it no longer does.
+    if (reported_links <= 1) {
+        decline("a cross-filesystem move of a directory, as a barrier test",
+                "this filesystem reports a directory link count of one, so the "
+                "condition could not have fired here either way");
+    }
+}
+
 struct Scenario {
     const char* name;
     void (*run)();
@@ -858,6 +967,10 @@ const Scenario scenarios[] = {
      .run = test_a_copy_is_not_removed_once_it_has_been_rewritten},
     {.name = "a copy is not removed once it has changed size",
      .run = test_a_copy_is_not_removed_once_it_has_changed_size},
+    {.name = "a file inside a copied tree is protected like the root",
+     .run = test_a_file_inside_a_copied_tree_is_protected_like_the_root},
+    {.name = "a file inside a copied tree is not removed once rewritten",
+     .run = test_a_file_inside_a_copied_tree_is_not_removed_once_rewritten},
     {.name = "a copied tree beyond the limit can never be reversed",
      .run = test_a_copied_tree_beyond_the_limit_can_never_be_reversed},
     {.name = "a barrier is not stepped over to reach an older record",
@@ -870,17 +983,19 @@ const Scenario scenarios[] = {
      .run = test_a_copy_reversal_reports_a_removal_the_filesystem_refused},
     {.name = "a cross-filesystem move of a single name is reversible",
      .run = test_a_cross_filesystem_move_of_a_single_name_is_reversible},
+    {.name = "a cross-filesystem move of a directory is reversible",
+     .run = test_a_cross_filesystem_move_of_a_directory_is_reversible},
     {.name = "a cross-filesystem move of a shared entry can never be reversed",
      .run = test_a_cross_filesystem_move_of_a_shared_entry_can_never_be_reversed},
 };
 
 /// The scenario count this suite is expected to run. A scenario removed from
 /// the table, or left out of it, fails here rather than passing quietly.
-constexpr std::size_t expected_scenarios = 33;
+constexpr std::size_t expected_scenarios = 36;
 
 /// The two scenarios that need a second writable filesystem, and the one that
 /// needs an unprivileged process, are the only ones allowed to decline.
-constexpr std::size_t maximum_declines = 3;
+constexpr std::size_t maximum_declines = 5;
 
 } // namespace
 
