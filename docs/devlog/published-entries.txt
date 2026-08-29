@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-29 -- Accent coverage makes the accepted matrix explicit
 ## 2026-08-29 -- Entry outlines carry one semantic type contract
 ## 2026-08-29 -- A table walked past every category rule, and shape was never the discriminator
 ## 2026-08-28 -- Two residuals in the category rules, and one exemption

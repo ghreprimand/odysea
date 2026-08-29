@@ -246,32 +246,8 @@ void ThemeController::setAccentPresetIndex(int index) {
 }
 
 QString ThemeController::accentContrastWarning() const {
-    const QList<ThemeContrastSample> samples{{.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("window ground"),
-                                              .foreground = accent(),
-                                              .background = background(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("selected entry"),
-                                              .foreground = accent(),
-                                              .background = selectionBed(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("hovered surface"),
-                                              .foreground = accent(),
-                                              .background = hover(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("pressed surface"),
-                                              .foreground = accent(),
-                                              .background = pressed(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("panel"),
-                                              .foreground = accent(),
-                                              .background = panel(),
-                                              .floor = 3.0}};
-    const QStringList failures = themeContrastFailures(samples);
+    const QStringList failures = themeContrastFailures(themeAccentContrastSamples(
+        accent(), background(), selectionBed(), hover(), pressed(), panel()));
     if (failures.isEmpty()) {
         return {};
     }
@@ -812,7 +788,14 @@ QColor ThemeController::metaInk() const {
 }
 
 QColor ThemeController::accent() const {
-    return lifted(resolvedAccent());
+    // Accent presets provide hue. The active family supplies the luminance
+    // direction, and the shared render-site samples choose the nearest value
+    // that clears their floor after profile and accessibility lift.
+    const QColor paletteMatched =
+        themeColorAtReferenceLuminance(lifted(resolvedAccent()), lifted(activePalette().accent));
+    const QList<ThemeContrastSample> samples = themeAccentContrastSamples(
+        paletteMatched, background(), selectionBed(), hover(), pressed(), panel());
+    return themeColorClearingContrastSamples(paletteMatched, samples, !activePalette().light);
 }
 
 QColor ThemeController::selectionBed() const {

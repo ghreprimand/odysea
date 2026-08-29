@@ -402,11 +402,18 @@ there is no apply step.
   from persisted state. The accent drives active chrome, focus, rubber-band,
   and bright-pass emission live while profile and accessibility overrides
   retain their established authority. Directory, file, symlink, error,
-  warning, and success inks stay in the semantic palette matrix. The preset
-  control is keyboard and pointer reachable, previews immediately, and reset
-  restores Tideglass. A shared render-site contrast measurement feeds both
-  the acceptance gate and the selection warning, so a low-contrast choice is
-  identified at the control that made it.
+  warning, and success inks stay in the semantic palette matrix. The raw
+  preset color is an authored hue input, not a displayed-token contract:
+  `ShellTheme.accent` is resolved against the active family's render sites
+  after profile and accessibility lift, and previews or future swatches bind
+  that resolved token. A dynamic invariant keeps every current preset from
+  changing file-type and status roles; a separately exact roster test makes a
+  shipped-preset change explicit. Every shipped preset clears the window,
+  selected-entry, hover, pressed, and panel sites for every family, profile,
+  and high-contrast state. Those shared samples drive resolution, acceptance,
+  and the selection warning, so all three apply the same contrast floor. The
+  preset control is keyboard and pointer reachable, previews immediately, and
+  reset restores Tideglass.
 - **Measured contrast floors.** The contrast claims are asserted, not
   eyeballed: a test measures every foreground role against the beds tracked
   surfaces actually paint it on, in every shipped family, in both override

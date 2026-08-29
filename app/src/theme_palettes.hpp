@@ -74,8 +74,11 @@ struct ShellPalette {
 
 /// A stable accent choice with a separately resolved display name.
 ///
-/// The color is the only authored value in a preset. The controller derives
-/// its focus, chrome, and emission-facing tokens from this value at runtime.
+/// `accent` is authored model data, not necessarily the displayed color. The
+/// controller starts each preset at the active palette's luminance and resolves
+/// it against render-site contrast before deriving focus, chrome, and
+/// emission-facing tokens. Any future swatch must bind the controller's
+/// resolved accent rather than this raw field.
 struct AccentPreset {
     QString id;
     QString name;

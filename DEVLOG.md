@@ -25,6 +25,36 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- Accent coverage makes the accepted matrix explicit
+
+An accent preset's model color is an authored hue input, while the active
+family resolves the displayed accent at the surfaces the shell renders. The
+resolved color retains the preset's hue direction, applies profile and
+accessibility lift first, then moves only as far as the shared render-site
+measurement requires to clear the indicator floor. The active accent is the
+single value for chrome, focus, selection, emission, previews, and any future
+swatch; raw model color is not a displayed-token contract.
+
+File-type and status colors remain a controller-routing invariant. The test
+dynamically enumerates every current preset across every family, effect
+profile, and high-contrast state while pinning generic-file, directory,
+symlink, metadata, match-bed, icon, selection-ink, error, warning, and
+success roles. The shipped roster test remains deliberately exact: a new
+choice must update its identifier, display name, and acceptance coverage in
+one reviewable change.
+
+Every shipped accent now clears the same five render sites used by the
+appearance warning — window ground, selected entry, hovered surface, pressed
+surface, and panel — across every shipped family, effect profile, and
+high-contrast state. The warning, resolver, and acceptance test share those
+sites and their measurement; they cannot drift into separate contrast rules.
+
+Release and ASan/UBSan suites passed. The appearance input test rendered on
+the software scene graph at logical scales 1x and 2x. No monitor scale was
+measured, and the declared RHI and compositor entries were not started.
+
+---
+
 ## 2026-08-29 -- Entry outlines carry one semantic type contract
 
 Directory, file, and symbolic-link glyphs now pass through one entry-icon
@@ -55,6 +85,9 @@ requires real-compositor GPU frames. The software scaled-layout entry remains
 logical-scale evidence only. The isolated real-compositor 2x entry is still
 declined by its declared session-safety boundary, so genuine
 doubled-device-pixel rasterization remains unmeasured.
+
+---
+
 ## 2026-08-29 -- A table walked past every category rule, and shape was never the discriminator
 
 Five rules read the shape of prose: a survey sentence, a placement verb, a

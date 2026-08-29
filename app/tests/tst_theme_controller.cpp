@@ -19,6 +19,7 @@
 #include <QtTest>
 
 #include <algorithm>
+using odysea::app::themeAccentContrastSamples;
 using odysea::app::themeContrastFailures;
 using odysea::app::themeContrastRatio;
 using odysea::app::ThemeContrastSample;
@@ -125,6 +126,54 @@ QStringList contrast_failures(ThemeController& theme, const QString& palette,
     return failures;
 }
 
+struct SemanticRole {
+    const char* name;
+    QColor color;
+};
+
+QList<SemanticRole> accent_independent_roles(const ThemeController& theme) {
+    return {{.name = "generic file", .color = theme.textFaint()},
+            {.name = "directory", .color = theme.dirInk()},
+            {.name = "symlink", .color = theme.linkInk()},
+            {.name = "metadata", .color = theme.metaInk()},
+            {.name = "match bed", .color = theme.matchBed()},
+            {.name = "icon", .color = theme.iconInk()},
+            {.name = "selection ink", .color = theme.selectionInk()},
+            {.name = "error", .color = theme.danger()},
+            {.name = "warning", .color = theme.warning()},
+            {.name = "success", .color = theme.success()}};
+}
+
+QList<ThemeController::Profile> effect_profiles() {
+    return {ThemeController::Off, ThemeController::Minimal, ThemeController::Balanced,
+            ThemeController::Strong, ThemeController::Custom};
+}
+
+void verify_accent_independent_roles(ThemeController& theme, const QVariantList& presets,
+                                     const QString& palette, ThemeController::Profile profile,
+                                     bool highContrast) {
+    theme.setProfile(profile);
+    theme.setHighContrast(highContrast);
+    theme.setPaletteId(palette);
+    theme.setAccentPresetIndex(0);
+    const QList<SemanticRole> expected = accent_independent_roles(theme);
+
+    for (int index = 0; index < presets.size(); ++index) {
+        theme.setAccentPresetIndex(index);
+        const QList<SemanticRole> actual = accent_independent_roles(theme);
+        for (int role = 0; role < expected.size(); ++role) {
+            const QString context =
+                QStringLiteral("%1 / profile %2 / high contrast %3 / preset %4 / %5")
+                    .arg(palette)
+                    .arg(static_cast<int>(profile))
+                    .arg(highContrast)
+                    .arg(presets.at(index).toMap().value(QStringLiteral("id")).toString())
+                    .arg(QLatin1String(expected.at(role).name));
+            QVERIFY2(actual.at(role).color == expected.at(role).color, qPrintable(context));
+        }
+    }
+}
+
 } // namespace
 
 class tst_ThemeController : public QObject {
@@ -135,6 +184,7 @@ class tst_ThemeController : public QObject {
     void palettes_resolve_and_restyle();
     void accent_presets_resolve_live_and_keep_stable_ids();
     void accent_presets_preserve_file_type_and_status_roles();
+    void shipped_accent_presets_clear_render_site_contrast_matrix();
     void accent_contrast_warning_uses_render_site_measurement();
     void profile_presets_steer_effect_levels();
     void slider_writes_switch_to_custom_and_are_remembered();
@@ -238,29 +288,55 @@ void tst_ThemeController::accent_presets_preserve_file_type_and_status_roles() {
     const QVariantList presets = ThemeController::accentPresets();
     QVERIFY(!presets.isEmpty());
 
-    // Iterate the controller's complete model instead of a fixed list. A new
-    // preset joins this invariant without needing a matching test edit.
-    theme.setProfile(ThemeController::Off);
-    for (const QString& palette : theme.availablePalettes()) {
-        theme.setPaletteId(palette);
-        theme.setAccentPresetIndex(0);
-        const QColor file = theme.textFaint();
-        const QColor directory = theme.dirInk();
-        const QColor symlink = theme.linkInk();
-        const QColor error = theme.danger();
-        const QColor warning = theme.warning();
-        const QColor success = theme.success();
-
-        for (int index = 0; index < presets.size(); ++index) {
-            theme.setAccentPresetIndex(index);
-            QCOMPARE(theme.textFaint(), file);
-            QCOMPARE(theme.dirInk(), directory);
-            QCOMPARE(theme.linkInk(), symlink);
-            QCOMPARE(theme.danger(), error);
-            QCOMPARE(theme.warning(), warning);
-            QCOMPARE(theme.success(), success);
+    // This is a controller-routing invariant, not a claim about the current
+    // preset data. It dynamically covers every model entry. The separate
+    // roster test intentionally requires an explicit update for a new
+    // shipped choice.
+    for (const ThemeController::Profile profile : effect_profiles()) {
+        for (const bool highContrast : {false, true}) {
+            for (const QString& palette : theme.availablePalettes()) {
+                verify_accent_independent_roles(theme, presets, palette, profile, highContrast);
+            }
         }
     }
+}
+
+void tst_ThemeController::shipped_accent_presets_clear_render_site_contrast_matrix() {
+    ThemeController theme;
+    const QVariantList presets = ThemeController::accentPresets();
+    QVERIFY(!presets.isEmpty());
+
+    QStringList failures;
+    for (const ThemeController::Profile profile : effect_profiles()) {
+        theme.setProfile(profile);
+        for (const bool highContrast : {false, true}) {
+            theme.setHighContrast(highContrast);
+            for (const QString& palette : theme.availablePalettes()) {
+                theme.setPaletteId(palette);
+                for (int index = 0; index < presets.size(); ++index) {
+                    theme.setAccentPresetIndex(index);
+                    const QString context =
+                        QStringLiteral("%1 / preset %2 / profile %3 / high contrast %4")
+                            .arg(palette)
+                            .arg(presets.at(index).toMap().value(QStringLiteral("id")).toString())
+                            .arg(static_cast<int>(profile))
+                            .arg(highContrast);
+                    for (const QString& failure : themeContrastFailures(themeAccentContrastSamples(
+                             theme.accent(), theme.background(), theme.selectionBed(),
+                             theme.hover(), theme.pressed(), theme.panel()))) {
+                        failures.append(QStringLiteral("%1 / %2").arg(context, failure));
+                    }
+                    if (!theme.accentContrastWarning().isEmpty()) {
+                        failures.append(QStringLiteral("%1 / warning: %2")
+                                            .arg(context, theme.accentContrastWarning()));
+                    }
+                }
+            }
+        }
+    }
+
+    QVERIFY2(failures.isEmpty(), qPrintable(QStringLiteral("accent contrast floors not met:\n") +
+                                            failures.join(QStringLiteral("\n"))));
 }
 
 void tst_ThemeController::accent_contrast_warning_uses_render_site_measurement() {
@@ -268,39 +344,24 @@ void tst_ThemeController::accent_contrast_warning_uses_render_site_measurement()
     theme.setPaletteId(QStringLiteral("odyssey-parchment-light"));
     theme.setAccentPresetId(QStringLiteral("beacon"));
 
-    const QList<ThemeContrastSample> samples{{.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("window ground"),
-                                              .foreground = theme.accent(),
-                                              .background = theme.background(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("selected entry"),
-                                              .foreground = theme.accent(),
-                                              .background = theme.selectionBed(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("hovered surface"),
-                                              .foreground = theme.accent(),
-                                              .background = theme.hover(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("pressed surface"),
-                                              .foreground = theme.accent(),
-                                              .background = theme.pressed(),
-                                              .floor = 3.0},
-                                             {.role = QStringLiteral("Accent"),
-                                              .renderSite = QStringLiteral("panel"),
-                                              .foreground = theme.accent(),
-                                              .background = theme.panel(),
-                                              .floor = 3.0}};
+    const QList<ThemeContrastSample> samples =
+        themeAccentContrastSamples(theme.accent(), theme.background(), theme.selectionBed(),
+                                   theme.hover(), theme.pressed(), theme.panel());
     const QStringList failures = themeContrastFailures(samples);
-
-    QVERIFY(!failures.isEmpty());
-    QVERIFY(!theme.accentContrastWarning().isEmpty());
     QCOMPARE(theme.accentContrastWarning().isEmpty(), failures.isEmpty());
     for (const QString& failure : failures) {
         QVERIFY(theme.accentContrastWarning().contains(failure));
     }
+
+    const auto authoredBeacon = ThemeController::accentPresets()
+                                    .at(1)
+                                    .toMap()
+                                    .value(QStringLiteral("color"))
+                                    .value<QColor>();
+    QVERIFY(!themeContrastFailures(themeAccentContrastSamples(authoredBeacon, theme.background(),
+                                                              theme.selectionBed(), theme.hover(),
+                                                              theme.pressed(), theme.panel()))
+                 .isEmpty());
 }
 
 void tst_ThemeController::profile_presets_steer_effect_levels() {
