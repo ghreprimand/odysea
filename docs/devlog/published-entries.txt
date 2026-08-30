@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-30 -- A sixth August part keeps the live record clear of the ceiling
 ## 2026-08-30 -- Record moves reassemble exactly and family accents remain literal
 ## 2026-08-30 -- Cancellation reaches trees with no file contents
 ## 2026-08-30 -- One spelling rule now covers the spellings around it
