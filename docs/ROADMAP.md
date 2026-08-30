@@ -64,10 +64,13 @@ graphical shell grows around it.
 - [x] Progress, throughput, estimated time remaining, pause, resume, and
       cancel for in-process copies and moves. The byte loop stays in Qt-free
       `core/`; reporting is bounded in time rather than in work; rate and time
-      remaining are typed as estimates and withheld until measured. A
-      cancelled or interrupted transfer installs nothing and records nothing.
-      Hold, resume, and stop are declared once and reach the keyboard, the
-      canvas menu, the command palette, and the status strip.
+      remaining are typed as estimates and withheld until measured. A reported
+      cancellation happens before installation, leaves the destination
+      unchanged, and records nothing. A crossing move whose complete install
+      is followed by a source-removal failure can leave a source remainder
+      beside the complete destination; failed moves are not journaled. Hold,
+      resume, and stop are declared once and reach the keyboard, the canvas
+      menu, the command palette, and the status strip.
 - [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
       Btrfs snapshot discovery.
 - [x] Built-in fuzzy find across the current tree. Matching and ranking are

@@ -83,6 +83,14 @@ void build_tree(const fs::path& root, int count, FileSize size) {
     }
 }
 
+/// Builds a tree whose work is entirely directory traversal. No regular file
+/// can provide an inner content-copy checkpoint for this shape.
+void build_directory_only_tree(const fs::path& root, int count) {
+    for (int index = 0; index < count; ++index) {
+        fs::create_directories(root / ("project-" + std::to_string(index)) / "build");
+    }
+}
+
 /// Whether any entry in `directory` is one the operations created for their
 /// own use. A transfer that failed or was cancelled must leave none.
 bool holds_no_working_entry(const fs::path& directory) {
@@ -332,6 +340,33 @@ void test_no_time_remaining_is_offered_without_totals() {
 // Cancellation.
 // ---------------------------------------------------------------------------
 
+void test_a_cancel_during_measurement_never_starts_transfer() {
+    const odysea::test::TemporaryTree tree("transfer_measure_cancel");
+    const fs::path source = tree.root() / "source";
+    build_tree(source, 8, FileSize{.bytes = 16});
+
+    const auto clock = std::make_shared<ManualClock>();
+    const auto control = std::make_shared<TransferControl>();
+    control->request_cancel();
+    bool entered_transfer = false;
+    TransferOptions options;
+    options.control = control;
+    options.report_interval = 0ms;
+    options.on_progress = [&entered_transfer](const TransferProgress& progress) {
+        entered_transfer = entered_transfer || progress.phase == TransferPhase::Transferring;
+    };
+
+    detail::TransferRun run(options, reading(clock));
+    const fs::path destination = tree.root() / "copy";
+    const std::error_code outcome = detail::run_transfer(source, destination, run);
+    check(outcome == std::errc::operation_canceled,
+          "a cancel observed during measurement reports cancellation");
+    check(!entered_transfer,
+          "a cancel observed during measurement never advances to the transfer phase");
+    check(!fs::exists(destination), "a cancel during measurement reproduces no entry");
+    check(count_entries(source) == 9, "a cancel during measurement leaves the source intact");
+}
+
 void test_a_cancelled_copy_leaves_nothing_behind() {
     const odysea::test::TemporaryTree tree("transfer_cancel");
     const fs::path source = tree.root() / "source";
@@ -358,6 +393,36 @@ void test_a_cancelled_copy_leaves_nothing_behind() {
     check(holds_no_working_entry(target), "a cancelled copy leaves no working entry behind");
     check(count_entries(source) == 201, "a cancelled copy leaves the source alone");
     check(seen > 0, "the fixture reached the point where it cancels");
+}
+
+void test_a_directory_only_copy_honours_cancellation() {
+    const odysea::test::TemporaryTree tree("transfer_directory_cancel");
+    const fs::path source = tree.root() / "source";
+    build_directory_only_tree(source, 200);
+    const fs::path target = tree.directory("target");
+
+    const auto control = std::make_shared<TransferControl>();
+    bool reached_cancel_point = false;
+    TransferOptions options;
+    options.control = control;
+    options.report_interval = 0ms;
+    options.on_progress = [&reached_cancel_point, control](const TransferProgress& progress) {
+        if (progress.phase == TransferPhase::Transferring && progress.entries_done > 5) {
+            reached_cancel_point = true;
+            control->request_cancel();
+        }
+    };
+
+    const OperationOutcome outcome = copy_into(source, target, options);
+    check(reached_cancel_point, "the directory-only fixture reached its cancellation point");
+    check(outcome.error == std::errc::operation_canceled,
+          "a directory-only copy reports cancellation");
+    check(!fs::exists(target / "source"),
+          "a cancelled directory-only copy installs nothing at the destination");
+    check(holds_no_working_entry(target),
+          "a cancelled directory-only copy leaves no working entry behind");
+    check(count_entries(source) == 401,
+          "a cancelled directory-only copy leaves the source tree intact");
 }
 
 void test_a_copy_cancelled_before_it_starts_does_nothing() {
@@ -434,6 +499,17 @@ void test_a_cancelled_crossing_move_leaves_both_sides_intact() {
 // ---------------------------------------------------------------------------
 // Pause, and the states reachable from it.
 // ---------------------------------------------------------------------------
+
+void test_a_cancel_clears_the_public_pause_request() {
+    TransferControl control;
+    control.request_pause();
+    check(control.pause_requested(), "the fixture established a pause request");
+
+    control.request_cancel();
+    check(control.cancel_requested(), "the control records the cancellation request");
+    check(!control.pause_requested(),
+          "cancellation supersedes the pause in the control's public state");
+}
 
 /// Starts a copy on its own thread and returns once it has parked.
 struct PausedCopy {
@@ -723,10 +799,13 @@ int main() {
     test_a_watched_transfer_reports_what_it_has_done();
     test_an_estimate_is_withheld_until_the_window_holds_enough();
     test_no_time_remaining_is_offered_without_totals();
+    test_a_cancel_during_measurement_never_starts_transfer();
     test_a_cancelled_copy_leaves_nothing_behind();
+    test_a_directory_only_copy_honours_cancellation();
     test_a_copy_cancelled_before_it_starts_does_nothing();
     test_a_move_cancelled_before_it_starts_leaves_the_source();
     test_a_cancelled_crossing_move_leaves_both_sides_intact();
+    test_a_cancel_clears_the_public_pause_request();
     test_a_paused_transfer_stops_and_resumes();
     test_a_paused_transfer_can_be_cancelled();
     test_a_source_that_vanishes_while_paused_fails_the_transfer();

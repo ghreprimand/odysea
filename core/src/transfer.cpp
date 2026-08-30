@@ -27,9 +27,10 @@ void TransferControl::request_cancel() noexcept {
     {
         const std::scoped_lock held(mutex_);
         cancel_requested_ = true;
-        // A cancel releases a pause rather than queueing behind it. A
-        // transfer parked with nobody left to resume it would otherwise hold
-        // its descriptors and its working entry forever.
+        // Cancellation supersedes pausing in both behaviour and public state.
+        // The checkpoint predicate observes cancel_requested_ to wake a
+        // parked transfer; clearing the pause flag keeps pause_requested()
+        // from reporting a stale request after cancellation.
         pause_requested_ = false;
     }
     changed_.notify_all();

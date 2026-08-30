@@ -245,8 +245,9 @@ class OperationJournal {
                                              const std::filesystem::path& destination_directory,
                                              const OperationOptions& options);
 
-    /// The same move, reported and controllable. Records nothing when it does
-    /// not complete, for the reason given on the copy above.
+    /// The same move, reported and controllable. Records completed moves only.
+    /// A crossing move whose complete destination was installed before source
+    /// removal failed is reported as failed and is not added to this history.
     [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                              const std::filesystem::path& destination_directory,
                                              const TransferOptions& transfer);

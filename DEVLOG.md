@@ -26,6 +26,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Cancellation reaches trees with no file contents
+
+Cooperative cancellation now has discriminating coverage at both traversal
+boundaries. A pre-cancelled observed transfer stops during measurement and
+never publishes the transfer phase. A directory-only tree cancels inside the
+copy walk even though no regular-file loop can supply another checkpoint; the
+working entry is discarded, the destination stays unchanged, and the source
+tree stays intact. The control contract also verifies that cancellation
+supersedes a pending pause in its public state, while the checkpoint predicate
+remains the mechanism that wakes parked work.
+
+The transfer guarantee now distinguishes failure before installation from the
+later source-removal failure of a crossing move. No partial destination is
+installed. If removal fails after a complete destination was installed, the
+operation reports failure and the source or a remainder can remain beside that
+complete destination. This is accepted because deleting the installed copy
+could discard the only complete result; the completed-operations-only journal
+does not record the failed move, so cleanup remains explicit.
+
+The restored checkpoints pass the transfer suite. Removing the directory-walk
+checkpoint makes only the directory-only cancellation case fail; removing the
+measurement checkpoint makes only the measurement-phase case fail; and leaving
+the pause request set after cancellation makes only the public-state case fail.
+Release and ASan/UBSan verification pass with the repository guards.
+
+---
+
 ## 2026-08-30 -- One spelling rule now covers the spellings around it
 
 Row keys in the directory model must be built in one place, because the count

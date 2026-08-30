@@ -6,14 +6,17 @@
 // here: the byte loop belongs to this library, so the reporting belongs to it
 // too, and nothing in this file hands the operation to another program.
 //
-// WHAT A CANCELLED OR FAILED TRANSFER LEAVES BEHIND. Nothing at the
-// destination, and the source untouched. The mutation primitives already
-// assemble a transfer under a working name and install it in one step once it
-// is complete; a cancellation is reported as an ordinary failure and takes the
-// same recovery path, so a half-copied tree is discarded rather than
-// installed. A cancelled operation therefore has no result, and nothing is
-// recorded for it: there is no half-reversible history to undo. A pause is not
-// an ending — it holds the working entry and the descriptors open and waits.
+// WHAT AN INTERRUPTED TRANSFER LEAVES BEHIND. A reported cancellation happens
+// before installation: the destination is unchanged, the source is untouched,
+// and the working entry is discarded. A failure before installation follows
+// the same recovery path, so the destination is never a partial copy.
+//
+// A crossing move has one later failure point. Once its complete copy is
+// installed, source removal is deliberately not interruptible; if that removal
+// fails, the operation reports failure while the complete destination and any
+// source remainder stay on disk. The completed-operations-only journal records
+// neither a cancellation nor this failed move. A pause is not an ending — it
+// holds the working entry and the descriptors open and waits.
 #pragma once
 
 #include "odysea/core/file_operations.hpp"
@@ -230,8 +233,8 @@ struct TransferOptions {
 /// Copy `source` into `destination_directory` with reporting and control.
 ///
 /// Identical to the plain copy in every guarantee it makes about what is left
-/// on disk. A cancelled transfer reports std::errc::operation_canceled and
-/// leaves nothing behind, exactly as a failed one does.
+/// on disk. A cancelled transfer reports std::errc::operation_canceled; a
+/// cancelled or failed copy installs no new result.
 [[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const TransferOptions& options);
@@ -241,7 +244,9 @@ struct TransferOptions {
 /// A move within one filesystem is a rename: it moves no bytes, cannot be
 /// paused usefully, and reports once. A move across filesystems copies and
 /// then removes, and reports throughout the copy. Cancelling before the
-/// install leaves the source where it was.
+/// install leaves the source where it was. If source removal fails after a
+/// crossing install, the destination remains complete and the source or a
+/// remainder of its tree may also remain.
 [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                          const std::filesystem::path& destination_directory,
                                          const TransferOptions& options);
