@@ -85,7 +85,7 @@ void test_settings_clamp_scale_and_material() {
     const AppearanceSettings c = clamp_appearance(s);
     check(c.scale == 2.0, "scale clamps to 2.0");
     check(c.glass_opacity == 0.2, "the ground never becomes fully transparent");
-    check(c.surface_opacity == 0.0, "surface opacity clamps up to zero");
+    check(c.surface_opacity == 0.45, "surface blend keeps functional surfaces on a readable bed");
     check(c.split_ratio == 0.75, "the stored pane divider keeps both panes usable");
 }
 
@@ -204,6 +204,10 @@ void test_parsing_tolerates_damage_and_the_future() {
     const AppearanceSettings hot = parse_appearance("custom_scanline=7.0\nscale=0.01\n");
     check(hot.custom.scanline == 0.35, "loaded levels clamp to their ranges");
     check(hot.scale == 0.75, "loaded scale clamps to its range");
+
+    const AppearanceSettings priorSurface = parse_appearance("surface_opacity=0\n");
+    check(priorSurface.surface_opacity == 0.45,
+          "a stored transparent surface becomes the opaque readable blend");
 }
 
 void test_non_finite_numbers_never_survive() {

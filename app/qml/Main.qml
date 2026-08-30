@@ -49,6 +49,17 @@ ApplicationWindow {
     readonly property color secondaryTextColor: shellTheme.textMuted
     readonly property color accentColor: shellTheme.accent
     readonly property color selectionColor: shellTheme.selectionBed
+    /// Set by the entry point after the scene's QQuickWindow has negotiated
+    /// its format. Tests can model both outcomes without relying on a host
+    /// compositor's alpha support.
+    property bool alphaBufferAvailable: false
+    // main.cpp publishes this after the scene graph exposes its renderer API.
+    // The safe initial state keeps the window opaque until that probe completes.
+    property bool rendererSupportsWindowTransparency: false
+    readonly property bool materialEffectsEnabled: shellTheme.profile !== ShellTheme.Off && !shellTheme.highContrast
+    readonly property bool windowTransparencyAvailable: alphaBufferAvailable && rendererSupportsWindowTransparency
+    readonly property bool windowTransparencyEnabled: materialEffectsEnabled && windowTransparencyAvailable
+    readonly property real windowGroundOpacity: windowTransparencyEnabled ? shellTheme.glassOpacity : 1.0
     readonly property int typeAheadTimeoutMs: 900
     property bool gridMode: false
     property bool columnsMode: false
@@ -77,7 +88,11 @@ ApplicationWindow {
     minimumHeight: 480
     visible: true
     title: root.activeShellModel.path.length > 0 ? root.activeShellModel.path + " — OdySea" : "OdySea"
-    color: backgroundColor
+    // Alpha on the clear color matters only after the entry point confirmed a
+    // negotiated alpha buffer. The opaque fallback avoids a black or unpainted
+    // window on renderers and compositors that cannot preserve destination
+    // alpha.
+    color: windowTransparencyEnabled ? "transparent" : backgroundColor
     font.family: shellTheme.chromeFontFamily
     font.pixelSize: shellTheme.chromeFontPixelSize
 
@@ -350,10 +365,12 @@ ApplicationWindow {
 
         // Window ground: the deep-field material behind every surface.
         DeepFieldGround {
+            objectName: "windowGround"
             anchors.fill: parent
             deepField: root.shellTheme.effectiveDeepField
             sheetColor: root.backgroundColor
             deepColor: root.shellTheme.backgroundDeep
+            fillOpacity: root.windowGroundOpacity
         }
 
         ColumnLayout {
@@ -461,6 +478,7 @@ ApplicationWindow {
         content: shellContent
         wellMask: wellMaskLayer
         theme: root.shellTheme
+        translucentGround: root.windowTransparencyEnabled
     }
 
     FilesystemDialogs {

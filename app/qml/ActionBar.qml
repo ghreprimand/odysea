@@ -13,6 +13,8 @@ ChromeStrip {
     required property var shellModel
     required property ActionRegistry registry
 
+    readonly property real chromeVerticalMargin: 6
+
     /// The live width required by the fully labeled row. The independent
     /// measurement row uses the same controls, margins, spacing, action
     /// declarations, and stretch reserve as the visible row. It stays labeled
@@ -35,7 +37,7 @@ ChromeStrip {
 
     surfaceColor: bar.theme.background
     outlined: false
-    implicitHeight: Math.max(44, bar.theme.chromeFontPixelSize + 20)
+    implicitHeight: Math.max(44, actionRow.implicitHeight + (2 * bar.chromeVerticalMargin))
 
     RowLayout {
         id: labeledMeasureRow
@@ -112,9 +114,12 @@ ChromeStrip {
     RowLayout {
         id: actionRow
 
+        objectName: "actionRow"
         anchors.fill: parent
         anchors.leftMargin: 8
         anchors.rightMargin: 8
+        anchors.topMargin: bar.chromeVerticalMargin
+        anchors.bottomMargin: bar.chromeVerticalMargin
         spacing: 8
 
         ShellTextField {

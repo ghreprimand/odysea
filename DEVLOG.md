@@ -109,6 +109,36 @@ sizes.
 
 ---
 
+## 2026-08-29 -- Chrome bounds and window alpha share explicit contracts
+
+Toolbar and path compaction now derive their switch points from independent,
+always-labelled measurement rows. The measurements use the rendered controls,
+spacing, margins, and stretch behavior, so the labelled form fits at the
+reported width and compacts exactly one pixel below it. Each chrome strip
+reserves an interior perimeter around its row. Component and shell-scene gates
+now reject a control that crosses its strip, neighboring chrome bands that
+crowd each other, and a label that exceeds its own container.
+
+The application requests a destination alpha channel before it creates a
+window, then enables a transparent window ground only after both the negotiated
+format and the initialized scene-graph renderer report support. Missing alpha,
+unknown or software rendering, the `Off` profile, and high contrast retain an
+opaque ground; reduced motion retains the still material. Chrome and directory
+grounds remain opaque contrast beds. The former surface-opacity control is now
+an opaque surface blend with a 0.45 lower bound, including for persisted older
+values, so it changes visible chrome color without placing readable text over
+an unknown desktop background.
+
+Verification covers the labelled and compact strip boundaries across densities,
+the full-shell strip geometry at supported sizes, and the alpha-enabled and
+opaque fallback states. Deliberately undersizing the toolbar measurement made
+the appearance control breach its right boundary; deliberately disabling the
+window-transparency binding made the capability test fail. The renderer and
+alpha negotiation remain runtime conditions, so a full visual acceptance pass
+on a declared compositor is still required for hardware-specific behavior.
+
+---
+
 ## 2026-08-29 -- Undo is one action across every shell surface
 
 The shell now declares Undo once. `Ctrl+Z`, the toolbar, the blank-canvas

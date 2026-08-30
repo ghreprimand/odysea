@@ -115,7 +115,9 @@ struct AppearanceSettings {
     /// Opacity of the window ground, 0.2 to 1.0. Text and content surfaces are
     /// exempt; only the material behind them becomes translucent.
     double glass_opacity = 1.0;
-    /// Opacity of colored functional surfaces, 0.0 to 1.0.
+    /// Blend amount of colored functional surfaces, 0.45 to 1.0. Surfaces
+    /// remain opaque after resolving this blend so text stays on a measured
+    /// contrast bed when the window ground is transparent.
     double surface_opacity = 1.0;
 
     /// Stored levels for the `Custom` profile. Kept even while a preset is

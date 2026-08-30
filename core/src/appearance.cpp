@@ -31,6 +31,7 @@ constexpr double kTextLiftMax = 1.5;
 constexpr double kScaleMin = 0.75;
 constexpr double kScaleMax = 2.0;
 constexpr double kGlassOpacityMin = 0.2;
+constexpr double kSurfaceOpacityMin = 0.45;
 constexpr double kSplitRatioMin = 0.25;
 constexpr double kSplitRatioMax = 0.75;
 constexpr std::size_t kMaximumStoredLabelLength = 128;
@@ -256,7 +257,7 @@ AppearanceSettings clamp_appearance(const AppearanceSettings& settings) noexcept
     result.font_family = without_control_characters(settings.font_family);
     result.scale = clamped(settings.scale, kScaleMin, kScaleMax);
     result.glass_opacity = clamped(settings.glass_opacity, kGlassOpacityMin, 1.0);
-    result.surface_opacity = clamped(settings.surface_opacity, 0.0, 1.0);
+    result.surface_opacity = clamped(settings.surface_opacity, kSurfaceOpacityMin, 1.0);
     result.split_ratio = clamped(settings.split_ratio, kSplitRatioMin, kSplitRatioMax);
     result.custom = clamp_effect_levels(settings.custom);
 

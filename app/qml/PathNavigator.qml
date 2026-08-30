@@ -24,6 +24,12 @@ FocusScope {
     property bool editing: false
     property bool retainedDraft: false
     property string draftText: ""
+    readonly property real chromeMargin: 6
+    readonly property real breadcrumbMinimumWidth: Math.round(160 * navigator.theme.uiScale)
+    readonly property real pathFieldMinimumWidth: Math.round(220 * navigator.theme.uiScale)
+    readonly property real labeledWidthRequirement: (2 * navigator.chromeMargin) + Math.max(calmLabeledMeasureRow.implicitWidth, editorLabeledMeasureRow.implicitWidth)
+    readonly property bool compact: navigator.width < Math.ceil(navigator.labeledWidthRequirement)
+    readonly property int chromeMinimumHeight: Math.max(44, navigator.theme.chromeFontPixelSize + 20)
     readonly property var completionResult: editing ? shellModel.navigationCompletion(draftText) : ({
             "completed": draftText,
             "suffix": "",
@@ -31,7 +37,69 @@ FocusScope {
         })
     readonly property string completionSuffix: completionResult.suffix ?? ""
 
-    implicitHeight: Math.max(calmRow.implicitHeight, editorRow.implicitHeight)
+    // Every chrome strip reserves the same minimum breathing room. The path
+    // rows may need more for their field controls, but never collapse to the
+    // exact height of their tallest child.
+    implicitHeight: Math.max(navigator.chromeMinimumHeight, Math.max(calmRow.implicitHeight, editorRow.implicitHeight) + (2 * navigator.chromeMargin))
+
+    // These hidden rows stay fully labelled to measure the switch point.
+    // FocusScope permits independent children, unlike ToolBar's single
+    // content item contract.
+    RowLayout {
+        id: calmLabeledMeasureRow
+
+        visible: false
+        spacing: calmRow.spacing
+
+        Item {
+            Layout.preferredWidth: navigator.breadcrumbMinimumWidth
+            Layout.minimumWidth: navigator.breadcrumbMinimumWidth
+        }
+
+        Text {
+            text: retainedIndicator.text
+            font.family: navigator.theme.captionFontFamily
+            font.pixelSize: navigator.theme.captionFontPixelSize
+        }
+
+        ActionButton {
+            theme: navigator.theme
+            registry: navigator.registry
+            actionId: "focus.address"
+        }
+        ActionButton {
+            theme: navigator.theme
+            registry: navigator.registry
+            actionId: "focus.locations"
+        }
+    }
+
+    RowLayout {
+        id: editorLabeledMeasureRow
+
+        visible: false
+        spacing: editorRow.spacing
+
+        Item {
+            Layout.preferredWidth: navigator.pathFieldMinimumWidth
+            Layout.minimumWidth: navigator.pathFieldMinimumWidth
+        }
+
+        ShellButton {
+            theme: navigator.theme
+            text: navigator.completionSuffix
+        }
+        ShellButton {
+            theme: navigator.theme
+            text: qsTr("Go")
+            iconName: "forward"
+        }
+        ShellButton {
+            theme: navigator.theme
+            text: qsTr("Hide")
+            iconName: "close"
+        }
+    }
 
     function beginEditing() {
         const resume = retainedDraft;
@@ -115,6 +183,8 @@ FocusScope {
     }
 
     ChromeStrip {
+        id: pathBackground
+
         anchors.fill: parent
         theme: navigator.theme
     }
@@ -124,8 +194,7 @@ FocusScope {
 
         objectName: "calmPathRow"
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
+        anchors.margins: navigator.chromeMargin
         spacing: 6
         visible: !navigator.editing
 
@@ -133,11 +202,12 @@ FocusScope {
             id: breadcrumbs
 
             Layout.fillWidth: true
+            Layout.minimumWidth: navigator.breadcrumbMinimumWidth
             Layout.fillHeight: true
             shellModel: navigator.shellModel
             navigationController: navigator.navigationController
             registry: navigator.registry
-            backgroundColor: Qt.alpha(navigator.theme.panel, navigator.theme.surfaceOpacity)
+            backgroundColor: pathBackground.color
             borderColor: navigator.theme.border
             primaryTextColor: navigator.theme.text
             accentColor: navigator.theme.accent
@@ -172,6 +242,7 @@ FocusScope {
             theme: navigator.theme
             registry: navigator.registry
             actionId: "focus.address"
+            showLabel: !navigator.compact
         }
 
         ActionButton {
@@ -181,6 +252,7 @@ FocusScope {
             theme: navigator.theme
             registry: navigator.registry
             actionId: "focus.locations"
+            showLabel: !navigator.compact
         }
     }
 
@@ -189,7 +261,7 @@ FocusScope {
 
         objectName: "pathEditorRow"
         anchors.fill: parent
-        anchors.margins: 6
+        anchors.margins: navigator.chromeMargin
         spacing: 6
         visible: navigator.editing
 
@@ -198,6 +270,7 @@ FocusScope {
 
             objectName: "pathEntryField"
             Layout.fillWidth: true
+            Layout.minimumWidth: navigator.pathFieldMinimumWidth
             theme: navigator.theme
             text: navigator.draftText
             font.family: navigator.theme.pathFontFamily
@@ -216,7 +289,7 @@ FocusScope {
             id: completionButton
 
             objectName: "pathCompletionButton"
-            visible: navigator.completionSuffix.length > 0
+            visible: !navigator.compact && navigator.completionSuffix.length > 0
             theme: navigator.theme
             text: navigator.completionSuffix
             Accessible.name: qsTr("Complete path with %1").arg(navigator.completionSuffix)
@@ -228,7 +301,7 @@ FocusScope {
 
             objectName: "commitPathButton"
             theme: navigator.theme
-            text: qsTr("Go")
+            text: navigator.compact ? "" : qsTr("Go")
             iconName: "forward"
             Accessible.name: qsTr("Open typed location")
             onClicked: navigator.commitPath()
@@ -239,7 +312,8 @@ FocusScope {
 
             objectName: "hidePathEditorButton"
             theme: navigator.theme
-            text: qsTr("Hide")
+            text: navigator.compact ? "" : qsTr("Hide")
+            iconName: "close"
             Accessible.name: qsTr("Hide editor and retain its draft")
             onClicked: navigator.hideEditorRetainingDraft()
         }

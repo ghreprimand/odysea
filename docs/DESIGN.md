@@ -492,14 +492,16 @@ there is no apply step.
   conformance claim. Text lift is exempt on light families: their inks are
   dark marks on bright grounds, so multiplying toward white would lower
   contrast instead of raising emphasis.
-- **Adaptive chrome density.** Below a measured width bound the toolbar's
-  workspace toggles and the action row's operation buttons drop their labels
-  and render icons only, and the filter field narrows, so every control
-  stays visible, reachable, and unclipped down to the window's minimum size
-  (720×480 logical). The action row derives its bound from an independent,
+- **Adaptive chrome density.** Below their measured width bounds the toolbar's
+  workspace toggles, the path controls, and the action row's operation buttons
+  drop their labels and render icons only, and the filter field narrows, so
+  every control stays visible, reachable, and unclipped down to the window's
+  minimum size (720×480 logical). Each bound comes from an independent,
   always-labeled measurement row using the same controls, margins, spacing,
-  and stretch reserve as the rendered row, so compact children cannot change
-  the condition that selects them. The labels remain available through
+  and stretch reserve as its rendered row, so compact children cannot change
+  the condition that selects them. Every chrome strip reserves an interior
+  perimeter above and below its controls, preventing a row from crossing its
+  own surface or crowding the next band. The labels remain available through
   accessible names and tooltips, and the bound scales with the interface.
 - **Screen-effect profiles.** `Off`, `Minimal`, `Balanced` (shipped default),
   and `Strong` are fixed presets over the effect levels: core and wide bloom,
@@ -612,13 +614,18 @@ is unchanged.
 - **Plain-path identity.** When every stage is at identity — the `Off`
   profile, or every gain zero — the pipeline disengages and the content
   renders on the plain path, byte-identical to having no pipeline at all.
-- **Material depth without a compositor.** The ground the content sits on is
-  a still deep-field material: gradients toward the deep tone from the
-  edges, scaled by the ground-depth level. The glass amount fades only that
-  ground; the surface amount fades only chrome strips. Text and occluders
-  stay opaque, so translucency reads as depth and never thins legibility.
-  Text lift is palette-side: chromatic inks multiply toward white, which
-  both brightens them and puts them over the bloom threshold.
+- **Material depth and window alpha.** The ground the content sits on is a
+  still deep-field material: gradients toward the deep tone from the edges,
+  scaled by the ground-depth level. The application requests destination alpha
+  before it creates its first window, then enables a translucent ground only
+  after the negotiated window format and scene-graph renderer both report
+  support. Missing alpha, unknown or software rendering, the `Off` profile,
+  and high contrast select the opaque fallback. Reduced motion leaves this
+  still material available. Pane grounds, text, and occluders remain opaque;
+  the surface control is an opaque panel-color blend with a 0.45 floor, so
+  every text contrast measurement keeps its known bed. Text lift is
+  palette-side: chromatic inks multiply toward white, which both brightens
+  them and puts them over the bloom threshold.
 - **Motion as one token.** Persistence drives a single motion duration the
   views consume for the current-item ring's decay trail. Reduced motion
   zeroes the effective persistence, so every consumer becomes instant
@@ -656,8 +663,10 @@ shell scene, so its claims regress loudly instead of visually:
 
 - **Layout integrity.** At the narrowest supported window (720×480 logical)
   and at a wide layout, every chrome control stays visible, non-degenerate,
-  and entirely inside the window; the chrome strips stack without overlap;
-  and no visible label overflows its bounds without eliding.
+  and entirely inside the window and its owning strip; the chrome strips stack
+  without overlap and retain their interior band spacing; and no visible label
+  overflows its bounds without eliding. Component coverage also exercises each
+  independent label threshold at its exact pixel and one pixel below it.
 - **Focus visibility.** With every effect off, buttons and fields show the
   accent focus ring against the resting hairline after pointer focus, a
   pointer-focused directory view turns its pane frame stroke to the accent,

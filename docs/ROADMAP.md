@@ -37,11 +37,11 @@ graphical shell grows around it.
 - [ ] Visual foundation acceptance. Automated coverage holds layout integrity
       across every density's measured compact breakpoint, pointer and keyboard
       focus visibility, reduced motion, contrast at the surfaces the views
-      actually paint, effects-off usability, software fallback, and
-      large-directory behavior. Genuine doubled-device-pixel rendering remains
-      unmeasured without a declared, isolated compositor that can allocate a
-      2x surface; the offscreen GPU entry renders at 1x and the software
-      scaled-layout entry checks logical coordinates only.
+      actually paint, effects-off usability, window-alpha and software
+      fallback, and large-directory behavior. Genuine doubled-device-pixel
+      rendering remains unmeasured without a declared, isolated compositor
+      that can allocate a 2x surface; the offscreen GPU entry renders at 1x
+      and the software scaled-layout entry checks logical coordinates only.
 
 ## M3 — Power features
 

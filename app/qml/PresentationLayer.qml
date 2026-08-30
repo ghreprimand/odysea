@@ -26,6 +26,10 @@ Item {
     required property Item content
     required property Item wellMask
     required property var theme
+    /// The shell enables this only after the window has both a negotiated
+    /// alpha buffer and a renderer that can preserve it. Standalone scenes
+    /// retain the conservative material-only expression by default.
+    property bool translucentGround: layer.theme.glassOpacity < 0.999
 
     readonly property bool softwareBackend: GraphicsInfo.api === GraphicsInfo.Software
     // Latched: one failed stage disables the pipeline for the session
@@ -247,7 +251,7 @@ Item {
         period: layer.scanPeriodPx
         vigI: layer.vignetteIntensity
         dpr: layer.dpr
-        translucentGround: layer.theme.glassOpacity < 0.999
+        translucentGround: layer.translucentGround
         onStatusChanged: {
             if (status === ShaderEffect.Error) {
                 layer.shaderFailed = true;

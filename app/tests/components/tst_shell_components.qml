@@ -416,6 +416,20 @@ Item {
             wait(20);
         }
 
+        function verifyVisibleRowFits(row, strip, label) {
+            for (let index = 0; index < row.children.length; ++index) {
+                const child = row.children[index];
+                if (!child.visible || child.width <= 0 || child.height <= 0) {
+                    continue;
+                }
+                const position = child.mapToItem(strip, 0, 0);
+                verify(position.x >= -0.5, label + ": child " + index + " must not cross the left edge");
+                verify(position.y >= -0.5, label + ": child " + index + " must not cross the top edge");
+                verify(position.x + child.width <= strip.width + 0.5, label + ": child " + index + " must not cross the right edge");
+                verify(position.y + child.height <= strip.height + 0.5, label + ": child " + index + " must not cross the bottom edge");
+            }
+        }
+
         function makeRegistry(model, controller, settings) {
             const navigationSettings = settings === undefined ? createTemporaryObject(settingsFactory, harness) : settings;
             return createTemporaryObject(registryFactory, harness, {
@@ -513,6 +527,43 @@ Item {
             compare(model.calls[model.calls.length - 1], "performUndo");
         }
 
+        function test_toolBarLabeledRequirementContainsEveryVisibleControl() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const bar = createTemporaryObject(toolBarFactory, harness, {
+                "shellModel": model,
+                "registry": makeRegistry(model, controller)
+            });
+            verify(bar !== null);
+
+            const controlNames = ["applicationIdentityMark", "backButton", "forwardButton", "upButton", "refreshButton", "undoButton", "paneToggleButton", "listViewButton", "gridViewButton", "columnsViewButton", "treeSearchButton", "paletteButton", "appearanceButton"];
+            const densities = [ShellTheme.Compact, ShellTheme.Cozy, ShellTheme.Comfortable];
+            for (let densityIndex = 0; densityIndex < densities.length; ++densityIndex) {
+                theme.density = densities[densityIndex];
+                flush();
+
+                const requirement = Math.ceil(bar.labeledWidthRequirement);
+                bar.width = requirement;
+                flush();
+                verify(!bar.compact, "the measured requirement must keep toolbar labels at density " + densityIndex);
+
+                for (let controlIndex = 0; controlIndex < controlNames.length; ++controlIndex) {
+                    const control = findChild(bar, controlNames[controlIndex]);
+                    verify(control !== null, "missing toolbar control " + controlNames[controlIndex]);
+                    const position = control.mapToItem(bar, 0, 0);
+                    verify(position.x >= bar.chromeMargin - 0.5, controlNames[controlIndex] + " must respect the left margin");
+                    verify(position.x + control.width <= bar.width - bar.chromeMargin + 0.5, controlNames[controlIndex] + " must fit at the measured requirement");
+                }
+                verifyVisibleRowFits(findChild(bar, "toolbarVisibleRow"), bar, "toolbar full row");
+
+                bar.width = requirement - 1;
+                flush();
+                verify(bar.compact, "one pixel below the requirement must compact the toolbar at density " + densityIndex);
+                verifyVisibleRowFits(findChild(bar, "toolbarVisibleRow"), bar, "toolbar compact row");
+            }
+            theme.density = ShellTheme.Cozy;
+        }
+
         function test_toolBarViewToggleDrivesController() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
@@ -599,6 +650,48 @@ Item {
                 return navigator.editing && address.activeFocus;
             });
             compare(address.selectedText, "/synthetic/fixture");
+        }
+
+        function test_pathNavigatorMeasuredCompactModeKeepsBothRowsInsideTheStrip() {
+            const model = createTemporaryObject(modelFactory, harness);
+            const controller = createTemporaryObject(controllerFactory, harness);
+            const settings = createTemporaryObject(settingsFactory, harness);
+            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+                "shellModel": model,
+                "navigationController": controller,
+                "registry": makeRegistry(model, controller, settings),
+                "settings": settings
+            });
+            verify(navigator !== null);
+            controller.pathNavigator = navigator;
+
+            const requirement = Math.ceil(navigator.labeledWidthRequirement);
+            navigator.width = requirement;
+            navigator.height = navigator.implicitHeight;
+            flush();
+            verify(!navigator.compact, "the measured requirement must keep path controls labelled");
+            verifyVisibleRowFits(findChild(navigator, "calmPathRow"), navigator, "calm path row");
+
+            navigator.beginEditing();
+            flush();
+            compare(findChild(navigator, "commitPathButton").text, "Go");
+            compare(findChild(navigator, "hidePathEditorButton").text, "Hide");
+            verifyVisibleRowFits(findChild(navigator, "pathEditorRow"), navigator, "labelled path editor row");
+            navigator.hideEditorRetainingDraft();
+
+            navigator.width = requirement - 1;
+            flush();
+            verify(navigator.compact, "one pixel below the requirement must compact path controls");
+            compare(findChild(navigator, "editLocationButton").text, "");
+            compare(findChild(navigator, "locationsButton").text, "");
+            verifyVisibleRowFits(findChild(navigator, "calmPathRow"), navigator, "compact calm path row");
+
+            navigator.beginEditing();
+            flush();
+            verify(navigator.editing);
+            compare(findChild(navigator, "commitPathButton").text, "");
+            compare(findChild(navigator, "hidePathEditorButton").text, "");
+            verifyVisibleRowFits(findChild(navigator, "pathEditorRow"), navigator, "compact path editor row");
         }
 
         function test_pathNavigatorCompletionAndDirectEntryParity() {

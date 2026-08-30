@@ -262,7 +262,8 @@ Popup {
                 }
                 ThemeSlider {
                     sliderObjectName: "surfaceOpacitySlider"
-                    label: qsTr("Surface opacity")
+                    label: qsTr("Surface blend")
+                    from: 0.45
                     themeValue: panel.theme.surfaceOpacity
                     onMoved: value => panel.theme.surfaceOpacity = value
                 }

@@ -83,6 +83,8 @@ Support.ShellTestCase {
     function cleanup() {
         testCase.shellWindow.width = 1100;
         testCase.shellWindow.height = 720;
+        testCase.shellWindow.alphaBufferAvailable = false;
+        testCase.shellWindow.rendererSupportsWindowTransparency = false;
         theme().resetToDefaults();
     }
 
@@ -132,6 +134,47 @@ Support.ShellTestCase {
         for (let index = 1; index < rows.length; ++index) {
             verify(rows[index].y >= rows[index - 1].y + rows[index - 1].height - 0.5, label + ": chrome rows must not overlap");
         }
+
+        // A row can fit beside another strip while still painting its own
+        // controls beyond the strip's edge. These direct-child bounds make
+        // that condition observable instead of relying on a screenshot.
+        const stripRows = [
+            {
+                "strip": child("navigationToolBar"),
+                "rowName": "toolbarVisibleRow"
+            },
+            {
+                "strip": child("pathNavigator"),
+                "rowName": "calmPathRow"
+            },
+            {
+                "strip": child("actionBar"),
+                "rowName": "actionRow"
+            }
+        ];
+        for (let stripIndex = 0; stripIndex < stripRows.length; ++stripIndex) {
+            const entry = stripRows[stripIndex];
+            const row = findChild(entry.strip, entry.rowName);
+            verify(row !== null, label + ": missing " + entry.rowName);
+            for (let childIndex = 0; childIndex < row.children.length; ++childIndex) {
+                const rowChild = row.children[childIndex];
+                if (!rowChild.visible || rowChild.width <= 0 || rowChild.height <= 0) {
+                    continue;
+                }
+                const position = rowChild.mapToItem(content, 0, 0);
+                const stripPosition = entry.strip.mapToItem(content, 0, 0);
+                verify(position.x >= stripPosition.x - 0.5, label + ": " + entry.rowName + " child must not cross its strip's left edge");
+                verify(position.y >= stripPosition.y - 0.5, label + ": " + entry.rowName + " child must not cross its strip's top edge");
+                verify(position.x + rowChild.width <= stripPosition.x + entry.strip.width + 0.5, label + ": " + entry.rowName + " child must not cross its strip's right edge");
+                verify(position.y + rowChild.height <= stripPosition.y + entry.strip.height + 0.5, label + ": " + entry.rowName + " child must not cross its strip's bottom edge");
+            }
+        }
+
+        const toolbarRow = findChild(child("navigationToolBar"), "toolbarVisibleRow");
+        const pathRow = findChild(child("pathNavigator"), "calmPathRow");
+        const toolbarBottom = toolbarRow.mapToItem(content, 0, toolbarRow.height).y;
+        const pathTop = pathRow.mapToItem(content, 0, 0).y;
+        verify(pathTop - toolbarBottom >= 2 * child("navigationToolBar").chromeMargin - 0.5, label + ": toolbar and path content bands must retain their interior breathing room");
 
         // No visible label may overflow its bounds without eliding: painted
         // width beyond the item with elision disabled is clipped text.
@@ -202,6 +245,89 @@ Support.ShellTestCase {
                 auditChrome("scale " + scales[scaleIndex] + ", width " + requestedWidth);
             }
         }
+    }
+
+    function test_toolbarAndPathUseMeasuredCompactBreakpoints() {
+        const toolbar = child("navigationToolBar");
+        const navigator = child("pathNavigator");
+        const densities = [ShellTheme.Compact, ShellTheme.Cozy, ShellTheme.Comfortable];
+
+        for (let densityIndex = 0; densityIndex < densities.length; ++densityIndex) {
+            theme().density = densities[densityIndex];
+            tryCompare(theme(), "density", densities[densityIndex]);
+            waitForRendering(testCase.shellWindow.contentItem);
+
+            const toolbarBreakpoint = Math.ceil(toolbar.labeledWidthRequirement);
+            const navigatorBreakpoint = Math.ceil(navigator.labeledWidthRequirement);
+            // Component coverage exercises each strip one pixel either side
+            // of its own measured threshold. In the complete shell, retain
+            // the product minimum width so a neighboring chrome row is never
+            // asked to fit inside a window OdySea does not support.
+            const supportedWidth = Math.max(testCase.shellWindow.minimumWidth, toolbarBreakpoint, navigatorBreakpoint);
+            resizeShell(supportedWidth, 720);
+            compare(toolbar.compact, false, "toolbar labels must fit at their measured requirement");
+            compare(navigator.compact, false, "path labels must fit at their measured requirement");
+            auditChrome("measured chrome requirements density " + densityIndex);
+            resizeShell(testCase.shellWindow.minimumWidth, 720);
+            auditChrome("minimum supported chrome density " + densityIndex);
+        }
+    }
+
+    function test_windowTransparencyFollowsCapabilitiesProfilesAndAccessibility() {
+        const root = testCase.shellWindow;
+        const ground = child("windowGround");
+        const toolbar = child("navigationToolBar");
+        verify(ground !== null && toolbar !== null);
+
+        // This models a negotiated alpha surface on a renderer that preserves
+        // it. If the window-ground binding is removed, the first comparison
+        // below fails even though the slider still changes stored state.
+        root.alphaBufferAvailable = true;
+        root.rendererSupportsWindowTransparency = true;
+        theme().profile = ShellTheme.Balanced;
+        theme().glassOpacity = 0.42;
+        tryCompare(root, "windowTransparencyEnabled", true);
+        tryCompare(ground, "fillOpacity", 0.42);
+        compare(root.color, Qt.rgba(0, 0, 0, 0));
+
+        // Functional chrome blends in color but stays opaque, matching the
+        // existing render-site contrast bed instead of placing text directly
+        // on an unknown desktop color.
+        theme().surfaceOpacity = 0.45;
+        tryVerify(function () {
+            return !Qt.colorEqual(toolbar.background.color, theme().panel);
+        });
+        compare(toolbar.background.color.a, 1.0);
+
+        // Reduced motion removes persistence only; a still material remains
+        // available. High contrast and the Off profile select the opaque
+        // fallback, as does a renderer that cannot preserve alpha.
+        theme().reducedMotion = true;
+        compare(root.windowTransparencyEnabled, true);
+        theme().highContrast = true;
+        compare(root.windowTransparencyEnabled, false);
+        compare(ground.fillOpacity, 1.0);
+        compare(root.color, theme().background);
+
+        theme().highContrast = false;
+        theme().profile = ShellTheme.Off;
+        compare(root.windowTransparencyEnabled, false);
+        compare(ground.fillOpacity, 1.0);
+
+        theme().profile = ShellTheme.Balanced;
+        root.alphaBufferAvailable = false;
+        root.rendererSupportsWindowTransparency = true;
+        compare(root.windowTransparencyAvailable, false);
+        compare(root.windowTransparencyEnabled, false);
+        compare(ground.fillOpacity, 1.0);
+        compare(root.color, theme().background);
+
+        root.alphaBufferAvailable = true;
+        root.rendererSupportsWindowTransparency = false;
+        compare(root.windowTransparencyAvailable, false);
+        compare(root.windowTransparencyEnabled, false);
+        compare(ground.fillOpacity, 1.0);
+        compare(root.color, theme().background);
     }
 
     function test_pointerFocusIndicatorsSurviveEffectsOff() {

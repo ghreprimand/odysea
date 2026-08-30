@@ -100,16 +100,15 @@ FocusScope {
         }
     }
 
-    // The pane ground is the material sheet content sits on: it carries
-    // the deep field and is the only surface the glass amount fades, so
-    // translucency reads as depth without thinning any text above it.
+    // The pane ground is the opaque reading surface content sits on. Window
+    // translucency belongs behind this surface; keeping entry text on this
+    // known bed preserves the contrast contract at every glass setting.
     DeepFieldGround {
         objectName: "paneFrame"
         anchors.fill: parent
         deepField: pane.theme.effectiveDeepField
         sheetColor: pane.theme.background
         deepColor: pane.theme.backgroundDeep
-        fillOpacity: pane.theme.glassOpacity
         radius: 6
         strokeColor: directoryList.activeFocus || directoryGrid.activeFocus || (pane.millerView !== null && pane.millerView.activeFocus) ? pane.theme.accent : pane.theme.border
     }
