@@ -49,8 +49,8 @@ ApplicationWindow {
     readonly property color secondaryTextColor: shellTheme.textMuted
     readonly property color accentColor: shellTheme.accent
     readonly property color selectionColor: shellTheme.selectionBed
-    /// Set by the entry point after the scene's QQuickWindow has negotiated
-    /// its format. Tests can model both outcomes without relying on a host
+    /// Set by the entry point from the scene's requested alpha setting. Tests
+    /// can model both outcomes without relying on a host
     /// compositor's alpha support.
     property bool alphaBufferAvailable: false
     // main.cpp publishes this after the scene graph exposes its renderer API.
@@ -89,7 +89,7 @@ ApplicationWindow {
     visible: true
     title: root.activeShellModel.path.length > 0 ? root.activeShellModel.path + " — OdySea" : "OdySea"
     // Alpha on the clear color matters only after the entry point confirmed a
-    // negotiated alpha buffer. The opaque fallback avoids a black or unpainted
+    // requested alpha setting. The opaque fallback avoids a black or unpainted
     // window on renderers and compositors that cannot preserve destination
     // alpha.
     color: windowTransparencyEnabled ? "transparent" : backgroundColor

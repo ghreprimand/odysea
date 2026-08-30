@@ -38,7 +38,6 @@ class ThemeController : public QObject {
         QString accentPresetId READ accentPresetId WRITE setAccentPresetId NOTIFY appearanceChanged)
     Q_PROPERTY(int accentPresetIndex READ accentPresetIndex WRITE setAccentPresetIndex NOTIFY
                    appearanceChanged)
-    Q_PROPERTY(QString accentContrastWarning READ accentContrastWarning NOTIFY appearanceChanged)
 
     Q_PROPERTY(Profile profile READ profile WRITE setProfile NOTIFY appearanceChanged)
     Q_PROPERTY(Source fontSource READ fontSource WRITE setFontSource NOTIFY appearanceChanged)
@@ -165,7 +164,6 @@ class ThemeController : public QObject {
     void setAccentPresetId(const QString& id);
     [[nodiscard]] int accentPresetIndex() const;
     void setAccentPresetIndex(int index);
-    [[nodiscard]] QString accentContrastWarning() const;
 
     [[nodiscard]] Profile profile() const;
     void setProfile(Profile profile);

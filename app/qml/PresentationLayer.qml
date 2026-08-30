@@ -26,8 +26,8 @@ Item {
     required property Item content
     required property Item wellMask
     required property var theme
-    /// The shell enables this only after the window has both a negotiated
-    /// alpha buffer and a renderer that can preserve it. Standalone scenes
+    /// The shell enables this only after it has a requested alpha setting
+    /// and a renderer that can preserve it. Standalone scenes
     /// retain the conservative material-only expression by default.
     property bool translucentGround: layer.theme.glassOpacity < 0.999
 

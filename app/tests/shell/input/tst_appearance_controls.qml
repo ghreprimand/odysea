@@ -150,23 +150,6 @@ Item {
             });
         }
 
-        function test_accentContrastWarningIsClearForTheSelectedShippedAccent() {
-            const palette = control("paletteBox");
-            const target = theme.availablePalettes.indexOf("odyssey-parchment-light");
-            verify(target >= 0);
-            palette.currentIndex = target;
-            palette.activated(target);
-
-            const accent = control("accentPresetBox");
-            accent.currentIndex = 1;
-            accent.activated(1);
-
-            const warning = control("accentContrastWarning");
-            compare(warning.visible, theme.accentContrastWarning.length > 0);
-            verify(!warning.visible);
-            compare(warning.text.length, 0);
-        }
-
         function test_densityAndFontSourceCombosApply() {
             const density = control("densityBox");
             const rowsBefore = theme.rowHeight;

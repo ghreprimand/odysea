@@ -28,22 +28,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ## 2026-08-30 -- Renderer fallback and accessibility sources are separately measured
 
-Window presentation capability is now published from the negotiated window
-format and the initialized scene-graph renderer, rather than inferred from the
-requested profile. The forced software entry selects `QT_QUICK_BACKEND=software`
-and requires Qt to report its software renderer before accepting the opaque
-window path. A mutation that allowed the software renderer to claim
-transparency failed both the renderer-boundary assertion and the initialized
-window assertion.
+Window presentation records the requested destination-alpha setting and the
+initialized scene-graph renderer separately. The renderer mapping explicitly
+classifies every Qt graphics API, and the forced software entry selects
+`QT_QUICK_BACKEND=software` before accepting the opaque window path. A mutation
+that allowed the software renderer to claim transparency failed both the
+renderer mapping and the initialized-window assertion.
 
-Reduced motion and high contrast now zero every effective glow, bloom,
-scanline, vignette, and persistence level. The composed shell exposes the
-actual pipeline stages, bounded glow emitters, and list and grid persistence
-sources to a hardware-scene audit. Starting from visible Strong-profile sources,
-that audit requires each source to disappear under reduced motion, high
-contrast, and `Off`; the launcher turns a post-probe software fallback into a
-failure. The OpenGL entry declined by its declared capability in this run:
-there was no reachable display server, so no hardware-scene result is claimed.
+Reduced motion removes persistence and its duration while keeping static
+material, bloom, and the context marker available. High contrast instead
+removes every glow, bloom, scanline, vignette, and persistence source while
+lifting text. The composed shell exposes the actual pipeline stages, bounded
+glow emitters, and list and grid persistence sources to a hardware-scene test.
+Starting from visible Strong-profile sources, that test distinguishes the two
+overrides and requires every source to disappear only for high contrast and
+`Off`; the launcher turns a post-probe software fallback into a failure. The
+OpenGL entry ran for 76.36 seconds and passed, followed by the isolated
+accessibility-source audit. The real-compositor entries remain declined by
+their declared isolated-surface requirements, so no compositor or 2x result is
+claimed.
+
+Accent presets remain authored hue inputs. Before a value becomes a shell token,
+the resolver aligns its luminance with the active family and clears the shared
+render-site floors. There is no arbitrary custom-accent input, so the previous
+selection warning could never reach a user and was removed. A near-black input
+is now a registered control: it fails the raw samples and passes only after the
+same resolver that supplies the shell token. This keeps contrast repair at the
+token boundary instead of presenting an unreachable warning surface.
 
 Large-directory validation now uses a deterministic 2,000-entry fixture and
 geometry-derived list and grid bounds instead of a wall-clock threshold. The

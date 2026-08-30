@@ -26,6 +26,7 @@ using odysea::app::themeContrastFailures;
 using odysea::app::themeContrastRatio;
 using odysea::app::ThemeContrastSample;
 using odysea::app::ThemeController;
+using odysea::app::themeResolvedAccentForRenderSites;
 
 namespace {
 
@@ -191,7 +192,7 @@ class tst_ThemeController : public QObject {
     void accent_presets_resolve_live_and_keep_stable_ids();
     void accent_presets_preserve_file_type_and_status_roles();
     void shipped_accent_presets_clear_render_site_contrast_matrix();
-    void accent_contrast_warning_uses_render_site_measurement();
+    void near_black_authored_accent_is_normalized_before_shell_use();
     void profile_presets_steer_effect_levels();
     void slider_writes_switch_to_custom_and_are_remembered();
     void accessibility_overrides_apply_immediately();
@@ -342,10 +343,6 @@ void tst_ThemeController::shipped_accent_presets_clear_render_site_contrast_matr
                              theme.hover(), theme.pressed(), theme.panel()))) {
                         failures.append(QStringLiteral("%1 / %2").arg(context, failure));
                     }
-                    if (!theme.accentContrastWarning().isEmpty()) {
-                        failures.append(QStringLiteral("%1 / warning: %2")
-                                            .arg(context, theme.accentContrastWarning()));
-                    }
                 }
             }
         }
@@ -355,29 +352,24 @@ void tst_ThemeController::shipped_accent_presets_clear_render_site_contrast_matr
                                             failures.join(QStringLiteral("\n"))));
 }
 
-void tst_ThemeController::accent_contrast_warning_uses_render_site_measurement() {
+void tst_ThemeController::near_black_authored_accent_is_normalized_before_shell_use() {
     ThemeController theme;
-    theme.setPaletteId(QStringLiteral("odyssey-parchment-light"));
-    theme.setAccentPresetId(QStringLiteral("beacon"));
-
+    theme.setPaletteId(QStringLiteral("odyssey-default"));
+    const QColor nearBlack(QStringLiteral("#0A0C14"));
     const QList<ThemeContrastSample> samples =
-        themeAccentContrastSamples(theme.accent(), theme.background(), theme.selectionBed(),
+        themeAccentContrastSamples(nearBlack, theme.background(), theme.selectionBed(),
                                    theme.hover(), theme.pressed(), theme.panel());
-    const QStringList failures = themeContrastFailures(samples);
-    QCOMPARE(theme.accentContrastWarning().isEmpty(), failures.isEmpty());
-    for (const QString& failure : failures) {
-        QVERIFY(theme.accentContrastWarning().contains(failure));
-    }
+    QVERIFY(!themeContrastFailures(samples).isEmpty());
 
-    const auto authoredBeacon = ThemeController::accentPresets()
-                                    .at(1)
-                                    .toMap()
-                                    .value(QStringLiteral("color"))
-                                    .value<QColor>();
-    QVERIFY(!themeContrastFailures(themeAccentContrastSamples(authoredBeacon, theme.background(),
+    const QColor resolved = themeResolvedAccentForRenderSites(
+        nearBlack, odysea::app::shellPalette(theme.paletteId()).accent, samples,
+        !theme.lightPalette());
+    QVERIFY(resolved != nearBlack);
+    QVERIFY2(themeContrastFailures(themeAccentContrastSamples(resolved, theme.background(),
                                                               theme.selectionBed(), theme.hover(),
                                                               theme.pressed(), theme.panel()))
-                 .isEmpty());
+                 .isEmpty(),
+             "near-black authored accent must resolve before it reaches every render site");
 }
 
 void tst_ThemeController::profile_presets_steer_effect_levels() {
@@ -456,10 +448,10 @@ void tst_ThemeController::accessibility_overrides_apply_immediately() {
     theme.setReducedMotion(true);
     QCOMPARE(theme.effectivePersistence(), 0.0);
     QVERIFY(theme.persistence() > 0.0);
-    QCOMPARE(theme.effectiveBloomCore(), 0.0);
-    QCOMPARE(theme.effectiveBloomWide(), 0.0);
-    QCOMPARE(theme.effectiveScanline(), 0.0);
-    QCOMPARE(theme.effectiveVignette(), 0.0);
+    QCOMPARE(theme.effectiveBloomCore(), theme.bloomCore());
+    QCOMPARE(theme.effectiveBloomWide(), theme.bloomWide());
+    QCOMPARE(theme.effectiveScanline(), theme.scanline());
+    QCOMPARE(theme.effectiveVignette(), theme.vignette());
 }
 
 void tst_ThemeController::stored_levels_stay_editable_under_overrides() {

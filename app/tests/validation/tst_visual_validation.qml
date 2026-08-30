@@ -284,7 +284,7 @@ Support.ShellTestCase {
         const toolbar = child("navigationToolBar");
         verify(ground !== null && toolbar !== null);
 
-        // This models a negotiated alpha surface on a renderer that preserves
+        // This models a requested alpha setting on a renderer that preserves
         // it. If the window-ground binding is removed, the first comparison
         // below fails even though the slider still changes stored state.
         root.alphaBufferAvailable = true;

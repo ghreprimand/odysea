@@ -43,8 +43,8 @@ QString startupSceneType() {
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     // Ask for destination alpha before the first QQuickWindow is created.
-    // The QML shell remains opaque until the negotiated format proves the
-    // request succeeded, so this request is safe on incapable platforms.
+    // The QML shell remains opaque until the initialized renderer allows it,
+    // so recording this request is safe on incapable platforms.
     QQuickWindow::setDefaultAlphaBuffer(true);
     QGuiApplication::setApplicationName("OdySea");
     QGuiApplication::setOrganizationName("Odyssey");

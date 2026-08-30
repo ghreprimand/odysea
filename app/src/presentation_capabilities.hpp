@@ -1,7 +1,7 @@
 // Window-presentation capability publication for the Qt Quick shell.
 //
-// The shell stays opaque until both destination alpha and the initialized
-// scene-graph renderer prove that a transparent ground can be preserved.
+// The shell stays opaque until its requested destination-alpha setting and
+// the initialized scene-graph renderer allow a transparent ground.
 #pragma once
 
 #include <QSGRendererInterface>
@@ -11,11 +11,10 @@ class QQuickWindow;
 
 namespace odysea::app {
 
-[[nodiscard]] bool
-rendererSupportsWindowTransparency(QSGRendererInterface::GraphicsApi api) noexcept;
+[[nodiscard]] bool rendererPreservesWindowAlpha(QSGRendererInterface::GraphicsApi api) noexcept;
 
-/// Publishes the negotiated destination-alpha and renderer capabilities onto
-/// the QML shell. `shell` must expose the matching boolean properties.
+/// Publishes the requested destination-alpha setting and renderer capability
+/// onto the QML shell. `shell` must expose the matching boolean properties.
 void publishWindowPresentationCapabilities(QQuickWindow& window, QObject& shell);
 
 } // namespace odysea::app

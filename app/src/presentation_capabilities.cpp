@@ -6,9 +6,21 @@
 
 namespace odysea::app {
 
-bool rendererSupportsWindowTransparency(QSGRendererInterface::GraphicsApi api) noexcept {
-    return api != QSGRendererInterface::Unknown && api != QSGRendererInterface::Software &&
-           api != QSGRendererInterface::Null;
+bool rendererPreservesWindowAlpha(QSGRendererInterface::GraphicsApi api) noexcept {
+    switch (api) {
+    case QSGRendererInterface::Unknown:
+    case QSGRendererInterface::Software:
+    case QSGRendererInterface::Null:
+        return false;
+    case QSGRendererInterface::OpenVG:
+    case QSGRendererInterface::OpenGL:
+    case QSGRendererInterface::Direct3D11:
+    case QSGRendererInterface::Vulkan:
+    case QSGRendererInterface::Metal:
+    case QSGRendererInterface::Direct3D12:
+        return true;
+    }
+    return false;
 }
 
 void publishWindowPresentationCapabilities(QQuickWindow& window, QObject& shell) {
@@ -27,7 +39,7 @@ void publishWindowPresentationCapabilities(QQuickWindow& window, QObject& shell)
                          const QSGRendererInterface::GraphicsApi api =
                              guardedWindow->rendererInterface()->graphicsApi();
                          guardedShell->setProperty("rendererSupportsWindowTransparency",
-                                                   rendererSupportsWindowTransparency(api));
+                                                   rendererPreservesWindowAlpha(api));
                      });
 }
 

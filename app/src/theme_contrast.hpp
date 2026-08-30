@@ -24,7 +24,7 @@ struct ThemeContrastSample {
 /// hue direction where the target luminance permits it.
 [[nodiscard]] QColor themeColorAtReferenceLuminance(const QColor& color, const QColor& reference);
 
-/// Accent render sites shared by the appearance warning and acceptance tests.
+/// Accent render sites shared by the resolver and acceptance tests.
 [[nodiscard]] QList<ThemeContrastSample>
 themeAccentContrastSamples(const QColor& accent, const QColor& windowGround,
                            const QColor& selectionBed, const QColor& hoveredSurface,
@@ -34,6 +34,14 @@ themeAccentContrastSamples(const QColor& accent, const QColor& windowGround,
 /// render-site samples clear their floors. Measurement stays in
 /// `themeContrastFailures`, so the resolver and warning use one definition.
 [[nodiscard]] QColor themeColorClearingContrastSamples(const QColor& color,
+                                                       const QList<ThemeContrastSample>& samples,
+                                                       bool darkGround);
+
+/// Resolves an authored accent into the displayed token. The active palette
+/// supplies the reference luminance and the shared render-site samples repair
+/// the color before it can reach a shell surface.
+[[nodiscard]] QColor themeResolvedAccentForRenderSites(const QColor& authoredColor,
+                                                       const QColor& paletteReference,
                                                        const QList<ThemeContrastSample>& samples,
                                                        bool darkGround);
 

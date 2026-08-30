@@ -139,6 +139,14 @@ QColor themeColorClearingContrastSamples(const QColor& color,
     return result;
 }
 
+QColor themeResolvedAccentForRenderSites(const QColor& authoredColor,
+                                         const QColor& paletteReference,
+                                         const QList<ThemeContrastSample>& samples,
+                                         bool darkGround) {
+    const QColor paletteMatched = themeColorAtReferenceLuminance(authoredColor, paletteReference);
+    return themeColorClearingContrastSamples(paletteMatched, samples, darkGround);
+}
+
 QStringList themeContrastFailures(const QList<ThemeContrastSample>& samples) {
     QStringList failures;
     for (const ThemeContrastSample& sample : samples) {

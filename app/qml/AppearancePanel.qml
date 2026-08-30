@@ -168,17 +168,6 @@ Popup {
                     color: panel.theme.accent
                     radius: 3
                 }
-                Text {
-                    objectName: "accentContrastWarning"
-                    Layout.fillWidth: true
-                    visible: panel.theme.accentContrastWarning.length > 0
-                    text: panel.theme.accentContrastWarning
-                    color: panel.theme.danger
-                    wrapMode: Text.Wrap
-                    font.family: panel.theme.captionFontFamily
-                    font.pixelSize: panel.theme.captionFontPixelSize
-                    Accessible.name: text
-                }
                 CheckBox {
                     objectName: "highContrastCheck"
                     text: qsTr("High contrast")

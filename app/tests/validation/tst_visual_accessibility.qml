@@ -58,6 +58,16 @@ Support.ShellTestCase {
         compare(composedEffectSources(), [], label + ": no composed effect source may remain");
     }
 
+    function assertReducedMotionKeepsStaticEffects() {
+        const layer = child("presentationLayer");
+        compare(layer.motionDurationMs, 0, "reduced motion removes the persistence duration");
+        verify(layer.emissionActive, "reduced motion keeps static bloom available");
+        verify(layer.contextGlowAvailable, "reduced motion keeps the static context glow available");
+        verify(composedEffectSources().length > 0, "reduced motion keeps composed static-effect sources available");
+        verify(composedEffectSources().indexOf("directory list persistence") === -1, "reduced motion removes list persistence");
+        verify(composedEffectSources().indexOf("directory grid persistence") === -1, "reduced motion removes grid persistence");
+    }
+
     function test_composedAccessibilityOverridesRemoveEveryEffectSource() {
         // The ordinary software pass proves fallback behavior but cannot tell
         // an accessibility override from the renderer's fallback.
@@ -77,9 +87,9 @@ Support.ShellTestCase {
 
         theme().reducedMotion = true;
         tryVerify(function () {
-            return !layer.active;
+            return layer.active && layer.motionDurationMs === 0;
         });
-        assertComposedEffectsAbsent("reduced motion");
+        assertReducedMotionKeepsStaticEffects();
 
         theme().reducedMotion = false;
         theme().highContrast = true;

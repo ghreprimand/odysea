@@ -298,11 +298,16 @@ EffectLevels effective_effect_levels(const AppearanceSettings& settings) noexcep
     EffectLevels levels = settings.profile == EffectProfile::Custom
                               ? clamp_effect_levels(settings.custom)
                               : effect_profile_levels(settings.profile);
-    if (settings.reduced_motion || settings.high_contrast) {
-        // Accessibility overrides remove every animated or emissive source
-        // from the composed scene. Deep-field material remains palette-side,
-        // but glow, bloom, scanline, vignette, and persistence do not leave
-        // a second visual or motion path behind either override.
+    if (settings.reduced_motion) {
+        // Reduced motion is a temporal override. Static material and the
+        // contextual phosphor marker remain available; only the persistence
+        // trail and its duration disappear.
+        levels.persistence = 0.0;
+    }
+    if (settings.high_contrast) {
+        // High contrast removes every emissive treatment and static effect
+        // source. Deep-field material remains palette-side, while text lift
+        // preserves the legibility route.
         levels.bloom_core = 0.0;
         levels.bloom_wide = 0.0;
         levels.scanline = 0.0;

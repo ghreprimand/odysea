@@ -245,16 +245,6 @@ void ThemeController::setAccentPresetIndex(int index) {
     setAccentPresetId(presets.at(index).id);
 }
 
-QString ThemeController::accentContrastWarning() const {
-    const QStringList failures = themeContrastFailures(themeAccentContrastSamples(
-        accent(), background(), selectionBed(), hover(), pressed(), panel()));
-    if (failures.isEmpty()) {
-        return {};
-    }
-    return QStringLiteral("Accent contrast needs attention: %1")
-        .arg(failures.join(QStringLiteral("; ")));
-}
-
 ThemeController::Profile ThemeController::profile() const {
     return static_cast<Profile>(settings_.profile);
 }
@@ -791,11 +781,10 @@ QColor ThemeController::accent() const {
     // Accent presets provide hue. The active family supplies the luminance
     // direction, and the shared render-site samples choose the nearest value
     // that clears their floor after profile and accessibility lift.
-    const QColor paletteMatched =
-        themeColorAtReferenceLuminance(lifted(resolvedAccent()), lifted(activePalette().accent));
     const QList<ThemeContrastSample> samples = themeAccentContrastSamples(
-        paletteMatched, background(), selectionBed(), hover(), pressed(), panel());
-    return themeColorClearingContrastSamples(paletteMatched, samples, !activePalette().light);
+        resolvedAccent(), background(), selectionBed(), hover(), pressed(), panel());
+    return themeResolvedAccentForRenderSites(
+        lifted(resolvedAccent()), lifted(activePalette().accent), samples, !activePalette().light);
 }
 
 QColor ThemeController::selectionBed() const {

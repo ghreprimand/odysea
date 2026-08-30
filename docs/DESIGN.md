@@ -468,10 +468,12 @@ there is no apply step.
   changing file-type and status roles; a separately exact roster test makes a
   shipped-preset change explicit. Every shipped preset clears the window,
   selected-entry, hover, pressed, and panel sites for every family, profile,
-  and high-contrast state. Those shared samples drive resolution, acceptance,
-  and the selection warning, so all three apply the same contrast floor. The
-  preset control is keyboard and pointer reachable, previews immediately, and
-  reset restores Tideglass.
+  and high-contrast state. Those shared samples drive resolution and
+  acceptance, so the displayed token cannot drift into a second contrast
+  rule. There is no arbitrary custom-accent input: every selectable choice is
+  resolved at this boundary before it reaches a shell surface, rather than
+  presenting an unreachable selection warning. The preset control is keyboard
+  and pointer reachable, previews immediately, and reset restores Tideglass.
 - **Measured contrast floors.** The contrast claims are asserted, not
   eyeballed: a test measures every foreground role against the beds tracked
   surfaces actually paint it on, in every shipped family, in both override
@@ -624,8 +626,10 @@ is unchanged.
   still deep-field material: gradients toward the deep tone from the edges,
   scaled by the ground-depth level. The application requests destination alpha
   before it creates its first window, then enables a translucent ground only
-  after the negotiated window format and scene-graph renderer both report
-  support. Missing alpha, unknown or software rendering, the `Off` profile,
+  after its requested alpha setting and scene-graph renderer allow it. The
+  renderer mapping treats unknown, software, and null rendering as incapable;
+  the requested setting is recorded separately rather than treated as a
+  negotiated surface result. The `Off` profile,
   and high contrast select the opaque fallback. Reduced motion leaves this
   still material available. Pane grounds, text, and occluders remain opaque;
   the surface control is an opaque panel-color blend with a 0.45 floor, so
@@ -678,15 +682,18 @@ shell scene, so its claims regress loudly instead of visually:
   pointer-focused directory view turns its pane frame stroke to the accent,
   and keyboard tab traversal cycles through the chrome without ever dropping
   focus.
-- **Reduced motion and high contrast.** Each override removes every composed
-  glow, bloom, scanline, vignette, and persistence source while retaining
-  palette-side material and crisp semantic outlines. The hardware-scene entry
-  begins with visible Strong-profile sources, inventories the emitting QML
-  stages, then requires that inventory to be empty for reduced motion, high
-  contrast, and `Off`; it requires OpenGL RHI so a software fallback cannot
-  stand in for that distinction. Chrome geometry stays byte-stable, and the
-  stored controls remain unchanged so leaving an override restores the chosen
-  profile rather than a rewritten preference.
+- **Reduced motion and high contrast.** Reduced motion removes persistence and
+  transition duration only, keeping static material, bloom, and the context
+  marker available for a user who requested less movement rather than less
+  luminance. High contrast removes every composed glow, bloom, scanline,
+  vignette, and persistence source while retaining palette-side material and
+  crisp semantic outlines. The hardware-scene entry begins with visible
+  Strong-profile sources, inventories the emitting QML stages, distinguishes
+  the two overrides, and requires the inventory to be empty for high contrast
+  and `Off`; it requires OpenGL RHI so a software fallback cannot stand in for
+  that distinction. Chrome geometry stays byte-stable, and the stored controls
+  remain unchanged so leaving an override restores the chosen profile rather
+  than a rewritten preference.
 - **Effects off.** Selection and text legibility are palette properties
   measured without the pipeline, and the keyboard surfaces stay reachable —
   nothing depends on the effect layer for affordance.

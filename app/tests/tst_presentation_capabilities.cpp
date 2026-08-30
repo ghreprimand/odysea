@@ -6,6 +6,8 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <array>
+
 namespace {
 
 class ShellPresentationState final : public QObject {
@@ -41,10 +43,25 @@ class PresentationCapabilitiesTest final : public QObject {
 };
 
 void PresentationCapabilitiesTest::rendererCapabilityBoundary() {
-    QVERIFY(!odysea::app::rendererSupportsWindowTransparency(QSGRendererInterface::Unknown));
-    QVERIFY(!odysea::app::rendererSupportsWindowTransparency(QSGRendererInterface::Software));
-    QVERIFY(!odysea::app::rendererSupportsWindowTransparency(QSGRendererInterface::Null));
-    QVERIFY(odysea::app::rendererSupportsWindowTransparency(QSGRendererInterface::OpenGL));
+    struct RendererCase {
+        QSGRendererInterface::GraphicsApi api;
+        bool preservesAlpha;
+    };
+    constexpr std::array<RendererCase, 9> cases{
+        RendererCase{.api = QSGRendererInterface::Unknown, .preservesAlpha = false},
+        RendererCase{.api = QSGRendererInterface::Software, .preservesAlpha = false},
+        RendererCase{.api = QSGRendererInterface::OpenVG, .preservesAlpha = true},
+        RendererCase{.api = QSGRendererInterface::OpenGL, .preservesAlpha = true},
+        RendererCase{.api = QSGRendererInterface::Direct3D11, .preservesAlpha = true},
+        RendererCase{.api = QSGRendererInterface::Vulkan, .preservesAlpha = true},
+        RendererCase{.api = QSGRendererInterface::Metal, .preservesAlpha = true},
+        RendererCase{.api = QSGRendererInterface::Null, .preservesAlpha = false},
+        RendererCase{.api = QSGRendererInterface::Direct3D12, .preservesAlpha = true},
+    };
+
+    for (const RendererCase& renderer : cases) {
+        QCOMPARE(odysea::app::rendererPreservesWindowAlpha(renderer.api), renderer.preservesAlpha);
+    }
 }
 
 void PresentationCapabilitiesTest::softwareSceneGraphPublishesOpaqueFallback() {
@@ -53,6 +70,7 @@ void PresentationCapabilitiesTest::softwareSceneGraphPublishesOpaqueFallback() {
     // misspelled RHI variable would leave the default renderer in place.
     QQuickWindow::setDefaultAlphaBuffer(true);
     QQuickWindow window;
+    window.setColor(Qt::black);
     ShellPresentationState shell;
     odysea::app::publishWindowPresentationCapabilities(window, shell);
 
@@ -63,6 +81,7 @@ void PresentationCapabilitiesTest::softwareSceneGraphPublishesOpaqueFallback() {
     QTRY_VERIFY_WITH_TIMEOUT(initialized.count() > 0, 5000);
 
     QCOMPARE(window.rendererInterface()->graphicsApi(), QSGRendererInterface::Software);
+    QVERIFY(window.requestedFormat().alphaBufferSize() > 0);
     QCOMPARE(shell.alphaBufferAvailable(), window.format().alphaBufferSize() > 0);
     QVERIFY(!shell.rendererSupportsWindowTransparency());
     window.hide();

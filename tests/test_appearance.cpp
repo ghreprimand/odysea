@@ -108,9 +108,11 @@ void test_accessibility_overrides_shape_the_effective_levels() {
     s.profile = EffectProfile::Strong;
     s.reduced_motion = true;
     const EffectLevels reduced = effective_effect_levels(s);
-    check(reduced.bloom_core == 0.0 && reduced.bloom_wide == 0.0 && reduced.scanline == 0.0 &&
-              reduced.vignette == 0.0 && reduced.persistence == 0.0,
-          "reduced motion removes every emissive and motion source");
+    const EffectLevels strong = effect_profile_levels(EffectProfile::Strong);
+    check(reduced.bloom_core == strong.bloom_core && reduced.bloom_wide == strong.bloom_wide &&
+              reduced.scanline == strong.scanline && reduced.vignette == strong.vignette &&
+              reduced.persistence == 0.0,
+          "reduced motion removes temporal persistence without dimming static effects");
 
     s.reduced_motion = false;
     s.high_contrast = true;
