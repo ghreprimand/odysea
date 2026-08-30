@@ -51,6 +51,12 @@
 # a clone with no `origin/main`, is judged against itself. What remains is the
 # window between committing on the integration branch and pushing it.
 #
+# A branch or remote rename must not discard the bound, but `HEAD` cannot be
+# the fallback: it contains the commit under test. The fallback is therefore
+# `HEAD^`, an independent ancestor of that commit. A single-commit repository
+# has no such ancestor and fails closed; a success line is reserved for a
+# comparison that could not have learned the changed text from the current tip.
+#
 # HOW BIG THE BOUND HAS TO BE. Everything the comparison demands is an entry
 # the walk found, so the size of the walk is the strength of the check, and a
 # walk that reads less than it read before reports success in the same shape as
@@ -714,14 +720,12 @@ baseline_ref=""
 if guard_corpus_is_git; then
     # Most authoritative first. `origin/main` is what was actually published,
     # and it is the only candidate the commit under test cannot have written.
-    # Local `main` follows it for clones that have no remote configured. `HEAD`
-    # is last because it is the one candidate that always resolves in a
-    # repository with commits: without it, renaming the branch and the remote -
-    # `git branch -m main trunk`, `git remote rename origin upstream` - reaches
-    # the unchecked path with the whole of history sitting right there. It
-    # cannot reintroduce an empty baseline either, since the floor below judges
-    # what the walk found rather than which name found it.
-    for candidate in origin/main main HEAD; do
+    # Local `main` follows it for clones that have no remote configured. When
+    # neither name resolves after a branch or remote rename, `HEAD^` retains
+    # the bound while excluding the commit being judged. `HEAD` itself is not
+    # a candidate: a self-comparison would turn a rewritten published entry
+    # into its own purported source text.
+    for candidate in origin/main main 'HEAD^'; do
         if git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
             baseline_ref="$candidate"
             break
@@ -762,12 +766,16 @@ if [[ -z "$baseline_ref" ]]; then
     printf 'devlog_archive_guard: split recombination is UNCHECKED: no baseline revision resolves\n'
 else
     recombined_baseline=0
+    recombination_failed=0
     while IFS=$'\t' read -r kind first second; do
         case "$kind" in
         COUNT)
             recombined_baseline="$first"
             ;;
-        FAIL) fail "$first" ;;
+        FAIL)
+            recombination_failed=1
+            fail "$first"
+            ;;
         esac
     done < <(
         awk '
@@ -782,7 +790,7 @@ else
                     printf "FAIL\tthe baseline record names an entry more than once while recombining: %s\n", heading
                 } else {
                     baseline[heading] = body
-                    order[++baseline_count] = heading
+                    baseline_headings[++baseline_count] = heading
                 }
                 next
             }
@@ -792,20 +800,19 @@ else
                     printf "FAIL\tthe recombined record names an entry more than once: %s\n", heading
                 } else {
                     current[heading] = body
-                    current_count++
                 }
                 next
             }
             END {
                 for (position = 1; position <= baseline_count; position++) {
-                    heading = order[position]
+                    heading = baseline_headings[position]
                     if (!(heading in current)) {
                         printf "FAIL\tthe recombined record is missing a baseline entry: %s\n", heading
                     } else if (baseline[heading] != current[heading]) {
                         printf "FAIL\tthe recombined record changes an entry body: %s\n", heading
                     }
                 }
-                printf "COUNT\t%d\t%d\n", baseline_count, current_count
+                printf "COUNT\t%d\t\n", baseline_count
             }
         ' < <(
             recombined_pairs_at_revision "$baseline_ref" | sed 's/^/baseline\t/'
@@ -815,7 +822,7 @@ else
 
     if ((recombined_baseline == 0)); then
         fail "the split-recombination baseline $baseline_ref contains no entry, so no move was compared"
-    else
+    elif ((recombination_failed == 0)); then
         printf 'devlog_archive_guard: %d entry(s) recombined from %s without loss or body changes\n' \
             "$recombined_baseline" "$baseline_ref"
     fi
@@ -850,7 +857,7 @@ if [[ -z "$baseline_ref" ]]; then
     fi
 
     if ((history_exists == 1)); then
-        fail "published history is present but no baseline ref could be named: none of origin/main, main, or HEAD resolves, so the record is unbounded"
+        fail "published history is present but no independent baseline ref could be named: none of origin/main, main, or HEAD^ resolves, so the record is unbounded"
     elif guard_corpus_is_git; then
         printf 'devlog_archive_guard: published history is UNCHECKED: the repository holds no commit to read\n'
     else

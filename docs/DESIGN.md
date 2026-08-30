@@ -581,6 +581,13 @@ there is no apply step.
   whose faint ink peaks in a low-luminance channel would land its capped
   symbols below the measured pressed-bed floor, and the neutral families
   choose a hue whose capped form stays measurable on every control bed.
+  The `odyssey` icon ink's binding pressed-bed ratio is 2.10:1 against its
+  2.00:1 anti-regression bound. The parchment-light authored default accent
+  (`#956614`) has a different binding pair: Accent on the pressed surface is
+  3.0369:1 against the 3.00:1 floor, a 1.23% margin. The next lighter source
+  value (`#966715`) is 2.99:1 and fails, so changing the accent to buy more
+  headroom requires an explicit source and measurement update rather than a
+  widened floor.
 - **Application identity mark.** A circular O carries one horizon wave. The
   toolbar renders that geometry through `VectorIcon`, using the semantic icon
   ink and the established high-contrast stroke lift; it never follows the

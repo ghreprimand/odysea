@@ -193,6 +193,7 @@ class tst_ThemeController : public QObject {
     void accent_presets_preserve_file_type_and_status_roles();
     void shipped_accent_presets_clear_render_site_contrast_matrix();
     void curated_default_accents_are_render_ready();
+    void parchment_light_default_accent_pressed_surface_is_the_recorded_margin();
     void authored_accent_repair_warns_with_named_render_sites();
     void authored_accent_without_repair_has_no_warning();
     void near_black_authored_accent_is_normalized_before_shell_use();
@@ -377,6 +378,45 @@ void tst_ThemeController::curated_default_accents_are_render_ready() {
     QVERIFY2(failures.isEmpty(),
              qPrintable(QStringLiteral("curated accent requires contrast repair:\n") +
                         failures.join(QStringLiteral("\n"))));
+}
+
+void tst_ThemeController::parchment_light_default_accent_pressed_surface_is_the_recorded_margin() {
+    ThemeController theme;
+    theme.setProfile(ThemeController::Off);
+    theme.setHighContrast(false);
+    const QString paletteId = QStringLiteral("odyssey-parchment-light");
+    theme.setPaletteId(paletteId);
+    theme.setAccentPresetId(odysea::app::defaultAccentPresetId());
+
+    const odysea::app::ShellPalette& palette = odysea::app::shellPalette(paletteId);
+    QCOMPARE(palette.accent, QColor(0x95, 0x66, 0x14));
+    QCOMPARE(theme.accent().rgba(), palette.accent.rgba());
+
+    const QList<ThemeContrastSample> samples =
+        themeAccentContrastSamples(palette.accent, theme.background(), theme.selectionBed(),
+                                   theme.hover(), theme.pressed(), theme.panel());
+    const ThemeContrastSample* pressed = nullptr;
+    for (const ThemeContrastSample& sample : samples) {
+        if (sample.role == QStringLiteral("Accent") &&
+            sample.renderSite == QStringLiteral("pressed surface")) {
+            pressed = &sample;
+            break;
+        }
+    }
+    QVERIFY(pressed != nullptr);
+    QCOMPARE(pressed->floor, 3.0);
+
+    const qreal ratio = themeContrastRatio(pressed->foreground, pressed->background);
+    QVERIFY2(ratio >= 3.0368 && ratio <= 3.0370,
+             qPrintable(QStringLiteral("measured ratio: %1").arg(ratio, 0, 'f', 6)));
+    const qreal margin = (ratio / pressed->floor) - 1.0;
+    QVERIFY2(margin >= 0.0122 && margin <= 0.0124,
+             qPrintable(QStringLiteral("measured margin: %1").arg(margin, 0, 'f', 6)));
+
+    const QList<ThemeContrastSample> one_step_lighter = themeAccentContrastSamples(
+        QColor(0x96, 0x67, 0x15), theme.background(), theme.selectionBed(), theme.hover(),
+        theme.pressed(), theme.panel());
+    QVERIFY(!themeContrastFailures(one_step_lighter).isEmpty());
 }
 
 void tst_ThemeController::authored_accent_repair_warns_with_named_render_sites() {

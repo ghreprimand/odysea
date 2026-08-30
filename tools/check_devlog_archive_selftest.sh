@@ -57,7 +57,7 @@ reported=0
 # `set -e`, an edit that removes a case - and a short run whose every result
 # passed is indistinguishable from a complete one. Raise it when scenarios are
 # added; lowering it to make a run green is removing coverage.
-readonly expected_scenarios=75
+readonly expected_scenarios=77
 
 report() {
     local outcome="$1" scenario="$2"
@@ -300,6 +300,37 @@ expect_rejected() {
     if [[ "$output" != *"$expected"* ]]; then
         report FAIL "$scenario: rejected for the wrong reason"
         printf '  expected to contain: %s\n' "$expected" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    report PASS "$scenario"
+}
+
+# This records the guard's exit code directly, then checks that no plain
+# recombination success sentence accompanies the failure. A truthy success
+# sentence was part of the defect: it claimed a historical comparison even
+# when the same run had found that comparison invalid.
+expect_rejected_without_recombination_success() {
+    local scenario="$1" root="$2" expected="$3"
+    local output exit_status
+    if output="$(run_guard "$root")"; then
+        exit_status=0
+    else
+        exit_status=$?
+    fi
+
+    if ((exit_status == 0)); then
+        report FAIL "$scenario: guard accepted a broken layout"
+        return
+    fi
+    if [[ "$output" != *"$expected"* ]]; then
+        report FAIL "$scenario: rejected for the wrong reason"
+        printf '  expected to contain: %s\n' "$expected" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    if [[ "$output" == *"recombined from "* ]]; then
+        report FAIL "$scenario: guard printed recombination success during failure"
         printf '  actual: %s\n' "$output" >&2
         return
     fi
@@ -785,22 +816,52 @@ expect_rejected "a published entry rewritten and then committed on the local bra
 # --- A repository whose branch and remote were renamed ----------------------
 # A full clone carries the whole of history under any set of names. Resolving
 # only the two expected names reaches the unchecked path with that history
-# sitting right there, and the notice goes to standard output where a passing
-# run hides it. HEAD resolves in any repository that has commits.
+# sitting right there. The parent of the checked-out commit retains an
+# independent record after both names change; the tip cannot do so because it
+# is the commit under test.
 root="$(build_repository baseline_falls_back_to_head)"
 publish "$root" "Publish the record"
+publish "$root" "Keep an independent published ancestor" --allow-empty
 git -C "$root" branch -m main trunk
 expect_accepted_reporting "a renamed branch is still judged against its history" \
-    "$root" "9 entries published in HEAD, 9 compared against their published text"
+    "$root" "9 entries published in HEAD^, 9 compared against their published text"
+
+# There is no independent ancestor in a single-commit repository. Failing
+# closed is the only honest result: HEAD holds the record but cannot prove
+# what the record said before the commit under test.
+root="$(build_repository single_commit_renamed_branch_has_no_independent_baseline)"
+publish "$root" "Publish the record"
+git -C "$root" branch -m main trunk
+expect_rejected "a single-commit renamed branch has no independent baseline" "$root" \
+    "published history is present but no independent baseline ref could be named"
 
 root="$(build_repository dropped_under_a_renamed_branch)"
 publish "$root" "Publish the record"
+publish "$root" "Keep an independent published ancestor" --allow-empty
 git -C "$root" branch -m main trunk
 sed -i '/^## 2026-08-01 -- First August entry$/,+3d' \
     "$root/docs/devlog/2026-08-part1.md"
 refresh_manifest "$root"
 expect_rejected "an entry dropped where neither main nor origin/main resolves" "$root" \
     "a published entry is present nowhere in the record: ## 2026-08-01 -- First August entry"
+
+# A renamed remote and branch leave neither ordinary baseline name. The
+# rewritten entry is committed, making the current tip unsafe as a source;
+# HEAD^ must read the original body and refuse. The helper captures the guard
+# exit directly and also proves no recombination success sentence survives the
+# rejected run.
+root="$(build_repository rewrite_after_branch_and_remote_rename)"
+publish "$root" "Publish the record"
+git -C "$root" remote add origin "$root/no-network"
+git -C "$root" update-ref refs/remotes/origin/main "$(git -C "$root" rev-parse HEAD)"
+git -C "$root" remote rename origin upstream
+git -C "$root" branch -m main trunk
+sed -i '/^## 2026-08-04 -- Fourth August entry$/,+2s/^Body text\.$/Body text, quietly rewritten./' \
+    "$root/docs/devlog/2026-08-part2.md"
+publish "$root" "Rewrite the published entry after renaming"
+expect_rejected_without_recombination_success \
+    "a rewritten entry after branch and remote rename" "$root" \
+    "a published entry has been rewritten under an unchanged heading: ## 2026-08-04 -- Fourth August entry"
 
 # --- History present, no baseline nameable: a failure, not a notice ---------
 # The fallback above covers renaming, because HEAD resolves wherever a commit
@@ -814,7 +875,7 @@ publish "$root" "Publish the record"
 git -C "$root" branch -m main trunk
 git -C "$root" checkout --quiet --orphan unborn
 expect_rejected "history present with no baseline ref nameable" "$root" \
-    "published history is present but no baseline ref could be named"
+    "published history is present but no independent baseline ref could be named"
 
 # --- The manifest is a list of headings, not a record file ------------------
 # Read as a record it presents every published entry as one with no body, so

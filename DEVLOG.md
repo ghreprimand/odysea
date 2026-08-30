@@ -27,6 +27,30 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Archive history is never read from the tip it judges
+
+When the normal published references are unavailable, the archive guard now
+uses `HEAD^`, never `HEAD`, as its history baseline. Renaming a branch or
+remote therefore retains a committed ancestor while excluding the commit under
+test. A renamed single-commit repository has no independent ancestor and fails
+closed instead of treating its own tip as published source text. The
+recombination report now appears only when recombination itself has no missing,
+duplicate, or altered entry. Its self-test commits an altered published body
+after renaming both ordinary references and captures the guard's nonzero exit
+directly.
+
+The parchment-light default accent remains `#956614`. Its binding Accent /
+pressed-surface ratio is 3.0369:1 against a 3.00:1 floor, a 1.23% margin; the
+next lighter source value measures 2.99:1 and fails. The exact source,
+render-site ratio, margin, and failing neighbour are now documented and held
+by a controller test, so a future adjustment cannot quietly trade away or add
+headroom.
+
+Verified: serial release and ASan/UBSan CTest batteries; archive-guard
+self-test with 77 scenarios; formatting; and diff whitespace checks.
+
+---
+
 ## 2026-08-30 -- Lifetime gates outlive the objects they protect
 
 A filesystem operation can continue after its directory model disappears. Its
