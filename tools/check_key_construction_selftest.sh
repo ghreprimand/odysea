@@ -24,6 +24,13 @@ workspace="$(mktemp -d)"
 trap 'rm -rf -- "$workspace"' EXIT
 
 failures=0
+checks_run=0
+
+# How many expectations this file states. A suite that reports no failures
+# after running half its scenarios reads exactly like one that ran them all,
+# and a scenario is one careless edit away from being dropped. Compared at the
+# end against the number actually executed.
+readonly expected_checks=17
 
 report() {
     printf 'key_construction_guard_self_test: %s\n' "$1" >&2
@@ -67,6 +74,7 @@ expect() {
     local result
     local code
     local output
+    checks_run=$((checks_run + 1))
     result="$(run_guard "$root")"
     code="$(printf '%s\n' "$result" | head -n 1)"
     output="$(printf '%s\n' "$result" | tail -n +2)"
@@ -81,7 +89,9 @@ expect() {
 }
 
 # The permitted shape: one normalization inside entryKey, one inside
-# normalizedFilesystemPath.
+# normalizedFilesystemPath, and one entry path spelled as text inside data,
+# which is a permitted place for it. Both rules need a permitted sighting
+# here, because each fails on its own when it finds none anywhere.
 compliant_source() {
     cat <<'SOURCE'
 #include "directory_list_model.hpp"
@@ -93,6 +103,11 @@ QString DirectoryListModel::entryKey(const std::filesystem::path& path) const {
 
 std::filesystem::path DirectoryListModel::normalizedFilesystemPath(const QString& path) const {
     return std::filesystem::path(normalizedPath(path).toStdString()).lexically_normal();
+}
+
+QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
+    const odysea::core::Entry& entry = entries_.at(static_cast<std::size_t>(index.row()));
+    return QString::fromStdString(entry.path.string());
 }
 
 int DirectoryListModel::rowCount(const QModelIndex&) const {
@@ -254,9 +269,104 @@ SOURCE
 track_repository "$root"
 expect "source outside the covered set" "$root" 0 "2 permitted normalizations"
 
+# Scenario 12: the documented bypass, planted where it was demonstrated. A
+# reconciliation member builds its comparison key by hand rather than through
+# the counted builder. Scanned paths are already absolute and normal, so the
+# key is byte-identical and the cost gate reads healthy: this scenario is the
+# whole reason the second rule exists, and it is asserted by the member it
+# names.
+root="$(build_repository hand_spelled_entry_path)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::applyPresentationSettings() {
+    for (const odysea::core::Entry& entry : presented) {
+        presentedKeys.push_back(QString::fromStdString(entry.path.string()));
+    }
+}
+SOURCE
+track_repository "$root"
+expect "hand-spelled entry path in a reconciliation member" "$root" 1 \
+    "spells an entry's path as text in applyPresentationSettings"
+
+# Scenario 13: a second conversion from the same family is rejected too, so
+# the rule cannot be walked past by reaching for native() instead of
+# string(). Without this the alternation could lose every branch but one and
+# the suite would not notice.
+root="$(build_repository entry_path_native)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const QString key = QString::fromStdString(entry.path.native());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path spelled through native()" "$root" 1 "in receiveScanBatch"
+
+# Scenario 14: an entry path spelled as text outside any member definition is
+# rejected with its own reason, so a file-scope helper cannot host it either.
+root="$(build_repository entry_path_free_function)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_thumbnails.cpp"
+#include "directory_list_model.hpp"
+
+namespace {
+QString stableKey(const odysea::core::Entry& entry) {
+    return QString::fromStdString(entry.path.generic_string());
+}
+} // namespace
+SOURCE
+track_repository "$root"
+expect "entry path in a free function" "$root" 1 "outside any member function"
+
+# Scenario 15: sources that hold no permitted entry-path spelling at all fail,
+# and with the reason belonging to that rule rather than the other one. This
+# is what catches the rule going dead because every permitted function was
+# renamed, which a violation count alone reads as perfect compliance.
+root="$(build_repository no_permitted_entry_path)"
+cat <<'SOURCE' >"$root/app/src/directory_list_model.cpp"
+#include "directory_list_model.hpp"
+
+QString DirectoryListModel::entryKey(const std::filesystem::path& path) const {
+    ++entryKeyBuilds_;
+    return QString::fromStdString(path.lexically_normal().string());
+}
+SOURCE
+track_repository "$root"
+expect "no permitted entry-path spelling" "$root" 1 "no permitted entry-path spelling found"
+
+# Scenario 16: a violation of each rule in one tree is reported for both, not
+# for whichever is inspected first. The rules run per file and each returns
+# its own status, so one rule failing must not stop the other being applied.
+root="$(build_repository both_rules)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const QString spelled = QString::fromStdString(entry.path.string());
+    const QString normalized = QString::fromStdString(entry.path.lexically_normal().string());
+    static_cast<void>(spelled);
+    static_cast<void>(normalized);
+}
+SOURCE
+track_repository "$root"
+expect "both rules violated in one member" "$root" 1 "spells an entry's path as text"
+expect "both rules violated in one member, normalization half" "$root" 1 "normalizes a path"
+
+if ((checks_run != expected_checks)); then
+    printf 'key_construction_guard_self_test: ran %d expectations, %d are declared\n' \
+        "$checks_run" "$expected_checks" >&2
+    exit 1
+fi
+
 if ((failures != 0)); then
     printf 'key_construction_guard_self_test: %d scenario(s) failed\n' "$failures" >&2
     exit 1
 fi
 
-echo "key_construction_guard_self_test: all scenarios passed"
+printf 'key_construction_guard_self_test: all %d expectations passed\n' "$checks_run"

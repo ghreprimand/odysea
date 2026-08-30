@@ -131,6 +131,12 @@ add_test(
 add_test(
     NAME key_construction_guard_self_test
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_key_construction_selftest.sh)
+# Turns the self-test above on itself: removes one of the guard's checks at a
+# time and requires the suite to object by name. A self-test whose scenarios
+# all still pass after a check is deleted reports the coverage it used to have.
+add_test(
+    NAME key_construction_mutation_guard
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_key_construction_mutations.sh)
 add_test(
     NAME static_analysis
     COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check_clang_tidy.sh ${CMAKE_BINARY_DIR})

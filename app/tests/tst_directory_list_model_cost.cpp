@@ -29,25 +29,32 @@ class DirectoryListModelCostTest : public QObject {
     Q_OBJECT
 
     /// One load-and-refresh cycle's measurements.
+    ///
+    /// Both clocks are kept for each half. The processor figure is what the
+    /// budget is asserted against; the wall figure is reported beside it, so
+    /// a failure arrives with both readings and the difference between them
+    /// is visible rather than inferred.
     struct LoadMeasurement {
         qint64 firstScanMilliseconds = 0;
         qint64 refreshMilliseconds = 0;
+        qint64 firstScanProcessorMicroseconds = 0;
+        qint64 refreshProcessorMicroseconds = 0;
         quint64 keyBuilds = 0;
+
+        /// Processor time over both halves, or -1 when either could not be
+        /// read. A clock that stopped answering has to stay distinguishable
+        /// from one reporting no work, because the two would otherwise
+        /// satisfy the same ceiling.
+        [[nodiscard]] qint64 processorMicroseconds() const noexcept {
+            if (firstScanProcessorMicroseconds < 0 || refreshProcessorMicroseconds < 0) {
+                return -1;
+            }
+            return firstScanProcessorMicroseconds + refreshProcessorMicroseconds;
+        }
     };
 
     static QString measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
                                         LoadMeasurement& measurement);
-    // The cheapest of several loads of the same size. Reported wall clock is
-    // the work plus whatever else the machine was doing, and that addition is
-    // one-sided, so the smallest reading is the one closest to the cost being
-    // bounded.
-    static QString measureCheapestDirectoryLoad(int entryCount, SettleBudget settleBudget,
-                                                int attempts, LoadMeasurement& measurement);
-    // How long this process needs to build the given number of row keys.
-    // Machine speed, compiler, allocator, and sanitizer instrumentation all
-    // apply to this the same way they apply to a load, so a load measured
-    // against it is a cost in keys rather than in milliseconds.
-    static qint64 timeKeyConstructions(quint64 count);
 
   private slots:
     void largeDirectoryLoadStaysWithinBudget();
@@ -56,26 +63,6 @@ class DirectoryListModelCostTest : public QObject {
     void heldEntriesAppearOnceTheyHaveWaitedAsLongAsTheScanHasRun();
     void publishingOnTimeAloneStaysLogarithmicInScanDuration();
 };
-qint64 DirectoryListModelCostTest::timeKeyConstructions(quint64 count) {
-    // The same formula the model's key builder uses, spelled out here rather
-    // than called through the model so that timing it cannot itself disturb
-    // the model's counter. The paths are synthetic and never touched on disk:
-    // normalizing a path is a string operation, and reaching the filesystem
-    // would measure the disk instead of the work.
-    const std::string base = "/odysea/calibration/entry-";
-    QElapsedTimer timer;
-    timer.start();
-    std::size_t consumed = 0;
-    for (quint64 index = 0; index < count; ++index) {
-        const std::string spelled = base + std::to_string(index);
-        const QString key = QString::fromStdString(fs::path(spelled).lexically_normal().string());
-        consumed += static_cast<std::size_t>(key.size());
-    }
-    const qint64 elapsed = timer.elapsed();
-    // Consumed so the loop cannot be optimized away, which would time
-    // nothing and make every load look arbitrarily expensive against it.
-    return consumed == 0 ? -1 : elapsed;
-}
 QString DirectoryListModelCostTest::measureDirectoryLoad(int entryCount, SettleBudget settleBudget,
                                                          LoadMeasurement& measurement) {
     QTemporaryDir fixture;
@@ -89,12 +76,15 @@ QString DirectoryListModelCostTest::measureDirectoryLoad(int entryCount, SettleB
 
     DirectoryListModel model;
     QElapsedTimer timer;
+    ProcessCpuTimer processor;
     timer.start();
+    processor.start();
     model.setPath(fixture.path());
     if (!waitForIdleWithin(model, settleBudget.milliseconds)) {
         return QStringLiteral("first scan of %1 entries did not settle").arg(entryCount);
     }
     measurement.firstScanMilliseconds = timer.elapsed();
+    measurement.firstScanProcessorMicroseconds = processor.elapsedMicroseconds();
     if (model.rowCount() != entryCount) {
         return QStringLiteral("first scan presented %1 of %2 entries")
             .arg(model.rowCount())
@@ -102,11 +92,13 @@ QString DirectoryListModelCostTest::measureDirectoryLoad(int entryCount, SettleB
     }
 
     timer.restart();
+    processor.restart();
     model.refresh();
     if (!waitForIdleWithin(model, settleBudget.milliseconds)) {
         return QStringLiteral("refresh of %1 entries did not settle").arg(entryCount);
     }
     measurement.refreshMilliseconds = timer.elapsed();
+    measurement.refreshProcessorMicroseconds = processor.elapsedMicroseconds();
     if (model.rowCount() != entryCount) {
         return QStringLiteral("refresh presented %1 of %2 entries")
             .arg(model.rowCount())
@@ -118,44 +110,6 @@ QString DirectoryListModelCostTest::measureDirectoryLoad(int entryCount, SettleB
         return mismatch;
     }
     measurement.keyBuilds = model.entryKeyBuilds_;
-    return {};
-}
-QString DirectoryListModelCostTest::measureCheapestDirectoryLoad(int entryCount,
-                                                                 SettleBudget settleBudget,
-                                                                 int attempts,
-                                                                 LoadMeasurement& measurement) {
-    // A single reading of a load this size is not stable enough to divide by.
-    // Elapsed time is the work plus every delay the machine imposed on it,
-    // and delay only ever adds, so repeated readings scatter upwards from the
-    // cost rather than around it. Eight consecutive release runs of the ratio
-    // below read 2.04 to 2.31 seven times and 3.36 once, against a ceiling of
-    // 2.80 that cannot be raised much without reaching the readings a change
-    // of exponent produces. Taking the cheapest attempt removes the upward
-    // scatter without loosening the bound, which is the property that makes
-    // the ratio worth asserting at all.
-    //
-    // Whole measurements are kept rather than component minima: the load cost
-    // is a quotient of a time and a key count, and mixing the numerator of
-    // one attempt with the denominator of another would compare work that was
-    // never done together. The key count varies between attempts by design,
-    // because publication now depends on how long the scan has been running.
-    if (attempts < 1) {
-        return QStringLiteral("a load must be attempted at least once");
-    }
-    LoadMeasurement cheapest;
-    for (int attempt = 0; attempt < attempts; ++attempt) {
-        LoadMeasurement attempted;
-        const QString failure = measureDirectoryLoad(entryCount, settleBudget, attempted);
-        if (!failure.isEmpty()) {
-            return failure;
-        }
-        const qint64 elapsed = attempted.firstScanMilliseconds + attempted.refreshMilliseconds;
-        const qint64 best = cheapest.firstScanMilliseconds + cheapest.refreshMilliseconds;
-        if (attempt == 0 || elapsed < best) {
-            cheapest = attempted;
-        }
-    }
-    measurement = cheapest;
     return {};
 }
 void DirectoryListModelCostTest::filteringCostsTheSameScatteredAsContiguous() {
@@ -275,23 +229,55 @@ void DirectoryListModelCostTest::largeDirectoryLoadStaysWithinBudget() {
     // entries, which is why a load that grew with the square of the directory
     // size went unnoticed.
     //
-    // Five bounds, because no one of them holds the shape on its own, and
-    // because the first three bound a PROXY. Key construction is what the
-    // model's cost is made of, but only while the model is the only thing
-    // spending time. Scanned paths are already absolute and normal, so
-    // `QString::fromStdString(entry.path.string())` produces a byte-identical
-    // key without normalizing anything, and a linear rescan restored that way
-    // was measured at 12.9 times the healthy load with the key count
-    // unchanged to the digit and every count-based bound still green. The
-    // last two bounds are there because of that, and neither depends on the
-    // model calling entryKey at all.
+    // The shape is held by a count, and the size of the job by a budget of
+    // processor time. Neither is a reading of how long the case took, and
+    // that is the point: a ratio of wall-clock readings was asserted here
+    // until it failed under a parallel battery at a growth of 5.63 while the
+    // key count in the same run read 2.03, and the measurements that followed
+    // said the ratio had never been a property of the model.
     //
-    // The count of key constructions carries the algorithmic shape. It is
-    // machine-independent, and each construction normalizes a path and
-    // allocates a string, which is what the cost is made of. Measured over a
-    // load and a refresh it is 25.4 per entry at 4,000 and 25.9 at 8,000, and
-    // it stays within a percent of 26 out to 128,000. That flat rate is the
-    // property worth holding, so it is bounded directly.
+    // WHAT WAS MEASURED, because a bound removed on an argument is a bound
+    // removed on nothing. 1,092 loads were taken, 546 at each size, in both
+    // builds and at four levels of company: alone, beside three other copies
+    // of this case, and beside thirty-one of them on a thirty-two-way
+    // machine, then alone and beside five in the instrumented build.
+    //
+    //   - The key count read 60,768 at 4,000 entries and 123,456 at 8,000 in
+    //     every one of those loads, including the instrumented build, which
+    //     is twenty-two times slower. Not a spread: the same two figures,
+    //     546 times each.
+    //   - Wall-clock growth read 1.90 to 2.26 alone and beside three, and
+    //     1.40 to 4.05 beside thirty-one.
+    //   - Processor-time growth, which removes the intervals the machine
+    //     spent elsewhere, read 1.79 to 2.25 beside three and 1.67 to 3.60
+    //     beside thirty-one. Better than the wall clock and still past the
+    //     2.80 ceiling, because a shared machine really does become
+    //     superlinear in directory size: the larger load has the larger
+    //     working set and pays more of the contention, in cache, in
+    //     allocation, and in the kernel.
+    //
+    // So a growth ratio of any clock mixes two exponents — the model's and
+    // the machine's — and cannot say which one moved. Taking the cheapest of
+    // several attempts, which is what this case used to do, does not survive
+    // that: it lowers both readings together and leaves the ratio between
+    // them where it was. The clock ratios are gone rather than widened, and
+    // the attempts with them, because a third of the readings were being
+    // discarded to stabilize a quantity that was never stable.
+    //
+    // WHAT THE COUNT DOES NOT COVER, stated because the removed bounds
+    // covered part of it. Scanned paths are already absolute and normal, so
+    // spelling a key by hand produces a byte-identical key that goes
+    // uncounted, and a linear rescan restored that way was once measured at
+    // 12.9 times the healthy load with the key count unchanged to the digit.
+    // That hole is closed where it belongs, by key_construction_guard, which
+    // holds both spellings of a key inside the functions allowed to build
+    // one. A clock was standing in for a rule about the source.
+    //
+    // The count of key constructions carries the algorithmic shape. Each
+    // construction normalizes a path and allocates a string, which is what
+    // the cost is made of. Measured over a load and a refresh it is 15.2 per
+    // entry at 4,000 and 15.4 at 8,000, and that flat rate is the property
+    // worth holding, so it is bounded directly.
     //
     // The ratio between the two sizes bounds the exponent rather than the
     // rate. A growth ratio was useless while both the healthy and the
@@ -299,45 +285,26 @@ void DirectoryListModelCostTest::largeDirectoryLoadStaysWithinBudget() {
     // It discriminates now precisely because publishing on a growing interval
     // moved the healthy state to linear: doubling the entry count doubles the
     // count here and quadruples it if the interval stops growing. Measured
-    // 2.04 healthy against 3.74 for a fixed publishing interval, 3.66 for a
+    // 2.03 healthy against 3.74 for a fixed publishing interval, 3.66 for a
     // linear rescan per delivered entry.
     //
-    // Wall clock catches the catastrophic case and nothing finer: it moves
-    // with machine load, and the sanitizer build carries roughly twenty times
-    // the release cost, so any bound loose enough to be safe there admits a
-    // real regression here.
+    // The ceiling keeps its distance from the exact reading rather than being
+    // drawn tight against it. Publication is decided by the size interval at
+    // these directory sizes, and the clock rule never fires, which is why the
+    // count is exact; a stall long enough to fire it would add one full
+    // keying of the listing, and the headroom is there to absorb that without
+    // reaching the 3.74 a lost interval produces.
     //
-    // The fourth bound denominates the load's cost in the operation it is
-    // made of, by timing the same process building the number of keys the
-    // load reports having built. The question it asks is whether the reported
-    // count explains the time spent, so work that is uncounted because it was
-    // spelled differently inflates the numerator while leaving the
-    // denominator alone. It is machine-independent for the same reason a
-    // ratio is, and it survives instrumentation because both halves pay it,
-    // though not equally: measured 4.04 to 4.17 release and 5.47 to 5.52
-    // under the sanitizer, against 50.2 and 98.6 for the restored rescan. The
-    // ceiling sits above the worst healthy reading by rather more than the
-    // gap between the two builds, and still a factor of four below the
-    // cheapest defective one.
-    //
-    // The fifth bounds how the elapsed load grows when the directory doubles,
-    // which catches a change of exponent without reference to any counter:
-    // 1.94 to 2.11 healthy and 3.82 to 3.87 for the same rescan. It is kept
-    // alongside the fourth because they fail differently — this one sees a
-    // shape a small constant would hide, and that one sees a constant this
-    // would not.
-    //
-    // Both timed bounds read the cheapest of several loads at each size, for
-    // the reason given where the attempts are run: the healthy and defective
-    // readings are close enough together that a single reading's upward
-    // scatter reaches the ceiling on its own.
-    constexpr int loadAttempts = 3;
+    // The budget is processor time summed over the threads the load uses,
+    // not elapsed time. It bounds how large the job is, and a run that was
+    // descheduled while the rest of a battery ran did not do more work. Read
+    // 109 ms alone and 271 ms beside thirty-one copies, against a 3,000 ms
+    // release ceiling; 2.35 s instrumented against 20,000 ms. Elapsed time is
+    // reported beside it and is used for one thing only, the settle timeout,
+    // which sits four times above the budget again.
     constexpr quint64 keyBuildsPerEntryCeiling = 60;
     constexpr double keyBuildGrowthCeiling = 2.8;
-    constexpr double loadCostCeiling = 12.0;
-    constexpr double loadCostFloor = 0.5;
-    constexpr double elapsedGrowthCeiling = 2.8;
-    constexpr double elapsedGrowthFloor = 1.2;
+    constexpr double keyBuildGrowthFloor = 1.5;
     const qint64 budgetMilliseconds = timingBudget(3000, 20000);
     constexpr int smallerEntryCount = 4000;
     constexpr int largerEntryCount = 2 * smallerEntryCount;
@@ -345,46 +312,35 @@ void DirectoryListModelCostTest::largeDirectoryLoadStaysWithinBudget() {
     LoadMeasurement smaller;
     LoadMeasurement larger;
     const SettleBudget settleBudget{.milliseconds = 4 * budgetMilliseconds};
-    QCOMPARE(measureCheapestDirectoryLoad(smallerEntryCount, settleBudget, loadAttempts, smaller),
-             QString{});
-    QCOMPARE(measureCheapestDirectoryLoad(largerEntryCount, settleBudget, loadAttempts, larger),
-             QString{});
+    QCOMPARE(measureDirectoryLoad(smallerEntryCount, settleBudget, smaller), QString{});
+    QCOMPARE(measureDirectoryLoad(largerEntryCount, settleBudget, larger), QString{});
 
     const double growth = static_cast<double>(larger.keyBuilds) /
                           static_cast<double>(std::max<quint64>(smaller.keyBuilds, 1));
     const quint64 keyBuildCeiling =
         keyBuildsPerEntryCeiling * static_cast<quint64>(largerEntryCount);
 
+    const qint64 budgetMicroseconds = budgetMilliseconds * 1000;
+
     // Reported unconditionally so a failure arrives with the measurements that
-    // produced it instead of only the bounds it missed.
-    qInfo("%d entries, cheapest of %d loads: scan %lld ms, refresh %lld ms, %llu keys built",
-          smallerEntryCount, loadAttempts, static_cast<long long>(smaller.firstScanMilliseconds),
+    // produced it instead of only the bounds it missed. Both clocks appear,
+    // so a reader can see for themselves how far apart they ran.
+    qInfo("%d entries: scan %lld ms, refresh %lld ms, %lld us of processor time, %llu keys built",
+          smallerEntryCount, static_cast<long long>(smaller.firstScanMilliseconds),
           static_cast<long long>(smaller.refreshMilliseconds),
+          static_cast<long long>(smaller.processorMicroseconds()),
           static_cast<unsigned long long>(smaller.keyBuilds));
-    qInfo("%d entries, cheapest of %d loads: scan %lld ms, refresh %lld ms, %llu keys built, "
+    qInfo("%d entries: scan %lld ms, refresh %lld ms, %lld us of processor time, %llu keys built, "
           "ceiling %llu",
-          largerEntryCount, loadAttempts, static_cast<long long>(larger.firstScanMilliseconds),
+          largerEntryCount, static_cast<long long>(larger.firstScanMilliseconds),
           static_cast<long long>(larger.refreshMilliseconds),
+          static_cast<long long>(larger.processorMicroseconds()),
           static_cast<unsigned long long>(larger.keyBuilds),
           static_cast<unsigned long long>(keyBuildCeiling));
-    const qint64 largerElapsed = larger.firstScanMilliseconds + larger.refreshMilliseconds;
-    const qint64 smallerElapsed = smaller.firstScanMilliseconds + smaller.refreshMilliseconds;
-    const qint64 calibrationMilliseconds = timeKeyConstructions(larger.keyBuilds);
-    const double loadCost = static_cast<double>(largerElapsed) /
-                            static_cast<double>(std::max<qint64>(calibrationMilliseconds, 1));
-    const double elapsedGrowth = static_cast<double>(largerElapsed) /
-                                 static_cast<double>(std::max<qint64>(smallerElapsed, 1));
-
-    qInfo("%llu key constructions take %lld ms in this process; the load took %lld ms, %.2f times "
-          "as long, ceiling %.2f",
-          static_cast<unsigned long long>(larger.keyBuilds),
-          static_cast<long long>(calibrationMilliseconds), static_cast<long long>(largerElapsed),
-          loadCost, loadCostCeiling);
-    qInfo("elapsed load growth %.2f across a doubled directory, ceiling %.2f", elapsedGrowth,
-          elapsedGrowthCeiling);
-    qInfo("key construction growth %.2f across a doubled directory, ceiling %.2f, budget %lld ms "
-          "for %s build",
-          growth, keyBuildGrowthCeiling, static_cast<long long>(budgetMilliseconds),
+    qInfo("key construction growth %.2f across a doubled directory, floor %.2f, ceiling %.2f; "
+          "processor budget %lld us for %s build",
+          growth, keyBuildGrowthFloor, keyBuildGrowthCeiling,
+          static_cast<long long>(budgetMicroseconds),
           runningUnderAddressSanitizer() ? "an instrumented" : "a release");
 
     // Bounded below as well as above, for the same reason the index-rebuild
@@ -395,23 +351,21 @@ void DirectoryListModelCostTest::largeDirectoryLoadStaysWithinBudget() {
     QVERIFY(larger.keyBuilds > static_cast<quint64>(largerEntryCount));
     QVERIFY(smaller.keyBuilds > static_cast<quint64>(smallerEntryCount));
     QVERIFY(larger.keyBuilds < keyBuildCeiling);
-    QVERIFY(growth < keyBuildGrowthCeiling);
-    QVERIFY(smaller.firstScanMilliseconds < budgetMilliseconds);
-    QVERIFY(smaller.refreshMilliseconds < budgetMilliseconds);
-    QVERIFY(larger.firstScanMilliseconds < budgetMilliseconds);
-    QVERIFY(larger.refreshMilliseconds < budgetMilliseconds);
 
-    // The two cost bounds, both bounded on each side. A floor matters more
-    // here than anywhere else in this file: the ratios are quotients of two
-    // measurements, and a numerator that stopped being measured reads zero
-    // and satisfies any ceiling.
-    QVERIFY(calibrationMilliseconds > 0);
-    QVERIFY(largerElapsed > 0);
-    QVERIFY(smallerElapsed > 0);
-    QVERIFY(loadCost > loadCostFloor);
-    QVERIFY(loadCost < loadCostCeiling);
-    QVERIFY(elapsedGrowth > elapsedGrowthFloor);
-    QVERIFY(elapsedGrowth < elapsedGrowthCeiling);
+    // The growth is bounded on both sides. It is a quotient of two counts,
+    // and a denominator that grew or a numerator that stopped being counted
+    // both satisfy a ceiling on their own; a load of twice the entries cannot
+    // honestly cost less than half again as many keys as the smaller one.
+    QVERIFY(growth > keyBuildGrowthFloor);
+    QVERIFY(growth < keyBuildGrowthCeiling);
+
+    // The processor budget, bounded below as well, because a clock that
+    // stopped answering reports a negative interval and would otherwise pass
+    // every ceiling here.
+    QVERIFY(smaller.processorMicroseconds() > 0);
+    QVERIFY(larger.processorMicroseconds() > 0);
+    QVERIFY(smaller.processorMicroseconds() < budgetMicroseconds);
+    QVERIFY(larger.processorMicroseconds() < budgetMicroseconds);
 }
 void DirectoryListModelCostTest::watchDeliveryCostsOneLookupPerDeliveredName() {
     // A watch burst used to search the whole scanned listing once per

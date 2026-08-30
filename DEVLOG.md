@@ -26,6 +26,77 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- A cost bound that measured the machine
+
+The large-directory gate held five bounds on what acquiring a listing may
+cost. Two of them were ratios of clock readings: how long the load took
+against how long the same process needs to build the keys it reported
+building, and how the elapsed load grew when the directory doubled. The
+second failed under a parallel battery at a growth of 5.63 against a ceiling
+of 2.80, while the key count in the same run read 2.03. The scan had behaved;
+only the wall clock had moved.
+
+Rather than widen the ceiling, the quantity was measured. Both directory sizes
+were loaded 1,092 times, 546 at each size, in the release and instrumented
+builds and at four levels of company: alone, beside three other copies of the
+case, beside thirty-one of them on a thirty-two-way machine, and beside five
+in the instrumented build.
+
+- The key count read 60,768 at 4,000 entries and 123,456 at 8,000 in every one
+  of those loads. The same two figures, 546 times each, in a build that is
+  twenty-two times slower as well as in the fast one.
+- Wall-clock growth read 1.90 to 2.26 alone and beside three, and 1.40 to 4.05
+  beside thirty-one.
+- Processor-time growth, which discounts the intervals the machine spent
+  elsewhere, read 1.67 to 3.60 beside thirty-one: better than the wall clock
+  and still past the ceiling.
+
+A shared machine becomes superlinear in directory size on its own, because the
+larger load has the larger working set and pays more of the contention. A
+growth ratio of any clock therefore mixes the model's exponent with the
+machine's and cannot say which one moved. Taking the cheapest of several
+attempts, which the case did, lowers both readings together and leaves the
+ratio between them where it was.
+
+Both clock ratios are gone, and the three attempts per size with them. What
+remains is exact: the count of key constructions per entry and its growth
+across a doubled directory, plus a budget of processor time rather than
+elapsed time, so the entry's result no longer depends on how many tests run
+beside it. Elapsed time is still reported next to every figure and is used for
+one thing, the settle timeout, which sits four times above the budget.
+
+The removed bounds covered something the count does not, and that is closed
+where it belongs. Scanned paths are already absolute and normal, so a key
+spelled by hand is byte-identical to the counted one and goes uncounted; a
+linear rescan restored that way was once measured at 12.9 times the healthy
+load with the key count unchanged. `key_construction_guard` held one spelling
+of a key inside the functions allowed to build one, and now holds both: an
+entry's path converted to text may appear only in the three members that hand
+a path to the interface, none of which is a reconciliation site. Planted in
+the member where the original was demonstrated, that defect is now rejected by
+name, and the cost case still passes it -- which is the measurement that says
+the rule, not the clock, is what covers it.
+
+A third gate turns the guard's self-test on itself. `key_construction_mutation_guard`
+removes one of the guard's checks at a time and requires the suite to object by
+name: seven mutations, seven caught, no survivors, in under three seconds. One
+of them deletes a scenario from the self-test, which the new expectation floor
+catches; without that floor the other six could all be caught by a suite that
+had quietly stopped running most of its cases.
+
+Verified: 6 defects planted in the cost case and its subjects, 5 caught and 1
+deliberately not, that one caught by the guard instead. A publishing interval
+that stops growing with the listing is caught twice over -- by the per-entry
+rate ceiling first, and, with that ceiling lifted to isolate it, by the growth
+bound at 3.69. Release and ASan/UBSan batteries pass with the reconciling
+runner; formatting, scoped static analysis, and the public-repository guard are
+green. Known gap: a comparison written against filesystem paths directly builds
+no string and is invisible to both spelling rules and to the counter; what
+holds that case is the shape of the update, where a search per delivered entry
+is a visible change to the structure rather than a spelling inside it.
+
+---
+
 ## 2026-08-30 -- Give the live development record room before the ceiling
 
 The live development record was again approaching its tracked-file line

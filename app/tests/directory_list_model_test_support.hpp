@@ -19,6 +19,7 @@
 #include <QTest>
 #include <QTimer>
 
+#include <ctime>
 #include <dlfcn.h>
 #include <filesystem>
 #include <fstream>
@@ -55,6 +56,47 @@ inline bool runningUnderAddressSanitizer() noexcept {
 inline qint64 timingBudget(qint64 releaseMilliseconds, qint64 instrumentedMilliseconds) noexcept {
     return runningUnderAddressSanitizer() ? instrumentedMilliseconds : releaseMilliseconds;
 }
+
+// Processor time this process has consumed, summed over every thread it has
+// running, in microseconds.
+//
+// Wall clock answers "how long did that take", which is the work plus every
+// interval the machine spent on something else. This answers "how much work
+// was that", and a test that asserts a cost wants the second question: a run
+// that was descheduled while another test ran did not become more expensive,
+// it became later. Threads are summed because the work is spread over them —
+// entries are produced on a scanner thread and reconciled on the main one —
+// so a per-thread clock would bound half of a load.
+//
+// A sample that could not be taken reports a negative reading rather than
+// zero, and an interval computed from one is negative in turn, so the floors
+// every cost bound carries reject it instead of dividing by it.
+class ProcessCpuTimer {
+  public:
+    void start() noexcept { started_ = sample(); }
+
+    [[nodiscard]] qint64 elapsedMicroseconds() const noexcept {
+        const qint64 now = sample();
+        if (now < 0 || started_ < 0) {
+            return -1;
+        }
+        return now - started_;
+    }
+
+    void restart() noexcept { start(); }
+
+  private:
+    static qint64 sample() noexcept {
+        timespec spec{};
+        if (::clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &spec) != 0) {
+            return -1;
+        }
+        return (static_cast<qint64>(spec.tv_sec) * 1000000) +
+               (static_cast<qint64>(spec.tv_nsec) / 1000);
+    }
+
+    qint64 started_ = -1;
+};
 
 namespace fs = std::filesystem;
 

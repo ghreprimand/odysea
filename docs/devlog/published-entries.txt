@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-30 -- A cost bound that measured the machine
 ## 2026-08-30 -- Give the live development record room before the ceiling
 ## 2026-08-29 -- A gate that has finished is not one that cannot be identified
 ## 2026-08-29 -- Identity and palette claims match their measured contracts
