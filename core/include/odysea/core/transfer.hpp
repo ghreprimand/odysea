@@ -15,8 +15,17 @@
 // installed, source removal is deliberately not interruptible; if that removal
 // fails, the operation reports failure while the complete destination and any
 // source remainder stay on disk. The completed-operations-only journal records
-// neither a cancellation nor this failed move. A pause is not an ending — it
-// holds the working entry and the descriptors open and waits.
+// neither a cancellation nor this failed move.
+//
+// A replacement failure has a separate absence case. If installing the new
+// entry fails and restoring the former occupant also fails, the destination
+// name is absent and its former occupant remains beside it under a Replaced
+// working name, recognizable with classify_working_entry(). If recovery also
+// cannot return a relocated source, the source name is absent and that entry
+// remains under a Prepared working name. These entries may be the only copies;
+// recovery is through their working names, never by deleting them. A pause is
+// not an ending — it holds the working entry and the descriptors open and
+// waits.
 #pragma once
 
 #include "odysea/core/file_operations.hpp"

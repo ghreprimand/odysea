@@ -27,6 +27,43 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Lifetime gates outlive the objects they protect
+
+A filesystem operation can continue after its directory model disappears. Its
+progress observer used to consult an atomic flag stored inside that model
+before queueing a report. The flag described the right policy but had the wrong
+lifetime: once destruction freed the model, even reading whether it still
+accepted reports was already an invalid access.
+
+Operation progress now crosses a shared delivery gate that owns no model. The
+gate protects a non-owning receiver while a report checks and queues, and model
+destruction clears that receiver under the same lock before requesting
+cancellation. Destruction therefore does not wait for filesystem I/O, while a
+worker that resumes afterwards sees no receiver and touches no model state.
+Queued deliveries consult the same gate again on the model thread.
+
+The destruction case now holds the first progress report at a deliberate
+rendezvous, destroys the model, and only then lets the report continue. This
+makes the lifetime boundary an observed event rather than a race. Restoring the
+freed-member read made that named case report a heap use after free in three of
+three AddressSanitizer runs; the shared gate passed five of five runs before the
+full batteries.
+
+The transfer contract also distinguishes two failure shapes that need different
+recovery. A crossing move can fail after installing a complete destination and
+leave a source remainder beside it. Separately, failed replacement recovery can
+leave an expected name absent: the former destination occupant remains under a
+Replaced working name, and a source that could not be unwound remains under a
+Prepared working name. Both are recognized through the public working-entry
+classifier and recovered through those names; neither is debris to delete.
+
+Release and AddressSanitizer builds and tests pass, as do scoped static analysis,
+formatting, file-length, public-repository, development-record, and
+key-construction gates. The compositor-only cases retain their declared skips;
+real-compositor behavior was not measured.
+
+---
+
 ## 2026-08-30 -- The formatter could write a row-key alias the guard admitted
 
 The key-construction guard keeps row-key construction to a single counted

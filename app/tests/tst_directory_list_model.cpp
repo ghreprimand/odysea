@@ -16,6 +16,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QPersistentModelIndex>
+#include <QSemaphore>
 #include <QTemporaryDir>
 #include <QThreadPool>
 
@@ -1127,12 +1128,22 @@ void DirectoryListModelTest::destructionDropsQueuedWorkerCallbacks() {
     const int sourceRow = rowForName(*model, QStringLiteral("queued-0"));
     QVERIFY(sourceRow >= 0);
     model->selectRow(sourceRow, Qt::NoModifier);
+    QSemaphore deliveryEntered;
+    QSemaphore releaseDelivery;
+    std::atomic_bool firstDelivery{true};
+    model->operationProgressBeforeDelivery_ = [&] {
+        if (firstDelivery.exchange(false)) {
+            deliveryEntered.release();
+            releaseDelivery.acquire();
+        }
+    };
     model->performCopy(QString::fromStdString(destination.string()),
                        DirectoryListModel::ConflictFail);
+    QVERIFY(deliveryEntered.tryAcquire(1, 5000));
     model.reset();
+    releaseDelivery.release();
     QVERIFY(QThreadPool::globalInstance()->waitForDone(5000));
     QCoreApplication::processEvents();
-    QVERIFY(true);
 }
 
 void DirectoryListModelTest::aChangeMadeWhileTheDirectoryIsReadReachesTheListing() {

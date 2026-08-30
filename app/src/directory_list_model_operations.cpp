@@ -365,19 +365,29 @@ void DirectoryListModel::startOperation(FilesystemOperationRequest request) {
         request.kind == FilesystemOperationKind::Move) {
         operationControl_ = std::make_shared<odysea::core::TransferControl>();
         request.control = operationControl_;
-        request.onProgress = [this](const odysea::core::TransferProgress& progress) {
-            // Reports arrive on the worker thread. They are marshalled onto
-            // this object's thread through the same gate the scan and watch
-            // deliveries use, so a report cannot reach a model that has
-            // stopped accepting them.
-            if (!deliverCallbacks_.load(std::memory_order_acquire)) {
+        const std::shared_ptr<OperationCallbackGate> callbackGate = operationCallbackGate_;
+        const std::function<void()> beforeDelivery = operationProgressBeforeDelivery_;
+        request.onProgress = [callbackGate,
+                              beforeDelivery](const odysea::core::TransferProgress& progress) {
+            if (beforeDelivery) {
+                beforeDelivery();
+            }
+
+            // Reports arrive on the worker thread. Holding the shared gate
+            // across receiver lookup and queueing makes detachment atomic with
+            // respect to this operation: once destruction clears the receiver,
+            // no worker can read or queue against the model again.
+            const std::scoped_lock guard(callbackGate->mutex);
+            DirectoryListModel* const receiver = callbackGate->receiver;
+            if (receiver == nullptr) {
                 return;
             }
             QMetaObject::invokeMethod(
-                this,
-                [this, progress] {
-                    if (deliverCallbacks_.load(std::memory_order_acquire)) {
-                        applyOperationProgress(progress);
+                receiver,
+                [callbackGate, progress] {
+                    const std::scoped_lock deliveryGuard(callbackGate->mutex);
+                    if (callbackGate->receiver != nullptr) {
+                        callbackGate->receiver->applyOperationProgress(progress);
                     }
                 },
                 Qt::QueuedConnection);

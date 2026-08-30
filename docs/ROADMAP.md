@@ -68,9 +68,15 @@ graphical shell grows around it.
       cancellation happens before installation, leaves the destination
       unchanged, and records nothing. A crossing move whose complete install
       is followed by a source-removal failure can leave a source remainder
-      beside the complete destination; failed moves are not journaled. Hold,
-      resume, and stop are declared once and reach the keyboard, the canvas
-      menu, the command palette, and the status strip.
+      beside the complete destination; failed moves are not journaled. A
+      replacement failure has a separate absence shape: if both install and
+      occupant restoration fail, the destination name is absent and its former
+      occupant remains beside it under a Replaced working name. If a relocated
+      source also cannot be unwound, its source name is absent and it remains
+      under a Prepared working name. Both are recognized by
+      `classify_working_entry()` and recovered through the working name, never
+      deleted as debris. Hold, resume, and stop are declared once and reach the
+      keyboard, the canvas menu, the command palette, and the status strip.
 - [x] Quick preview overlay for raster images, plain text, and Markdown
       documents. `Ctrl+Space` and the toolbar action summon it; Escape, the
       close control, and a press outside dismiss it and restore focus to the

@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -246,6 +247,15 @@ class DirectoryListModel : public QAbstractListModel {
         int activeTab = 0;
     };
 
+    // A worker keeps this gate alive while it may report operation progress.
+    // The receiver is non-owning and is read or cleared only while holding
+    // the mutex, so destruction can detach without waiting for filesystem I/O
+    // and a worker can never queue against a freed QObject.
+    struct OperationCallbackGate {
+        std::mutex mutex;
+        DirectoryListModel* receiver = nullptr;
+    };
+
     [[nodiscard]] TabState& currentTab();
     [[nodiscard]] const TabState& currentTab() const;
     [[nodiscard]] PaneState& currentPane();
@@ -420,6 +430,11 @@ class DirectoryListModel : public QAbstractListModel {
     std::shared_ptr<odysea::core::OperationJournal> operationJournal_ =
         std::make_shared<odysea::core::OperationJournal>();
     QFutureWatcher<FilesystemOperationResult> operationWatcher_;
+    std::shared_ptr<OperationCallbackGate> operationCallbackGate_ =
+        std::make_shared<OperationCallbackGate>();
+    // A deterministic test rendezvous copied into a worker before it starts.
+    // Empty in production, where it costs one empty-function check per report.
+    std::function<void()> operationProgressBeforeDelivery_;
     ThumbnailImageProvider* thumbnailProvider_ = nullptr;
     EntryLauncher* entryLauncher_ = nullptr;
     std::unique_ptr<EntryLauncher> ownedEntryLauncher_;

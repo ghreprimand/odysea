@@ -30,6 +30,7 @@ DirectoryListModel::DirectoryListModel(QObject* parent)
     : QAbstractListModel(parent),
       watchService_([this](DirectoryWatchUpdate update) { postWatchUpdate(std::move(update)); }),
       thumbnailOwnerId_(nextThumbnailOwnerId()) {
+    operationCallbackGate_->receiver = this;
     scanElapsedMilliseconds_ = [this] { return scanClock_.isValid() ? scanClock_.elapsed() : 0; };
     ownedEntryLauncher_ = std::make_unique<DesktopEntryLauncher>();
     entryLauncher_ = ownedEntryLauncher_.get();
@@ -46,6 +47,13 @@ DirectoryListModel::DirectoryListModel(EntryLauncher& entryLauncher, QObject* pa
 }
 
 DirectoryListModel::~DirectoryListModel() {
+    {
+        const std::scoped_lock guard(operationCallbackGate_->mutex);
+        operationCallbackGate_->receiver = nullptr;
+    }
+    if (operationControl_) {
+        operationControl_->request_cancel();
+    }
     deliverCallbacks_.store(false, std::memory_order_release);
     disconnect(&operationWatcher_, nullptr, this, nullptr);
     scanner_.cancel();

@@ -7,6 +7,7 @@
 # list in one change is the published branch's history, read in full so
 # that no merge can retire an entry by simplification. Append a line
 # here in the same commit that publishes the entry.
+## 2026-08-30 -- Lifetime gates outlive the objects they protect
 ## 2026-08-30 -- The formatter could write a row-key alias the guard admitted
 ## 2026-08-30 -- Renaming many entries is two jobs, and only one of them writes
 ## 2026-08-30 -- Quick preview owns its work until dismissal completes

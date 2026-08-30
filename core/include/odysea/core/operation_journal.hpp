@@ -240,7 +240,11 @@ class OperationJournal {
     ///
     /// A cancelled or failed transfer installs nothing, so nothing is
     /// recorded: the history holds completed operations only, and there is no
-    /// state in which a reversal would undo part of one.
+    /// state in which a reversal would undo part of one. A failed replacement
+    /// can nevertheless leave the destination name absent if restoring its
+    /// former occupant also fails. That occupant remains under a Replaced
+    /// working name recognized by classify_working_entry(), and recovery is
+    /// through that working name rather than the journal.
     [[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
                                              const std::filesystem::path& destination_directory,
                                              const TransferOptions& transfer);
@@ -258,6 +262,11 @@ class OperationJournal {
     /// The same move, reported and controllable. Records completed moves only.
     /// A crossing move whose complete destination was installed before source
     /// removal failed is reported as failed and is not added to this history.
+    /// Separately, failed replacement recovery can leave the destination name
+    /// absent with its former occupant under a Replaced working name, and a
+    /// relocated source whose unwind also fails remains under a Prepared
+    /// working name. classify_working_entry() recognizes both; recovery is
+    /// through those names, and neither failed move is recorded.
     [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                              const std::filesystem::path& destination_directory,
                                              const TransferOptions& transfer);
