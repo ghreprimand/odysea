@@ -1,6 +1,7 @@
 // The status strip: scan and operation activity, the current status or
 // error message, the selection count, and the pane indicator. Errors take
 // the danger role; everything else reads in the muted caption ink.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -67,31 +68,38 @@ ChromeStrip {
             font.pixelSize: bar.theme.captionFontPixelSize
         }
 
-        ActionButton {
-            objectName: "operationHoldButton"
-            visible: bar.registry !== null && bar.shellModel.operationInterruptible && !bar.shellModel.operationPaused
-            theme: bar.theme
-            registry: bar.registry
-            actionId: "operation.pause"
-            showLabel: false
-        }
+        Loader {
+            active: bar.registry !== null
+            visible: active
 
-        ActionButton {
-            objectName: "operationResumeButton"
-            visible: bar.registry !== null && bar.shellModel.operationInterruptible && bar.shellModel.operationPaused
-            theme: bar.theme
-            registry: bar.registry
-            actionId: "operation.resume"
-            showLabel: false
-        }
+            sourceComponent: RowLayout {
+                ActionButton {
+                    objectName: "operationHoldButton"
+                    visible: bar.shellModel.operationInterruptible && !bar.shellModel.operationPaused
+                    theme: bar.theme
+                    registry: bar.registry
+                    actionId: "operation.pause"
+                    showLabel: false
+                }
 
-        ActionButton {
-            objectName: "operationStopButton"
-            visible: bar.registry !== null && bar.shellModel.operationInterruptible
-            theme: bar.theme
-            registry: bar.registry
-            actionId: "operation.cancel"
-            showLabel: false
+                ActionButton {
+                    objectName: "operationResumeButton"
+                    visible: bar.shellModel.operationInterruptible && bar.shellModel.operationPaused
+                    theme: bar.theme
+                    registry: bar.registry
+                    actionId: "operation.resume"
+                    showLabel: false
+                }
+
+                ActionButton {
+                    objectName: "operationStopButton"
+                    visible: bar.shellModel.operationInterruptible
+                    theme: bar.theme
+                    registry: bar.registry
+                    actionId: "operation.cancel"
+                    showLabel: false
+                }
+            }
         }
 
         Text {

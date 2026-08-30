@@ -218,14 +218,16 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   same `DirectoryListModel` adapter used by the primary views, one instance per
   live path level, so every column inherits cancellable off-thread scanning and
   incremental updates. Selecting a different branch or collapsing a level
-  destroys the displaced descendant models immediately, which cancels their
-  scans and releases their listings; previously visited branches are not kept
-  as a hidden cache. The horizontal column strip and every vertical entry list
-  are virtualized independently with no delegate cache buffer, so a deep path
-  multiplies listing state only by the levels it still represents and a large
-  directory does not multiply rendered rows by its entry count. The controller
-  is the sole C++ owner of these QML-visible listing objects; they are marked
-  with C++ ownership before crossing the QML boundary so the engine never
+  removes the displaced descendants from the live chain immediately. An
+  outgoing active listing remains alive only through the synchronous
+  `activeListingChanged` notification, giving every QML consumer a replacement
+  before its old QObject is reclaimed; previously visited branches are not
+  kept as a hidden cache. The horizontal column strip and every vertical entry
+  list are virtualized independently with no delegate cache buffer, so a deep
+  path multiplies listing state only by the levels it still represents and a
+  large directory does not multiply rendered rows by its entry count. The
+  controller is the sole C++ owner of these QML-visible listing objects; they
+  are marked with C++ ownership before crossing the QML boundary so the engine never
   becomes a second owner. Settings that describe every column, such as hidden
   visibility and sorting, necessarily pay their linear presentation cost once
   per live level. Text filtering instead applies only to the active listing
@@ -259,6 +261,9 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   single clip level and identity transforms. New surfaces build on these
   components instead of restyling primitives inline, so palette, density,
   scale, and contrast changes restyle every surface from one definition.
+  Components with an optional registry do not instantiate registry-bound
+  controls until the registry exists, so standalone scenes have defined absent
+  controls instead of live bindings to a null action source.
 - **Shared action system.** Every user-facing action — over an entry, a
   selection, blank canvas, a path segment, a Places shortcut, a device, a tab,
   or a pane — is declared exactly once, carrying its label, icon role,

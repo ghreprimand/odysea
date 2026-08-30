@@ -335,7 +335,12 @@ void MillerColumnsModel::truncateAfter(int column) {
     if (first > last) {
         return;
     }
+    std::vector<std::unique_ptr<DirectoryListModel>> retiredColumns;
+    retiredColumns.reserve(columns_.size() - static_cast<std::size_t>(first));
     beginRemoveRows({}, first, last);
+    for (auto iterator = columns_.begin() + first; iterator != columns_.end(); ++iterator) {
+        retiredColumns.push_back(std::move(*iterator));
+    }
     columns_.erase(columns_.begin() + first, columns_.end());
     endRemoveRows();
     emit columnCountChanged();
@@ -349,23 +354,30 @@ void MillerColumnsModel::truncateAfter(int column) {
         emit activeListingChanged();
         emit currentPathChanged();
     }
+    // The outgoing active listing stays alive through activeListingChanged so
+    // QML consumers rebind to its replacement before the old QObject dies.
 }
 
 void MillerColumnsModel::resetColumns() {
-    beginResetModel();
-    columns_.clear();
-    activeColumn_ = 0;
+    std::vector<std::unique_ptr<DirectoryListModel>> replacementColumns;
     if (!rootPath_.isEmpty()) {
         auto listing = makeListing();
         listing->setFilterText(filterText_);
         listing->setPath(rootPath_);
-        columns_.push_back(std::move(listing));
+        replacementColumns.push_back(std::move(listing));
     }
+
+    beginResetModel();
+    std::vector<std::unique_ptr<DirectoryListModel>> retiredColumns = std::move(columns_);
+    columns_ = std::move(replacementColumns);
+    activeColumn_ = 0;
     endResetModel();
     emit columnCountChanged();
     emit activeColumnChanged();
     emit activeListingChanged();
     emit currentPathChanged();
+    // See truncateAfter(): the signal changes every external reference before
+    // retiredColumns releases the previous active listing at function exit.
 }
 
 void MillerColumnsModel::applySettings(DirectoryListModel& model) const {

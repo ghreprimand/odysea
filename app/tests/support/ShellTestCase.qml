@@ -449,8 +449,7 @@ TestCase {
         shellWindow.shellTheme.dualPaneEnabled = false;
         shellWindow.shellTheme.splitRatio = 0.5;
         shellWindow.activePaneIndex = 0;
-        shellWindow.gridMode = false;
-        shellWindow.columnsMode = false;
+        shellWindow.switchView(false);
         shellWindow.clearTypeAhead();
         const pathNavigator = findChild(shellWindow.contentItem, "pathNavigator");
         pathNavigator.editing = false;

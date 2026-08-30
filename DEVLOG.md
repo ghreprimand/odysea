@@ -26,6 +26,29 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- A replacement arrives before a column listing leaves
+
+Changing or collapsing the active column path no longer lets the shell's
+shared actions, status strip, or filesystem dialogs observe a null listing.
+The columns controller removes retired listings from the live model first,
+publishes the replacement through `activeListingChanged`, and only then
+reclaims the old QObject. The outgoing listing therefore remains cancellable
+and short-lived without disappearing underneath bindings that still name it.
+
+The standalone component harness now tears down dependent views and action
+registries before the model and controller stand-ins they consume. A status
+strip without an action registry also leaves its optional transfer controls
+uninstantiated, which gives that supported standalone state an explicit
+fallback rather than relying on invisible controls not to evaluate.
+
+A verbose full release run exposed 2,199 TypeError lines before these lifecycle
+changes. The same run emits zero afterward. The columns-model, reusable-shell,
+and navigation suites pass directly, including a regression that proves a
+replacement is published while the outgoing listing is still alive; the full
+release and ASan/UBSan gates pass with their declared capability skips.
+
+---
+
 ## 2026-08-30 -- Renderer fallback and accessibility sources are separately measured
 
 Window presentation records the requested destination-alpha setting and the

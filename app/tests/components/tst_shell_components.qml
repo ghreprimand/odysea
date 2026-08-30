@@ -424,6 +424,9 @@ Item {
         name: "ShellComponents"
         when: windowShown
 
+        property var dependentViews: []
+        property var dependentRegistries: []
+
         function flush() {
             wait(20);
         }
@@ -444,11 +447,36 @@ Item {
 
         function makeRegistry(model, controller, settings) {
             const navigationSettings = settings === undefined ? createTemporaryObject(settingsFactory, harness) : settings;
-            return createTemporaryObject(registryFactory, harness, {
+            const registry = createTemporaryObject(registryFactory, harness, {
                 "shellModel": model,
                 "shell": controller,
                 "navigationSettings": navigationSettings
             });
+            dependentRegistries.push(registry);
+            return registry;
+        }
+
+        function makeDependentView(component, properties) {
+            const view = createTemporaryObject(component, harness, properties);
+            dependentViews.push(view);
+            return view;
+        }
+
+        function cleanup() {
+            for (let index = dependentViews.length - 1; index >= 0; --index) {
+                if (dependentViews[index] !== null) {
+                    dependentViews[index].destroy();
+                }
+            }
+            wait(0);
+            for (let index = dependentRegistries.length - 1; index >= 0; --index) {
+                if (dependentRegistries[index] !== null) {
+                    dependentRegistries[index].destroy();
+                }
+            }
+            wait(0);
+            dependentViews = [];
+            dependentRegistries = [];
         }
 
         function test_buttonPointerAndKeyboardActivation() {
@@ -501,7 +529,7 @@ Item {
         function test_toolBarNavigationActions() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -520,7 +548,7 @@ Item {
         function test_toolBarUndoUsesTheSharedAvailabilityAndReason() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -542,7 +570,7 @@ Item {
         function test_toolBarLabeledRequirementContainsEveryVisibleControl() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -579,7 +607,7 @@ Item {
         function test_toolBarViewToggleDrivesController() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -611,7 +639,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
             const registry = makeRegistry(model, controller, settings);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": registry,
@@ -647,7 +675,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
             const registry = makeRegistry(model, controller, settings);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": registry,
@@ -668,7 +696,7 @@ Item {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": makeRegistry(model, controller, settings),
@@ -710,7 +738,7 @@ Item {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": makeRegistry(model, controller, settings),
@@ -748,7 +776,7 @@ Item {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": makeRegistry(model, controller, settings),
@@ -789,7 +817,7 @@ Item {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
             const settings = createTemporaryObject(settingsFactory, harness);
-            const navigator = createTemporaryObject(pathNavigatorFactory, harness, {
+            const navigator = makeDependentView(pathNavigatorFactory, {
                 "shellModel": model,
                 "navigationController": controller,
                 "registry": makeRegistry(model, controller, settings),
@@ -834,7 +862,7 @@ Item {
         function test_toolBarAppearanceRoutesThroughRegistry() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -848,7 +876,7 @@ Item {
         function test_toolBarTreeSearchRoutesThroughRegistry() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const bar = createTemporaryObject(toolBarFactory, harness, {
+            const bar = makeDependentView(toolBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -862,7 +890,7 @@ Item {
         function test_tabStripActivationAndLifecycle() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const strip = createTemporaryObject(tabStripFactory, harness, {
+            const strip = makeDependentView(tabStripFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller)
             });
@@ -915,7 +943,7 @@ Item {
         function test_activeTabUsesTheBoundedGlowFrame() {
             const model = createTemporaryObject(modelFactory, harness);
             const controller = createTemporaryObject(controllerFactory, harness);
-            const strip = createTemporaryObject(tabStripFactory, harness, {
+            const strip = makeDependentView(tabStripFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller),
                 "glowEnabled": true
@@ -939,7 +967,7 @@ Item {
 
         function test_actionBarGatesOnSelectionAndBusyState() {
             const model = createTemporaryObject(modelFactory, harness);
-            const bar = createTemporaryObject(actionBarFactory, harness, {
+            const bar = makeDependentView(actionBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
@@ -969,7 +997,7 @@ Item {
 
         function test_actionBarLabeledRequirementContainsEveryLabeledControl() {
             const model = createTemporaryObject(modelFactory, harness);
-            const bar = createTemporaryObject(actionBarFactory, harness, {
+            const bar = makeDependentView(actionBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
@@ -1004,7 +1032,7 @@ Item {
 
         function test_actionBarFilterReachesModel() {
             const model = createTemporaryObject(modelFactory, harness);
-            const bar = createTemporaryObject(actionBarFactory, harness, {
+            const bar = makeDependentView(actionBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
@@ -1020,7 +1048,7 @@ Item {
 
         function test_actionBarHiddenToggle() {
             const model = createTemporaryObject(modelFactory, harness);
-            const bar = createTemporaryObject(actionBarFactory, harness, {
+            const bar = makeDependentView(actionBarFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, createTemporaryObject(controllerFactory, harness))
             });
@@ -1033,7 +1061,7 @@ Item {
 
         function test_statusBarErrorTakesDangerRole() {
             const model = createTemporaryObject(modelFactory, harness);
-            const bar = createTemporaryObject(statusBarFactory, harness, {
+            const bar = makeDependentView(statusBarFactory, {
                 "shellModel": model
             });
             verify(bar !== null);
@@ -1056,7 +1084,7 @@ Item {
             const controller = createTemporaryObject(controllerFactory, harness, {
                 "paneCount": 2
             });
-            const placeholder = createTemporaryObject(placeholderFactory, harness, {
+            const placeholder = makeDependentView(placeholderFactory, {
                 "shellModel": model,
                 "registry": makeRegistry(model, controller),
                 "paneIndex": 1

@@ -201,6 +201,27 @@ Support.ShellTestCase {
         compare(shellWindow.activeEntryModel.path, rootPath);
     }
 
+    function test_leavingColumnsKeepsTheWorkspaceModelLive() {
+        openColumnsAtQmlRoot();
+        verify(shellWindow.activeEntryModel !== fakeModel);
+
+        let nullTransitions = 0;
+        const recordTransition = function () {
+            if (shellWindow.activeEntryModel === null) {
+                ++nullTransitions;
+            }
+        };
+        shellWindow.activeEntryModelChanged.connect(recordTransition);
+
+        shellWindow.switchView(false);
+        wait(0);
+
+        shellWindow.activeEntryModelChanged.disconnect(recordTransition);
+        compare(nullTransitions, 0);
+        compare(shellWindow.activeEntryModel, fakeModel);
+        compare(shellWindow.actions.entryModel, fakeModel);
+    }
+
     function test_keyboardSelectionPaths() {
         let list = child("directoryList");
         list.forceActiveFocus();

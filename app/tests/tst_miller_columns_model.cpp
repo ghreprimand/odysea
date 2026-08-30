@@ -208,10 +208,20 @@ void MillerColumnsModelTest::focusedColumnPublishesLocationTransitions() {
     QCOMPARE(model.currentPath(), childPath);
     QCOMPARE(locationChanged.count(), 3);
 
+    QPointer<DirectoryListModel> outgoingListing = listing(model, 1);
+    bool replacementPublishedBeforeRetirement = false;
+    const QMetaObject::Connection replacementConnection =
+        connect(&model, &odysea::app::MillerColumnsModel::activeListingChanged, &model, [&] {
+            replacementPublishedBeforeRetirement =
+                !outgoingListing.isNull() && model.activeListing() != outgoingListing;
+        });
     model.collapseBack();
+    disconnect(replacementConnection);
     QCOMPARE(model.liveColumnCount(), 1);
     QCOMPARE(model.currentPath(), fixture.path());
     QCOMPARE(locationChanged.count(), 4);
+    QVERIFY(replacementPublishedBeforeRetirement);
+    QVERIFY(outgoingListing.isNull());
 }
 
 // Qt's assertion macros account for the reported branch count.
