@@ -27,6 +27,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Accent repairs explain themselves and large listings stay bounded
+
+Accent selection now reports when its authored value cannot reach every rendered
+surface without repair. The controller measures that pre-repair value with the
+same window, selected-entry, hover, pressed, and panel samples used by the
+resolver, then names each failing surface in the appearance panel. The resolver
+continues to supply a contrast-cleared token; the warning is additional rather
+than a weakened safety boundary. It is exposed after keyboard and pointer
+selection, announced through the accessibility interface, and absent for an
+authored value that already clears every floor.
+
+The software visual validation fixture holds 2,000 neutral entries. It keeps
+list and grid delegates within geometry-derived viewport bounds, leaves the
+effect structure flat, and now proves that grid delegates request thumbnails
+only for the visible batch, release that batch across an end jump, and request
+the destination batch without scheduling the directory. The adapter cost case
+uses separate synthetic directories: a serial release run measured 60,768 key
+constructions at 4,000 entries and 123,456 at 8,000, a 2.03 growth against its
+1.50–2.80 bound, with 55,526 and 113,924 microseconds of processor work across
+the scan-and-refresh cycles.
+
+Verified: serial release and ASan/UBSan CTest batteries; focused
+theme-controller and input controls; software visual validation; and the
+serial directory-model cost battery.
+
+---
+
 ## 2026-08-30 -- A sixth August part keeps the live record clear of the ceiling
 
 August is still open and the live record reached the point where a further

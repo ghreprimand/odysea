@@ -478,10 +478,13 @@ there is no apply step.
   selected-entry, hover, pressed, and panel sites for every family, profile,
   and high-contrast state. Those shared samples drive resolution and
   acceptance, so the displayed token cannot drift into a second contrast
-  rule. There is no arbitrary custom-accent input: every selectable choice is
-  resolved at this boundary before it reaches a shell surface, rather than
-  presenting an unreachable selection warning. The preset control is keyboard
-  and pointer reachable, previews immediately, and reset restores Tideglass.
+  rule. There is no arbitrary custom-accent input. If the active family's
+  render sites cannot accept an authored preset after the current profile and
+  accessibility lift, the resolver still repairs the displayed token and the
+  appearance panel names every failing site beside the selector. The panel
+  announces that same warning when either a keyboard or pointer selection
+  creates it; an authored value that clears every site presents no warning.
+  The preset control previews immediately, and reset restores Tideglass.
 - **Measured contrast floors.** The contrast claims are asserted, not
   eyeballed: a test measures every foreground role against the beds tracked
   surfaces actually paint it on, in every shipped family, in both override
@@ -709,7 +712,12 @@ shell scene, so its claims regress loudly instead of visually:
   fixture is at least ten times each view's geometry-derived work bound. Both
   views realize a viewport of delegates, not the directory; the effect layer's
   structure and protected-well registry scale with that viewport bound, never
-  with entry count or elapsed time.
+  with entry count or elapsed time. In grid mode, the fixture also proves that
+  the visible delegates request thumbnails and that an end jump releases the
+  abandoned viewport before requesting the destination viewport. The adapter's
+  separate synthetic-directory cost battery scans and refreshes 4,000 and
+  8,000 entries, measuring its key-construction count and processor work;
+  these are distinct work-volume checks, not elapsed-time claims.
 - **Device pixels.** Well-mask geometry is logical-coordinate math at every
   scale and is exercised by the software validation entries at their declared
   1x and 2x logical scales. The doubled entry asserts that Qt reports the

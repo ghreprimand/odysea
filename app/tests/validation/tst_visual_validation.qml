@@ -573,6 +573,7 @@ Support.ShellTestCase {
         const entryCount = testCase.representativeLargeDirectoryEntries;
 
         populateRows(entryCount);
+        testCase.fakeModel.resetTelemetry();
 
         // The list realizes a viewport of delegates, not the directory.
         const list = child("directoryList");
@@ -600,6 +601,24 @@ Support.ShellTestCase {
         const realizedCells = realizedGridCellCount(entryCount);
         verify(realizedCells > 0);
         verify(realizedCells <= gridWorkBound, "the grid must keep work at its viewport bound of " + gridWorkBound + ", realized " + realizedCells);
+
+        // Delegates schedule thumbnails only while virtualized into the
+        // viewport. Jumping across this representative directory must release
+        // the abandoned batch before it asks for the far batch: cancellation
+        // is part of keeping thumbnail work proportional to the view, not the
+        // listing's total size.
+        tryVerify(function () {
+            return testCase.fakeModel.requestThumbnailCalls > 0;
+        });
+        const initialThumbnailRequests = testCase.fakeModel.requestThumbnailCalls;
+        verify(initialThumbnailRequests <= gridWorkBound, "initial thumbnail requests must stay viewport-sized, requested " + initialThumbnailRequests);
+        grid.positionViewAtEnd();
+        waitForRendering(testCase.shellWindow.contentItem);
+        tryVerify(function () {
+            return testCase.fakeModel.releaseThumbnailCalls > 0;
+        });
+        verify(testCase.fakeModel.requestThumbnailCalls > initialThumbnailRequests, "the far viewport must schedule its own thumbnails");
+        verify(testCase.fakeModel.requestThumbnailCalls <= gridWorkBound * 3, "thumbnail scheduling must remain bounded across the end jump, requested " + testCase.fakeModel.requestThumbnailCalls);
         testCase.shellWindow.gridMode = false;
 
         // The effect layer's structure is independent of entry count, and

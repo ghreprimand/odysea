@@ -150,6 +150,30 @@ Item {
             });
         }
 
+        function test_keyboardAccentChoiceSurfacesAccessibleContrastWarning() {
+            const palette = control("paletteBox");
+            const parchment = theme.availablePalettes.indexOf("odyssey-parchment-light");
+            verify(parchment >= 0);
+            palette.currentIndex = parchment;
+            palette.activated(parchment);
+
+            const combo = control("accentPresetBox");
+            combo.forceActiveFocus();
+            verify(combo.activeFocus);
+            keyClick(Qt.Key_Space);
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Return);
+
+            const warning = control("accentContrastWarning");
+            tryVerify(function () {
+                return warning.visible;
+            });
+            verify(warning.text.indexOf("pressed surface") >= 0);
+            compare(warning.Accessible.role, Accessible.StaticText);
+            compare(warning.Accessible.name, warning.text);
+            verify(warning.Accessible.description.length > 0);
+        }
+
         function test_densityAndFontSourceCombosApply() {
             const density = control("densityBox");
             const rowsBefore = theme.rowHeight;
@@ -219,6 +243,7 @@ Item {
             verify(control("uiScaleSlider").Accessible.name.length > 0);
             verify(control("paletteBox").Accessible.name.length > 0);
             verify(control("accentPresetBox").Accessible.name.length > 0);
+            verify(control("accentContrastWarning").Accessible.description.length > 0 || !control("accentContrastWarning").visible);
             verify(control("profileBox").Accessible.name.length > 0);
         }
 

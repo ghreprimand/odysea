@@ -168,6 +168,29 @@ Popup {
                     color: panel.theme.accent
                     radius: 3
                 }
+                Text {
+                    objectName: "accentContrastWarning"
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: panel.theme.accentContrastWarning
+                    color: panel.theme.warning
+                    wrapMode: Text.Wrap
+                    font.family: panel.theme.captionFontFamily
+                    font.pixelSize: panel.theme.captionFontPixelSize
+
+                    // The Accent combo is reachable by Tab and arrows. When
+                    // a keyboard or pointer choice needs repair, announce the
+                    // same named render sites displayed here instead of
+                    // hiding the explanation in a hover-only affordance.
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: visible ? text : ""
+                    Accessible.description: visible ? qsTr("Accent selection warning") : ""
+                    onTextChanged: {
+                        if (text.length > 0) {
+                            Accessible.announce(text);
+                        }
+                    }
+                }
                 CheckBox {
                     objectName: "highContrastCheck"
                     text: qsTr("High contrast")

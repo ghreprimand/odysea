@@ -245,6 +245,20 @@ void ThemeController::setAccentPresetIndex(int index) {
     setAccentPresetId(presets.at(index).id);
 }
 
+QString ThemeController::accentContrastWarning() const {
+    // This deliberately measures the authored accent after the profile's
+    // effective lift but before the resolver changes it. The resolver uses
+    // the same render-site samples below, so the warning describes the exact
+    // surfaces that require its repair rather than maintaining a parallel
+    // contrast rule for the settings surface.
+    const QStringList failures = themeContrastFailures(themeAccentContrastSamples(
+        lifted(resolvedAccent()), background(), selectionBed(), hover(), pressed(), panel()));
+    if (failures.isEmpty()) {
+        return {};
+    }
+    return tr("Accent adjusted for visibility: %1").arg(failures.join(QStringLiteral("; ")));
+}
+
 ThemeController::Profile ThemeController::profile() const {
     return static_cast<Profile>(settings_.profile);
 }
