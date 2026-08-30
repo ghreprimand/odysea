@@ -83,6 +83,18 @@ graphical shell grows around it.
       Qt-free and cancellable; the overlay is reachable by keyboard shortcut
       and through the shared action surfaces, and results open by keyboard or
       by pointer.
+- [ ] Bulk rename with pattern and regular-expression replacement, live
+      preview, and collision detection before anything is written. The Qt-free
+      planning and application engine is in place. Planning produces the whole
+      old-to-new mapping without writing and refuses a batch that would give
+      two entries one name, take a name held by something that is not leaving,
+      produce a name the filesystem will not accept, or resolve onto an
+      existing entry through a case fold. A batch whose targets are held by
+      members that are themselves leaving is sequenced rather than refused, and
+      a closed cycle of names is broken through a working name. Application
+      rechecks the plan against the filesystem before issuing a rename and
+      reports exactly what completed if a later step fails. The shell surface
+      is not built.
 - [ ] Optional modal keybindings.
 
 ## M4 — Terminal integration

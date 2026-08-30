@@ -27,6 +27,98 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Renaming many entries is two jobs, and only one of them writes
+
+Bulk rename is split at the point where writing begins. Planning takes an
+ordered set of entries and a rule and produces the whole old-to-new mapping,
+reading the filesystem and changing nothing, so a caller can render it as a
+live preview. Application takes a plan and performs it. A plan that reports a
+problem is never applied.
+
+The obvious collision is not the interesting one. Two entries given the same
+new name is visible in a preview at a glance. The two that a preview cannot
+show are a name already held by an entry outside the batch, and a name held by
+another member of the batch.
+
+Two separate guarantees cover the second, and separating them corrected a claim
+this entry first made. Every rename the engine issues refuses an occupied name
+instead of replacing it, so a batch performed in a bad order stops rather than
+destroying anything — the filesystem primitive underneath replaces by default,
+so that refusal is a decision, not a property of renaming. Sequencing is the
+other half, and what it buys is completion: without it a batch that shifts a
+run of names along by one refuses at its first step and finishes nothing. The
+measurement said so plainly. Removing the sequencing failed twenty checks, and
+every one of them was a batch that had not completed rather than an entry that
+had been overwritten.
+
+So a name held by a departing member is not an error, and refusing it would
+have been the easy wrong answer. Planning marks such a step as deferred and
+application orders the batch behind it; only a name held by something that is
+not leaving blocks it. An entry that cannot take its own new name is not
+leaving either, so a batch whose occupant is itself refused is refused as a
+whole.
+
+Some batches have no safe order at all. Exchanging two names is a closed cycle:
+neither entry can move first. Application breaks it by moving one entry to a
+working name, and it reserves that name through the same scheme the other
+mutation primitives use, so an entry left standing under one can still be
+recognised and explained rather than appearing as an unaccountable name. Two
+logical renames cost three physical ones, and the reported result names where
+each entry started and where it finally landed, never the working name it
+passed through.
+
+A name that differs from an existing entry only by case is a collision on a
+filesystem that folds case and a free name on one that does not. It is decided
+by asking rather than by guessing: the directory's literal names are read once,
+and a proposed name that is absent from that listing but still resolves to
+something has been folded onto an entry that is already there. The fold is
+reported separately from an ordinary occupied name, because a preview cannot
+otherwise explain it — the name the user is being warned about is not visible
+in the listing they are looking at. Where the fold resolves to the entry being
+renamed, it is a change of case in place, which is a real rename and not a
+collision.
+
+None of the filesystems available here fold case, so that check could never
+have been reached by waiting for a real one, and a case that waited would have
+reported a pass for a check that never ran. The two filesystem questions are
+answered through an injectable step, and the cases supply a folding answer, so
+the behaviour is measured on any filesystem.
+
+A batch is not a transaction and the contract does not pretend otherwise. The
+plan is rechecked against the filesystem immediately before the first rename is
+issued, from the sources and the rule the plan carries, so a preview read
+minutes ago is not applied to a directory that has changed underneath it; a
+source that has vanished, or that now resolves to a different entry under the
+same name, stops the batch before anything is written. After that the renames
+happen one at a time against a filesystem other programs share, and one can
+still fail. What was already done is reported exactly, oldest first, rather
+than described by an absolute that cannot be held. An entry standing under a
+working name when a batch stops is put back where it started if that name is
+free, and reported if it is not, because an entry under an unexpected name can
+be recovered and a removed one cannot.
+
+The journal records one entry per completed rename rather than one for the
+batch. A single record would either describe a batch that did not finish, which
+is the defect a completed-operation history exists to prevent, or would have to
+be discarded on failure and take the reversibility of the renames that did
+succeed with it. Reversal is per record, newest first, which is the reverse of
+the order the batch performed them in; since that order never writes over an
+entry that has not left, unwinding it finds each name free again. A batch
+containing a cycle is the exception, and it is settled when the records are
+made rather than when a reversal is attempted: no single-record reversal can
+retrace a hop through a working name, so every record of such a batch carries a
+barrier and none of them is ever offered as reversible and then refused.
+
+Forty-seven cases cover the engine, listed in one table with a count floor so a
+case that stops being called fails by name. Each was measured by reverting the
+check it depends on: thirty-two reverts, every one proven to have landed by
+diffing the file before rebuilding, and every one caught. Five of them were
+first rejected by the compiler for an unused parameter the revert had orphaned,
+which is not a result — a revert that does not build has measured nothing — so
+each was rewritten until it compiled and then measured.
+
+---
+
 ## 2026-08-30 -- Quick preview owns its work until dismissal completes
 
 The focused entry now opens in one modal quick-preview surface from

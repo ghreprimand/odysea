@@ -92,6 +92,11 @@ QString barrierReason(odysea::core::ReversalBarrier barrier) {
     case Barrier::HardLinksNotRestorable:
         return QCoreApplication::translate("DirectoryListModel",
                                            "The last move cannot restore its linked entries.");
+    case Barrier::BatchCycleNotRestorable:
+        return QCoreApplication::translate(
+            "DirectoryListModel",
+            "The last rename belonged to a batch that exchanged names, which cannot be "
+            "reversed one entry at a time.");
     }
     return QCoreApplication::translate("DirectoryListModel",
                                        "The last operation cannot be undone safely.");

@@ -5,6 +5,7 @@
 # presentation layer.
 add_library(odysea_core
     src/appearance.cpp
+    src/bulk_rename.cpp
     src/digest.cpp
     src/directory_model.cpp
     src/directory_scanner.cpp

@@ -51,6 +51,7 @@
 // data.
 #pragma once
 
+#include "odysea/core/bulk_rename.hpp"
 #include "odysea/core/directory_model.hpp"
 #include "odysea/core/file_operations.hpp"
 #include "odysea/core/transfer.hpp"
@@ -127,6 +128,15 @@ enum class ReversalBarrier : std::uint8_t {
     /// that data, they kept it, and nothing the journal can do makes the
     /// returned entry the same entry those names refer to again.
     HardLinksNotRestorable,
+    /// The rename belonged to a batch that contained a closed cycle of names.
+    ///
+    /// A cycle cannot be performed by renames alone: one entry has to pass
+    /// through a working name while the others move around it. Reversing the
+    /// batch one record at a time cannot retrace that, because the first
+    /// reversal would need a name another member of the batch is still
+    /// holding. Every record of such a batch carries this when it is made, so
+    /// none of them is ever offered as reversible and then refused.
+    BatchCycleNotRestorable,
 };
 
 /// One completed operation.
@@ -256,6 +266,26 @@ class OperationJournal {
     [[nodiscard]] OperationOutcome rename_entry(const std::filesystem::path& source,
                                                 std::string_view new_name,
                                                 const OperationOptions& options);
+
+    /// Apply `plan`, recording each rename as it completes.
+    ///
+    /// A bulk rename is recorded as one record per completed rename rather
+    /// than as a single record for the batch. A batch is not atomic: the plan
+    /// is checked and refused as a whole, but the renames themselves happen
+    /// one at a time and a step can fail partway through. A single record for
+    /// the batch would either describe a batch that did not finish, which is
+    /// the defect a completed-operation history exists to avoid, or it would
+    /// have to be discarded on failure and take the reversibility of the
+    /// renames that did succeed with it.
+    ///
+    /// Reversal is therefore per record, newest first. That is the reverse of
+    /// the order the batch performed them in, and the batch performs steps in
+    /// an order where no entry is written over one that has not yet left, so
+    /// unwinding that order returns each entry to a name that is free again.
+    ///
+    /// The exception is a batch containing a closed cycle of names, whose
+    /// records carry ReversalBarrier::BatchCycleNotRestorable.
+    [[nodiscard]] RenameApplication apply_bulk_rename(const RenamePlan& plan);
 
     /// Move `source` to the trash and record the result.
     ///

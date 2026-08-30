@@ -17,6 +17,7 @@ function(odysea_add_core_test test_name source_file)
 endfunction()
 
 odysea_add_core_test(core_appearance test_appearance.cpp)
+odysea_add_core_test(core_bulk_rename test_bulk_rename.cpp)
 odysea_add_core_test(core_directory_model test_directory_model.cpp)
 odysea_add_core_test(core_entry_identity test_entry_identity.cpp)
 odysea_add_core_test(core_file_operations test_file_operations.cpp)

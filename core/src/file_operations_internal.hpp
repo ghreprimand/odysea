@@ -44,6 +44,25 @@ enum class RenameKind {
 using RenameStep = std::function<void(RenameKind kind, const std::filesystem::path& from,
                                       const std::filesystem::path& to, std::error_code& error)>;
 
+/// Reserve an unused working name in `directory`.
+///
+/// Working entries always live in the directory the operation is working in,
+/// so installing one is a rename within a single directory and can never cross
+/// a filesystem boundary.
+///
+/// The serial advances globally rather than per call, so a candidate that is
+/// already taken — by another thread, another process, or an entry left behind
+/// by an earlier interrupted run — is never retried by a caller that would pick
+/// the same name again.
+///
+/// Shared with bulk rename, which needs a name to break a cycle through. One
+/// reservation scheme means one set of names that classify_working_entry can
+/// explain to a listing; a second scheme would produce entries nothing could
+/// account for.
+[[nodiscard]] std::filesystem::path reserve_working_path(const std::filesystem::path& directory,
+                                                         WorkingEntryRole role,
+                                                         std::error_code& error);
+
 /// The production step: std::filesystem::rename, whatever the kind.
 void rename_with_filesystem(RenameKind kind, const std::filesystem::path& from,
                             const std::filesystem::path& to, std::error_code& error);

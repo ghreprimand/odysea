@@ -282,33 +282,6 @@ std::string working_name(WorkingEntryRole role, unsigned long long serial) {
     return name;
 }
 
-/// Reserve an unused working name in `directory`.
-///
-/// Working entries always live in the directory holding the destination, so
-/// installing one is a rename within a single directory and can never cross a
-/// filesystem boundary.
-///
-/// The serial advances globally rather than per call, so a candidate that is
-/// already taken — by another thread, another process, or an entry left behind
-/// by an earlier interrupted run — is never retried by a caller that would pick
-/// the same name again.
-fs::path reserve_working_path(const fs::path& directory, WorkingEntryRole role,
-                              std::error_code& error) {
-    static std::atomic<unsigned long long> serial{0};
-
-    constexpr unsigned max_attempts = 10000;
-    for (unsigned attempt = 0; attempt < max_attempts; ++attempt) {
-        fs::path candidate =
-            directory / working_name(role, serial.fetch_add(1, std::memory_order_relaxed));
-        if (!path_present(candidate)) {
-            error.clear();
-            return candidate;
-        }
-    }
-    error = make_error(std::errc::file_exists);
-    return {};
-}
-
 /// Grant the owner traversal rights throughout a tree.
 ///
 /// A copy that failed part-way can leave behind directories reproduced with
@@ -411,8 +384,8 @@ std::error_code install_over(const fs::path& prepared, const fs::path& destinati
     }
 
     std::error_code reserve_ec;
-    const fs::path backup =
-        reserve_working_path(destination.parent_path(), WorkingEntryRole::Replaced, reserve_ec);
+    const fs::path backup = detail::reserve_working_path(destination.parent_path(),
+                                                         WorkingEntryRole::Replaced, reserve_ec);
     if (reserve_ec) {
         return reserve_ec;
     }
@@ -532,6 +505,23 @@ OperationOutcome resolve_destination(const fs::path& directory, std::string_view
 }
 
 namespace detail {
+
+fs::path reserve_working_path(const fs::path& directory, WorkingEntryRole role,
+                              std::error_code& error) {
+    static std::atomic<unsigned long long> serial{0};
+
+    constexpr unsigned max_attempts = 10000;
+    for (unsigned attempt = 0; attempt < max_attempts; ++attempt) {
+        fs::path candidate =
+            directory / working_name(role, serial.fetch_add(1, std::memory_order_relaxed));
+        if (!path_present(candidate)) {
+            error.clear();
+            return candidate;
+        }
+    }
+    error = make_error(std::errc::file_exists);
+    return {};
+}
 
 void rename_with_filesystem(RenameKind /*kind*/, const fs::path& from, const fs::path& to,
                             std::error_code& error) {

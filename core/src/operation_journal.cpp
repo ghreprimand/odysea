@@ -1,4 +1,5 @@
 #include "odysea/core/operation_journal.hpp"
+#include "bulk_rename_internal.hpp"
 
 #include "entry_metadata.hpp"
 #include "file_operations_internal.hpp"
@@ -313,6 +314,40 @@ OperationOutcome OperationJournal::rename_entry(const fs::path& source, std::str
 
     push(std::move(slot));
     return outcome;
+}
+
+RenameApplication OperationJournal::apply_bulk_rename(const RenamePlan& plan) {
+    // Every record of a batch that has to break a cycle carries the barrier,
+    // including the records of members that were not themselves in the cycle:
+    // reversing those while the cycle members still stand would produce a
+    // state the directory never held.
+    const ReversalBarrier batch_barrier = plan.needs_working_name()
+                                              ? ReversalBarrier::BatchCycleNotRestorable
+                                              : ReversalBarrier::None;
+
+    return detail::apply_bulk_rename_using(
+        plan, detail::PlanProbes{}, &detail::rename_with_filesystem_step,
+        [this, batch_barrier](const AppliedRename& done) {
+            Slot slot;
+            slot.record.kind = OperationKind::Rename;
+            slot.record.original_path = entry_path(done.source);
+            slot.record.result_path = entry_path(done.result);
+
+            const EntryMetadata after = detail::read_entry_metadata(done.result);
+            slot.verification.identity = after.identity;
+            slot.verification.modified_seconds = after.modified_seconds;
+            slot.verification.size = after.apparent_bytes;
+            slot.verification.result_is_directory =
+                after.known && detail::mode_is_directory(after.mode);
+
+            // A batch never replaces anything: a plan whose target is held by
+            // something that is not leaving is refused before the first
+            // rename is issued. So the only barrier a single step can reach
+            // on its own is a result that could not be identified.
+            slot.record.barrier =
+                after.known ? batch_barrier : ReversalBarrier::ResultNotIdentified;
+            push(std::move(slot));
+        });
 }
 
 TrashOutcome OperationJournal::move_to_trash(const fs::path& source) {
