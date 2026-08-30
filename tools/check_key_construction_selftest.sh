@@ -30,7 +30,7 @@ checks_run=0
 # after running half its scenarios reads exactly like one that ran them all,
 # and a scenario is one careless edit away from being dropped. Compared at the
 # end against the number actually executed.
-readonly expected_checks=37
+readonly expected_checks=41
 
 report() {
     printf 'key_construction_guard_self_test: %s\n' "$1" >&2
@@ -508,6 +508,62 @@ SOURCE
 track_repository "$root"
 expect "entry path bound through auto" "$root" 1 "in receiveScanBatch"
 
+# The wrapped alias. This is the formatter's output, not an author's choice:
+# `.clang-format` is LLVM at a 100-column limit, and a reference alias whose
+# name pushes the declaration past that limit is wrapped after the `=`, so the
+# `.path;` lands on the next physical line. A line-oriented rule would see the
+# two halves separately and match neither, exempting an alias for growing too
+# long. This fails by name when the assignment-continuation join is reverted.
+root="$(build_repository alias_wrapped_reference)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const std::filesystem::path& theCanonicalEntryPathAliasUsedForRowKeyConstructionHere =
+        entry.path;
+    const QString key = QString::fromStdString(
+        theCanonicalEntryPathAliasUsedForRowKeyConstructionHere.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path bound through a wrapped reference declaration" "$root" 1 "in receiveScanBatch"
+
+# The brace-initialized alias. The formatter leaves this on one line, so no
+# join is involved; it is the `=`-versus-brace half of the pattern. Fails by
+# name when the initializer introducer is narrowed back to `=` alone.
+root="$(build_repository alias_brace_init)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const auto aliased{entry.path};
+    const QString key = QString::fromStdString(aliased.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path bound through a brace initializer" "$root" 1 "in receiveScanBatch"
+
+# The moved alias. `std::move(entry.path)` puts a `)` between `.path` and the
+# `;`, which a rule requiring `.path` to be the last token before the `;` would
+# miss. Fails by name when the trailing-token allowance is reverted.
+root="$(build_repository alias_move)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    auto aliased = std::move(entry.path);
+    const QString key = QString::fromStdString(aliased.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path bound through std::move" "$root" 1 "in receiveScanBatch"
+
 # The other direction, and the reason the alias branch is typed rather than
 # general. The tab state in these files carries its own `path` member of
 # interface string type; binding it is ordinary code with nothing to do with a
@@ -565,6 +621,30 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
 SOURCE
 track_repository "$root"
 expect "an entry path converted implicitly" "$root" 0 "2 permitted normalizations"
+
+# The typedef alias. The alias branch keys on the type being spelled `auto` or
+# `std::filesystem::path`, and a typedef or alias template naming the same type
+# escapes that while binding the entry's path exactly as the recognized forms
+# do. Named in the guard's residual list and pinned here: this is behavioural,
+# not documentary, because widening the alias pattern to accept `FsPath` as a
+# type spelling flips this scenario from accepted to rejected. It was one of
+# the two residuals the guard's own comment claimed were pinned when they were
+# not; it is pinned now.
+root="$(build_repository residual_typedef_alias)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+using FsPath = std::filesystem::path;
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const FsPath& aliased = entry.path;
+    const QString key = QString::fromStdString(aliased.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "an entry path bound through a typedef of the path type" "$root" 0 "2 permitted normalizations"
 
 if ((checks_run != expected_checks)); then
     printf 'key_construction_guard_self_test: ran %d expectations, %d are declared\n' \

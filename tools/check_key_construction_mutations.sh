@@ -29,7 +29,7 @@ fi
 # How many mutations this file plants. Compared against the number actually
 # run, so a mutation dropped by an edit fails the gate instead of shrinking it
 # silently.
-readonly declared_mutations=17
+readonly declared_mutations=21
 
 workspace="$(mktemp -d)"
 trap 'rm -rf -- "$workspace"' EXIT
@@ -105,11 +105,12 @@ PYTHON
     printf 'key_construction_mutation_guard: caught - %s\n' "$description"
 }
 
-# 1. The second rule stops being applied at all. Everything it covers becomes
-#    invisible, which is the state the guard was in before it had the rule.
-mutate "the entry-path rule is never applied" check_key_construction.sh \
+# 1. The conversion half of the second rule stops being applied at all. What
+#    it covers becomes invisible, which is the state the guard was in before it
+#    had the rule.
+mutate "the entry-path conversion rule is never applied" check_key_construction.sh \
     '    seen=0
-    if ! seen="$(apply_rule "$path" "$entry_path_pattern" "$entry_path_subject" \
+    if ! seen="$(apply_rule "$path" "$entry_path_conversion_pattern" "$entry_path_subject" \
         "${entry_path_permitted[@]}")"; then
         status=1
     fi
@@ -138,16 +139,16 @@ mutate "the entry-path vacuity floor is removed" check_key_construction.sh \
     'if false; then' \
     "no permitted entry-path spelling"
 
-# 5. The violation status of the second rule is discarded while its count is
-#    still collected, which is the shape that hides a failure inside an
+# 5. The violation status of the conversion rule is discarded while its count
+#    is still collected, which is the shape that hides a failure inside an
 #    assignment.
-mutate "the entry-path rule's status is swallowed" check_key_construction.sh \
+mutate "the entry-path conversion rule's status is swallowed" check_key_construction.sh \
     '    seen=0
-    if ! seen="$(apply_rule "$path" "$entry_path_pattern" "$entry_path_subject" \
+    if ! seen="$(apply_rule "$path" "$entry_path_conversion_pattern" "$entry_path_subject" \
         "${entry_path_permitted[@]}")"; then
         status=1
     fi' \
-    '    seen="$(apply_rule "$path" "$entry_path_pattern" "$entry_path_subject" \
+    '    seen="$(apply_rule "$path" "$entry_path_conversion_pattern" "$entry_path_subject" \
         "${entry_path_permitted[@]}" || true)"' \
     "hand-spelled entry path in a reconciliation member"
 
@@ -173,7 +174,7 @@ mutate "a match outside any member is accepted" check_key_construction.sh \
 mutate "a self-test scenario is deleted" check_key_construction_selftest.sh \
     'expect "entry path in a free function" "$root" 1 "outside any member function"' \
     'true' \
-    "expectations, 37 are declared"
+    "expectations, 41 are declared"
 
 # --- The first rule, which had no battery at all ----------------------------
 # Every mutation above targets the entry-path rule, and the normalization rule
@@ -231,11 +232,16 @@ mutate "a member definition never ends" check_key_construction.sh \
     '' \
     "helper below a permitted member"
 
-# 13. The alias branch goes, and one idiomatic line separates `.path` from the
-#     conversion again.
-mutate "the alias branch is dropped from the entry-path pattern" check_key_construction.sh \
-    '|(auto|std::filesystem::path)[^=;]*=[^=;]*\.path[[:space:]]*;' \
-    '' \
+# 13. The alias branch stops being applied at all, and one idiomatic line
+#     separates `.path` from the conversion again.
+mutate "the alias rule is never applied" check_key_construction.sh \
+    '    seen=0
+    if ! seen="$(apply_alias_rule "$path" "$entry_path_alias_pattern" "$entry_path_subject" \
+        "${entry_path_permitted[@]}")"; then
+        status=1
+    fi
+    entry_path_sightings=$((entry_path_sightings + seen))' \
+    '    entry_path_sightings=$((entry_path_sightings + 0))' \
     "entry path bound to a filesystem-path reference"
 
 # 14. The explicit template argument stops being tolerated, so the member
@@ -268,6 +274,48 @@ mutate "a conversion is dropped from the self-test enumeration" check_key_constr
 ' \
     '' \
     "planted 12 conversions, 13 are declared"
+
+# --- The alias branch's statement view --------------------------------------
+# The alias branch is matched against a folded statement rather than a physical
+# line, because the formatter wraps a long alias after the `=`. The four below
+# remove each piece of that, in the order the guard comment introduces them.
+
+# 18. The assignment-continuation join is reverted, so a declaration the
+#     formatter wrapped after the `=` is matched as two lines and neither half
+#     matches. This is the load-bearing hole: an alias exempted for growing
+#     past the column limit, with no author intent.
+mutate "the assignment-continuation join is reverted" check_key_construction.sh \
+    '            return 1
+        }
+        BEGIN { pattern = ENVIRON["KG_ALIAS_PATTERN"] }' \
+    '            return 0
+        }
+        BEGIN { pattern = ENVIRON["KG_ALIAS_PATTERN"] }' \
+    "entry path bound through a wrapped reference declaration"
+
+# 19. The initializer introducer is narrowed back to `=`, so a brace
+#     initializer walks past the rule.
+mutate "the brace initializer allowance is reverted" check_key_construction.sh \
+    '[^=;{]*[={][^;]*\.path' \
+    '[^=;{]*=[^;]*\.path' \
+    "entry path bound through a brace initializer"
+
+# 20. The trailing-punctuation allowance after `.path` is reverted to require
+#     `.path` immediately before the `;`, so a `std::move` initializer - a `)`
+#     between `.path` and the `;` - walks past.
+mutate "the trailing-punctuation allowance is reverted" check_key_construction.sh \
+    '\.path[)}[:space:]]*;' \
+    '\.path[[:space:]]*;' \
+    "entry path bound through std::move"
+
+# 21. The alias type set is widened to catch a typedef, which turns the typedef
+#     residual from accepted to rejected. This is the behavioural side of the
+#     residual's pin: the residual is only genuinely declared if catching it
+#     would break its scenario, and this proves it does.
+mutate "the alias type set is widened to catch a typedef" check_key_construction.sh \
+    '(auto|std::filesystem::path)[^=;{]*[={]' \
+    '(auto|std::filesystem::path|FsPath)[^=;{]*[={]' \
+    "an entry path bound through a typedef of the path type"
 
 if ((planted != declared_mutations)); then
     printf 'key_construction_mutation_guard: planted %d mutations, %d are declared\n' \

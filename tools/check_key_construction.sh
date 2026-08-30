@@ -40,8 +40,15 @@ set -euo pipefail
 # WHAT THIS GUARD STILL DOES NOT DO, stated plainly because a rule about
 # spellings can only ever cover the spellings it names, and because a residual
 # that is written down is an instrument while one that is only believed is a
-# hole. Each of these is pinned by a self-test scenario that asserts the guard
-# ACCEPTS it, so the list cannot quietly stop describing the guard.
+# hole. Three of the four residuals below are pinned by a self-test scenario
+# that asserts the guard ACCEPTS the residual, so the list cannot quietly stop
+# describing the guard: the pin flips to a rejection the moment the guard is
+# widened to catch that residual, which is what makes the pin behavioural
+# rather than documentary. The fourth — a conversion member with a name nobody
+# has written yet — is unpinnable in principle, because any concrete name a
+# scenario could spell is either one the shape already catches or one that
+# builds no key at all, and neither tests the residual. An earlier claim that
+# every residual was pinned was wrong on two of the four and is corrected here.
 #
 #   * A comparison written against `std::filesystem::path` values directly
 #     builds no string at all, so it is invisible to both rules and to the
@@ -61,8 +68,12 @@ set -euo pipefail
 #     each permitted site is another place a hand-spelled key could sit.
 #
 #   * An alias whose declared type is spelled some third way. The alias branch
-#     recognizes `auto` and a filesystem path, which is what the idiom looks
-#     like; a typedef or an alias template would not be recognized.
+#     recognizes `auto` and a filesystem path written literally, across a line
+#     wrap, and whether the initializer is introduced with `=`, with a brace,
+#     or through `std::move`; but a typedef or an alias template naming the
+#     same type — `using FsPath = std::filesystem::path; const FsPath& p =
+#     entry.path;` — is not recognized, because the branch keys on the type
+#     spelling and that spelling is under the author's control. Pinned below.
 #
 #   * A conversion member whose name contains neither `string` nor `native`
 #     nor `c_str`. The shape covers every conversion the standard offers
@@ -117,7 +128,43 @@ readonly normalization_subject='normalizes a path'
 # the tab state in these files carries its own `path` member of interface
 # string type, and binding that is ordinary code with nothing to do with a row
 # key.
-readonly entry_path_pattern='\.path\.(\w*string\w*|native|c_str)[[:space:]]*(<[^>]*>)?[[:space:]]*\(\)|(auto|std::filesystem::path)[^=;]*=[^=;]*\.path[[:space:]]*;'
+#
+# The alias is matched against a STATEMENT rather than a physical line, and the
+# reason is that the project's own formatter would otherwise write a spelling
+# this rule admits. `.clang-format` is LLVM at a 100-column limit, and a long
+# alias declaration is wrapped after the `=`:
+#
+#     const std::filesystem::path& aLongEnoughAliasName =
+#         entry.path;
+#
+# A line-oriented rule anchored on `=` ... `.path;` sees the `=` on one line
+# and the `.path;` on the next and matches neither, so an alias that merely
+# grows past the column limit is exempted with no author intent involved. The
+# fix folds a declaration's continuation lines back together before matching:
+# a physical line whose last token is a bare assignment `=` is joined to the
+# line that follows, which is the only continuation shape the formatter
+# produces for these declarations (a long `std::move` initializer wraps the
+# same way; a brace initializer is never wrapped). Measured, not assumed.
+#
+# The pattern then accepts either `=` or a brace as the initializer introducer
+# and allows only closing punctuation between `.path` and the `;` — the `)`
+# from a `std::move` and the `}` from a brace initializer — so the two
+# formatter-stable one-line evasions are caught as well: `const auto p{entry
+# .path};` and `auto p = std::move(entry.path);`. Allowing only closing
+# punctuation there, rather than any run of non-`;` characters, is deliberate:
+# `auto key = entry.path.string();` is a conversion assigned to a name, not an
+# alias of the path, and it stays the conversion branch's business rather than
+# being swept into this one. Each of the three alias forms — the wrapped form,
+# the brace form, and the move form — is pinned by a self-test scenario that
+# fails by name when the corresponding half of the rule is reverted.
+#
+# The conversion branch is left line-oriented on purpose: the formatter keeps
+# `.path.string()` adjacent in every wrap it produces and rejoins a hand-split
+# chain, so a conversion cannot be separated from its receiver by the gate.
+# That was measured against every long form; it is why only the alias branch
+# needs the statement view.
+readonly entry_path_conversion_pattern='\.path\.(\w*string\w*|native|c_str)[[:space:]]*(<[^>]*>)?[[:space:]]*\(\)'
+readonly entry_path_alias_pattern='(^|[^A-Za-z0-9_])(auto|std::filesystem::path)[^=;{]*[={][^;]*\.path[)}[:space:]]*;'
 readonly -a entry_path_permitted=(data activate selectedPaths)
 readonly entry_path_subject="takes an entry's path as text or under another name"
 
@@ -187,21 +234,22 @@ while IFS= read -r candidate; do
 done < <(guard_corpus_list "$include_glob" | tr '\0' '\n')
 sort -u -o "$covered_paths" "$covered_paths"
 
-# Applies one rule to one file, reporting every match that sits somewhere it
-# may not. Counts permitted matches on stdout so the caller can require the
-# rule to have found something; a rule that matches nowhere is enforcing
-# nothing, and that is reachable by an ordinary rename.
-apply_rule() {
+# Classifies candidate line numbers read on stdin, reporting every match that
+# sits somewhere it may not and counting the permitted ones on stdout so the
+# caller can require the rule to have found something; a rule that matches
+# nowhere is enforcing nothing, and that is reachable by an ordinary rename.
+# The candidate producer is the caller's choice, which is what lets a
+# line-oriented rule and a statement-oriented rule share one classifier.
+classify_candidate_lines() {
     local file="$1"
-    local pattern="$2"
-    local subject="$3"
-    shift 3
+    local subject="$2"
+    shift 2
     local -a permitted=("$@")
     local sightings=0
     local rule_status=0
     local line enclosing
 
-    while IFS=: read -r line _; do
+    while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         enclosing="$(enclosing_function "$file" "$line")"
         if [[ -z "$enclosing" ]]; then
@@ -217,10 +265,69 @@ apply_rule() {
             continue
         fi
         sightings=$((sightings + 1))
-    done < <(grep -nE "$pattern" "$file" | cut -d: -f1 | sed 's/$/:/')
+    done
 
     printf '%d\n' "$sightings"
     return "$rule_status"
+}
+
+# A line-oriented rule: every physical line matching the pattern is a
+# candidate, reported by its own line number.
+apply_rule() {
+    local file="$1"
+    local pattern="$2"
+    local subject="$3"
+    shift 3
+    classify_candidate_lines "$file" "$subject" "$@" \
+        < <(grep -nE "$pattern" "$file" | cut -d: -f1)
+}
+
+# Prints the start line of every statement that matches the alias pattern,
+# folding a declaration's assignment-continuation lines back together first so
+# a match cannot be split across two physical lines by the formatter. A
+# statement's start line is reported, which is where its declared type sits and
+# which resolves to the same enclosing member as any of its continuation lines.
+alias_candidate_lines() {
+    local file="$1"
+    local pattern="$2"
+    KG_ALIAS_PATTERN="$pattern" awk '
+        # A physical line continues its statement when its last token is a
+        # bare assignment "=" - not "==", "<=", "+=" and the like, which is
+        # why the character before the "=" is checked. That is the only
+        # continuation the formatter emits for these declarations.
+        function ends_assignment(s,   t, n, last, prev) {
+            t = s
+            sub(/[[:space:]]+$/, "", t)
+            n = length(t)
+            if (n == 0) return 0
+            last = substr(t, n, 1)
+            if (last != "=") return 0
+            if (n >= 2) {
+                prev = substr(t, n - 1, 1)
+                if (index("=<>!+-*/%&|^", prev) > 0) return 0
+            }
+            return 1
+        }
+        BEGIN { pattern = ENVIRON["KG_ALIAS_PATTERN"] }
+        {
+            if (buffer == "") start = NR
+            buffer = (buffer == "" ? $0 : buffer " " $0)
+            if (ends_assignment($0)) next
+            if (buffer ~ pattern) print start
+            buffer = ""
+        }
+        END { if (buffer != "" && buffer ~ pattern) print start }
+    ' "$file"
+}
+
+# A statement-oriented rule, sharing the classifier with the line-oriented one.
+apply_alias_rule() {
+    local file="$1"
+    local pattern="$2"
+    local subject="$3"
+    shift 3
+    classify_candidate_lines "$file" "$subject" "$@" \
+        < <(alias_candidate_lines "$file" "$pattern")
 }
 
 while IFS= read -r path; do
@@ -238,8 +345,21 @@ while IFS= read -r path; do
     fi
     normalization_sightings=$((normalization_sightings + seen))
 
+    # The entry-path rule is two rules over one subject and one permitted set:
+    # a line-oriented conversion branch and a statement-oriented alias branch.
+    # Both feed the same sighting counter, so the floor is satisfied by the
+    # conversion sightings that exist in permitted members today and no
+    # separate alias floor is imposed, because there is no permitted alias site
+    # to require one.
     seen=0
-    if ! seen="$(apply_rule "$path" "$entry_path_pattern" "$entry_path_subject" \
+    if ! seen="$(apply_rule "$path" "$entry_path_conversion_pattern" "$entry_path_subject" \
+        "${entry_path_permitted[@]}")"; then
+        status=1
+    fi
+    entry_path_sightings=$((entry_path_sightings + seen))
+
+    seen=0
+    if ! seen="$(apply_alias_rule "$path" "$entry_path_alias_pattern" "$entry_path_subject" \
         "${entry_path_permitted[@]}")"; then
         status=1
     fi

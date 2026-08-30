@@ -27,6 +27,60 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- The formatter could write a row-key alias the guard admitted
+
+The key-construction guard keeps row-key construction to a single counted
+function, so a large-directory cost gate can read the key count and trust it.
+Its second rule catches an entry's path taken as text, in two branches: a
+conversion such as `entry.path.string()`, and an alias that binds `entry.path`
+to a new name so the conversion can be spelled on the alias instead.
+
+The alias branch was matched against a physical line, and the project's own
+formatter defeated it. `.clang-format` is LLVM at a 100-column limit, and a
+reference alias whose name pushes the declaration past that limit is wrapped
+after the `=`, leaving `entry.path;` on the next line. A rule anchored on `=`
+then `.path;` saw the two halves separately and matched neither, so an alias
+was exempted for nothing more than growing long — no author intent, written by
+the formatter that every commit runs. The pre-change guard accepted the
+wrapped form; it now rejects it, reporting the declaration's start line.
+
+The alias branch now matches a statement rather than a line. A declaration
+whose last token is a bare assignment `=` is folded together with the line that
+follows before matching, which is the only continuation the formatter produces
+for these declarations: a long `std::move` initializer wraps the same way, and
+a brace initializer is never wrapped. That was measured against each long form,
+not assumed. The pattern also accepts a brace as the initializer introducer and
+no longer requires `.path` to be the last token before the `;`, so the two
+formatter-stable one-line evasions are caught as well — a brace instead of `=`,
+and a `)` between `.path` and the `;` from a move. Three self-test scenarios —
+the wrapped form, the brace form, and the move form — each fail by name when
+the corresponding half of the rule is reverted.
+
+The conversion branch is deliberately left line-oriented. The formatter keeps
+`.path.string()` adjacent in every wrap it produces and rejoins a hand-split
+chain, so a conversion cannot be separated from its receiver by the gate; only
+the alias branch needed the statement view.
+
+A claim about the guard's residuals is corrected here. The guard listed four
+things it does not catch and stated that each was pinned by a scenario
+asserting acceptance. Only two were — a path compared against a path, and an
+implicit conversion. The typedef alias, where the bound name's type is a
+typedef or alias template of the path type rather than `auto` or the type
+written out, was described as a residual but pinned by nothing; it is pinned
+now, and the pin is behavioural, since widening the branch to accept the
+typedef spelling flips that scenario from accepted to rejected. The fourth
+residual — a conversion member with a name nobody has written yet — is
+unpinnable in principle, because any concrete name a scenario could spell is
+either one the shape already catches or one that builds no key, and neither
+tests the residual. Three of four are pinned; the fourth is declared as
+unpinnable rather than described as covered.
+
+The self-test grows from thirty-seven expectations to forty-one under its
+count floor. The guard passes the real tree unchanged at seven covered sources,
+two permitted normalizations, and three permitted entry-path spellings.
+
+---
+
 ## 2026-08-30 -- Renaming many entries is two jobs, and only one of them writes
 
 Bulk rename is split at the point where writing begins. Planning takes an
