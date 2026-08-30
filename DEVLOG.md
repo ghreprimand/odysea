@@ -26,6 +26,82 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Where one entry stops is now written down and gated
+
+The development record separates an entry from the entry below it with a blank
+line, a horizontal rule alone on its line, and a blank line before the heading.
+That convention was never written down. It had been followed unevenly since the
+record started, and nothing checked it, so at this commit 81 of 142 published
+boundaries do not meet it and two of the four changes landing alongside this
+one arrived with a new entry pushed straight against the entry below it.
+
+A rule that does not exist cannot be gated, so the rule is now in CONTRIBUTING
+and governs new entries. It exists because a heading alone does not mark where
+an entry stops: read in a diff, in a plain viewer, or scrolled past its
+heading, a new entry reads as another section of the entry beneath it, and
+every archive move depends on knowing exactly where one entry ends.
+
+Published text is not rewritten to suit a rule written after it, so the 81
+boundaries that were published without a separator are recorded by heading in
+`tools/devlog_boundary_census.txt` and left exactly as they are. That file is a
+census and not an exemption, and the difference is the whole reason it is
+shaped this way. An exemption would say only that a listed boundary may lack a
+separator. The census says which boundaries lack one, and the archive gate
+reads it in both directions: a boundary that does not conform and is not listed
+is a new entry breaking the rule, and a boundary that is listed and now carries
+a separator is published text that was repaired in place.
+
+The second direction is the one that needed the work. Repairing a published
+boundary does not require anyone to decide to rewrite the record - resolving a
+collision at the top of the record by replaying an entry and normalising the
+whitespace around it produces exactly that edit, it reads as tidying in a diff,
+and no other rule here notices: the entry text is untouched, the manifest still
+agrees, and history still agrees. Resolving a collision in the record is a
+byte-for-byte concatenation of whole entries and never a reformatting of them,
+and the gate now fails when it is not.
+
+Entries are keyed by heading alone, because a heading is fixed for the life of
+the record while the file holding it changes at every split. A listed entry
+that becomes the first entry of an archive part has no entry above it and so
+has no boundary to compare; it keeps its census line, and the opening of the
+file it now heads is held to the same three lines by a separate rule that no
+census line can excuse, since a file's opening is written when the file is
+created and that is always after this rule.
+
+The check never opens a record file for writing. A gate that repaired the
+record would be performing the same edit it exists to catch.
+
+Two instruments carry floors, because both of them report a clean record and a
+dead instrument identically. The scan is held to the record's own entry count,
+so a heading pattern that stops matching fails by name instead of examining
+nothing and finding nothing wrong. The census is held to a count floor
+conditioned on an entry in a closed archive, because removing a line is how a
+repair is made to look as though it was always permitted - and repairing a
+boundary and deleting its census line in the same change is the one shape of
+that edit which every other rule in the gate passes.
+
+Three of the 81 listed boundaries carry a horizontal rule with the wrong
+spacing around it. A check asking only whether a rule is present would accept
+all three, so the shape is compared exactly and those three are listed like the
+rest.
+
+Whether the 81 published boundaries are ever repaired is deliberately not
+decided here. They are pinned, not touched.
+
+The guard's self-test grows from 59 scenarios to 72. Both directions of the
+census, the file-opening rule, a rule with the wrong spacing, a missing census,
+a census naming an entry no file holds, a listed entry that has become the
+first of a file, the floor at its boundary, and the branch where the floor does
+not apply each have a scenario. Two more damage the guard itself rather than
+the fixture, because a scan that examined nothing and a census reader that
+counted nothing cannot be produced from a record: each copy is compared against
+the original first, so a patch that failed to apply cannot report a pass for a
+mutation that never landed. Thirteen further mutations were planted in the
+guard and removed again, each one verified to have changed the file; all
+thirteen were caught, with no survivors.
+
+---
+
 ## 2026-08-30 -- Transfers that report, hold, and stop
 
 Copy and move now reproduce a tree entry by entry and chunk by chunk in

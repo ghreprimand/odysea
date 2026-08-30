@@ -581,6 +581,40 @@ increasing date order, with the newest entries staying in the live record. A
 month is archived one way or the other, never both, and parts are not merged
 back when the month closes: a published part is as settled as a closed month.
 
+A new entry is separated from the entry below it by one blank line, a
+horizontal rule alone on its line, and one blank line before the heading. The
+same three lines close a record file's opening paragraphs above its first
+entry. The rule is what makes an entry's extent visible: a heading alone still
+reads as a section of the entry above it when the record is scrolled, diffed,
+or read in a viewer that does not style headings, and every archive move
+depends on knowing where one entry stops.
+
+The convention was written down here long after the record started, and the
+record is inconsistent before that point: at the time this rule landed, 81 of
+142 published boundaries did not meet it. Published text is not rewritten to
+suit a later rule, so those 81 are listed by heading in
+`tools/devlog_boundary_census.txt` and left exactly as they were published.
+
+That list is a census rather than an exemption, and the difference is the whole
+point of it. An exemption would only say that a published boundary may lack a
+separator; the census says which ones do, and the gate reads it in both
+directions. A boundary that does not conform and is not listed is a new entry
+breaking the rule. A boundary that is listed and has acquired a separator is
+published text that was repaired in place — by hand, or by a merge resolution
+that normalises whitespace while replaying an entry. The second is the reason
+the census is written this way: it is silent, it looks like tidying, and
+nothing else in the record would notice it. Resolving a conflict in the record
+is a byte-for-byte concatenation of whole entries and never a reformatting of
+them.
+
+Entries are listed by heading alone, because a heading is fixed for the life of
+the record while the file holding it changes each time the record is split. A
+listed entry that becomes the first entry of an archive part no longer has an
+entry above it, so it has no entry boundary to check; the opening of the file
+it now heads is checked instead. Nothing is removed from the census, and its
+size carries a floor, because it records what was published rather than what
+the record currently happens to contain.
+
 Published entries are never edited, reordered, reworded, or removed; a
 correction is a new entry. Moving entries is a transcription rather than a
 rewrite, so prove byte identity mechanically instead of reading the result
@@ -696,8 +730,10 @@ than the newest archived entry and nothing newer may sit in an archive, part
 numbering and date ranges must be consecutive and disjoint, no entry may appear
 in two files, the index must stay most-recent-first, the manifest and the files
 must agree exactly, entries published from the baseline upward must read newest
-first, and every entry the published branch has ever carried must still be
-present in them, unchanged. In a repository, loss and rewriting are
+first, every entry boundary must either carry a separator or be one the census
+lists, every file must close its opening paragraphs above its first entry, and
+every entry the published branch has ever carried must still be present in
+them, unchanged. In a repository, loss and rewriting are
 both caught mechanically. A source tree extracted from a release archive has no
 history to compare against, so the run says by name that the published record
 is unchecked there and checks the internal agreement that remains.

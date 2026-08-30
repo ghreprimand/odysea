@@ -1,0 +1,108 @@
+# Published devlog entries that carry no conforming boundary above them, in
+# reading order: the live record first, then each archive most recent first,
+# each file top to bottom.
+#
+# The boundary convention was written down long after the record started, and
+# the record was inconsistent before that. This file records exactly which
+# published boundaries do not meet it, so that the rule can be enforced on new
+# entries without demanding that published text be rewritten.
+#
+# It is a census, not an exemption list. The gate compares the record against
+# it in both directions: a boundary missing here that does not conform is a new
+# violation, and a boundary listed here that has acquired a separator is a
+# published entry that was silently repaired. Both are refused. An exemption
+# would permit the second, and the second is the outcome this file exists to
+# prevent - published text is not corrected in place, by hand or by a merge
+# resolution that normalises whitespace.
+#
+# Entries are keyed by heading alone, because a heading is fixed for the life
+# of the record while the file holding it changes every time the record is
+# split. A listed entry that becomes the first entry of an archive part has no
+# entry boundary above it any more; it keeps its line here, and the opening of
+# the file it now heads is checked by the file-opening rule instead.
+#
+# Lines that do not begin with a heading marker are ignored. Nothing may be
+# removed from this list: it is the record of what was published, and the
+# gate holds it to a count floor for that reason.
+
+## 2026-08-28 -- A bare refusal line cannot turn a GPU gap green
+## 2026-08-22 -- A hard link defeated the socket interlock
+## 2026-08-22 -- A build directory now has to be the one its preset describes
+## 2026-08-20 -- Starting a compositor is an obligation to end it
+## 2026-08-20 -- The filtered RHI gate carries every device-scaling check
+## 2026-08-20 -- Protected-well mask edges retain their coverage
+## 2026-08-12 -- One smoke gate replaces two independent implementations
+## 2026-08-12 -- A filtered gate now has to list what its TestCase defines
+## 2026-08-11 -- The record's promised order is checked from a fixed point up
+## 2026-08-11 -- The prohibition is published, not only the mechanism
+## 2026-08-11 -- A declaration is a claim, not evidence
+## 2026-08-09 -- Make columns ownership verification discriminating
+## 2026-08-09 -- Keep cross-pane transfers on visible listings
+## 2026-08-10 -- The watch-burst cost bound had no floor under it
+## 2026-08-10 -- Static-analysis drift reported new diagnostics as departed ones
+## 2026-08-10 -- What the history baseline could still be talked out of
+## 2026-08-10 -- The session interlock names the compositor it authorises
+## 2026-08-09 -- Gates that measured nothing reported success
+## 2026-08-09 -- The record is archived in parts before the month closes
+## 2026-08-09 -- Restate the columns gap to the one that remains
+## 2026-08-09 -- A directory is watched before it is read, not after
+## 2026-08-09 -- Harden columns ownership and focused-view actions
+## 2026-08-09 -- Unclaim the columns view pending action and location wiring
+## 2026-08-08 -- The directory-model suite splits off its cost bounds
+## 2026-08-08 -- Bound the cost of a directory load, not only its spelling
+## 2026-08-08 -- Scan publication states its held share and bounds it in time
+## 2026-08-08 -- Narrow the visual acceptance record to what the gates cover
+## 2026-08-08 -- Miller columns navigation
+## 2026-08-08 -- Interactive storage usage map and accessible list
+## 2026-08-08 -- GPU-gate settle hardening and reachable palette location commands
+## 2026-08-08 -- One place builds a row key
+## 2026-08-08 -- A scattered removal costs what a contiguous one costs
+## 2026-08-08 -- Density-aware action-bar compaction
+## 2026-08-08 -- Render-site contrast matrix, mask over-protection bound, and grab sentinels
+## 2026-08-08 -- Storage usage deduplicates an inode however it was reached
+## 2026-08-08 -- The scanned listing carries its own name index
+## 2026-08-08 -- Directory loads publish on a growing interval
+## 2026-08-07 -- An honest palette list and alias-aware shortcut conflicts
+## 2026-08-07 -- Directory loads stop growing with the square of the listing
+## 2026-08-07 -- Cancellable recursive storage-usage accounting
+## 2026-08-07 -- One place reads an entry's own metadata
+## 2026-08-07 -- One cancellation contract for long walks
+## 2026-08-07 -- Dual-pane transfers
+## 2026-08-07 -- Visual foundation acceptance
+## 2026-08-07 -- Command palette
+## 2026-08-07 -- Entry identity survives recycled device and inode numbers
+## 2026-08-03 -- Close entry-interaction parity gaps
+## 2026-08-02 -- Give each QML test runner its own directory
+## 2026-08-02 -- Semantic typography and vector iconography
+## 2026-07-30 -- Report why the shell scene failed to load
+## 2026-07-29 -- Harden shell navigation and type-ahead coverage
+## 2026-07-28 -- Complete entry interaction and transfer parity
+## 2026-07-28 -- Add spatial navigation and bounded type-ahead
+## 2026-07-28 -- Decode and deliver thumbnails through the application adapter
+## 2026-07-28 -- Formatting covers every C and C++ extension
+## 2026-07-28 -- Bounded, cancellable thumbnail scheduling
+## 2026-07-28 -- Interoperable thumbnail cache policy
+## 2026-07-28 -- Directory entries carry a modification timestamp
+## 2026-07-28 -- Stabilize incremental presentation and geometric selection
+## 2026-07-28 -- Establish deterministic QML quality gates
+## 2026-07-28 -- Live core integration and recoverable operations
+## 2026-07-28 -- Number collisions within the name limit, and correct the working-entry contract
+## 2026-07-28 -- Bound the working names used to replace an entry
+## 2026-07-28 -- Replace destinations transactionally
+## 2026-07-28 -- Stage cross-filesystem moves before replacing anything
+## 2026-07-27 -- Report listing failures instead of throwing
+## 2026-07-28 -- Stable band gestures and complete parity controls
+## 2026-07-27 -- Complete list selection regression coverage
+## 2026-07-27 -- Pointer hit testing and scan watcher lifetime
+## 2026-07-27 -- Input-parity navigation shell
+## 2026-07-27 -- Asynchronous shell model and navigation state
+## 2026-07-27 -- Checkout-independent header analysis
+## 2026-07-27 -- Correct destructive overwrite in copy, move, and rename
+## 2026-07-27 -- Executable formatting, analysis, and publishing gates
+## 2026-07-27 -- Deterministic C++ formatting baseline
+## 2026-07-27 -- Cancellable off-thread directory scanning
+## 2026-07-27 -- Incremental directory watching
+## 2026-07-27 -- Delete to the freedesktop.org trash
+## 2026-07-27 -- Core copy, move, and rename primitives
+## 2026-07-27 -- Public development record and repository safeguards
+## 2026-07-27 -- Initial core and Qt Quick foundation

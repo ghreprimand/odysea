@@ -859,6 +859,159 @@ else
     fi
 fi
 
+# --- Entry boundaries -------------------------------------------------------
+# An entry is separated from the entry below it by one blank line, a horizontal
+# rule alone on its line, and one blank line before the heading. The same three
+# lines close a record file's opening paragraphs above its first entry. Without
+# the rule an entry's extent is invisible: a heading alone reads as a section of
+# the entry above it, and every archive move depends on knowing where one entry
+# stops.
+#
+# THE RECORD PREDATES THE RULE. The convention was written down long after the
+# record started and the record is inconsistent before that: when this check
+# landed, 81 of 142 published boundaries did not meet it. Published text is not
+# rewritten to suit a later rule, so those boundaries are listed by heading in
+# the census file below and left as published.
+#
+# WHY A CENSUS AND NOT AN EXEMPTION. An exemption says only that a published
+# boundary may lack a separator, and that permits the failure this check exists
+# for: a published boundary quietly acquiring one. That happens without anyone
+# deciding to rewrite the record - a merge resolution that replays an entry and
+# normalises the whitespace around it produces exactly that edit, and it looks
+# like tidying in a diff. The census is therefore read in both directions. A
+# boundary that does not conform and is not listed is a new entry breaking the
+# rule. A boundary that is listed and now carries a separator is published text
+# repaired in place. Both fail.
+#
+# KEYED BY HEADING ALONE, because a heading is fixed for the life of the record
+# while the file holding it changes at every split. An entry that becomes the
+# first of an archive part has no entry above it and so has no entry boundary;
+# it keeps its census line, and the opening of the file it now heads is checked
+# by the file-opening rule instead. That transition is the only way a listed
+# boundary may stop being compared, and it is a structural move this gate
+# already constrains, not an edit to published text.
+#
+# THIS CHECK NEVER WRITES. Nothing here opens a record file for writing, so it
+# cannot normalise what it is measuring. A gate that repaired the record would
+# be the same act as the merge resolution it is here to catch.
+readonly boundary_census="tools/devlog_boundary_census.txt"
+
+# The floor applies once the record still reaches back to this entry, which
+# lives in a closed archive and can therefore never be edited or removed. It is
+# deliberately not the entry the history bound is anchored on: these are two
+# different questions, and one constant answering both would tie the size of
+# this list to how far history happens to be readable.
+readonly boundary_census_floor_anchor='## 2026-07-27 -- Asynchronous shell model and navigation state'
+readonly boundary_census_floor=81
+
+if [[ ! -f "$boundary_census" ]]; then
+    fail "the entry-boundary census $boundary_census is missing, so no boundary was compared against what was published"
+else
+    declare -A census_listed=()
+    declare -A census_seen=()
+    census_count=0
+    while IFS= read -r line; do
+        # Only heading lines carry data. Everything else in the file is
+        # commentary, and a heading marker is itself a comment character, so
+        # the test is for the heading shape rather than against a comment one.
+        [[ "$line" == '## '* ]] || continue
+        census_listed["$line"]=1
+        census_count=$((census_count + 1))
+    done <"$boundary_census"
+
+    # A boundary's shape, reported per heading: the three lines above it must be
+    # a blank line, a horizontal rule alone on its line, and a blank line. A
+    # rule with different spacing around it is not the convention and is not
+    # accepted as one - three boundaries in the census carry a rule and are
+    # listed anyway for that reason.
+    boundary_shapes() {
+        awk -v expression="$entry_expression" '
+            $0 ~ expression {
+                seen++
+                conforming = (first == "" && second == "---" && third == "")
+                printf "%s|%s|%s\n", (seen == 1 ? "opening" : "boundary"), \
+                    (conforming ? "conforming" : "broken"), $0
+            }
+            { third = second; second = first; first = $0 }
+        ' "$1"
+    }
+
+    boundaries_checked=0
+    boundaries_pinned=0
+    boundaries_examined=0
+    for path in "$live_record" "${ordered_archives[@]:+${ordered_archives[@]}}"; do
+        [[ -f "$path" ]] || continue
+        while IFS='|' read -r position form heading; do
+            [[ -n "$heading" ]] || continue
+            boundaries_examined=$((boundaries_examined + 1))
+            # Recorded for every entry rather than only for listed ones, and
+            # recorded before the opening entry is set aside below: an entry
+            # that heads a file is still in the record, and a census line
+            # naming it is still holding something.
+            census_seen["$heading"]=1
+            if [[ "$position" == opening ]]; then
+                # The first entry of a file has no entry above it. What must
+                # close above it is the file's opening paragraphs, in the same
+                # three lines, and no census line can excuse that: the opening
+                # of a file is written when the file is created, which is
+                # always after this rule.
+                if [[ "$form" != conforming ]]; then
+                    fail "$path does not close its opening paragraphs with a blank line, a horizontal rule, and a blank line above ${heading}"
+                fi
+                continue
+            fi
+            boundaries_checked=$((boundaries_checked + 1))
+            if [[ -n "${census_listed[$heading]+set}" ]]; then
+                boundaries_pinned=$((boundaries_pinned + 1))
+                if [[ "$form" == conforming ]]; then
+                    fail "the boundary above ${heading} was published without a separator and now carries one, so published text was repaired in place rather than left as published"
+                fi
+            elif [[ "$form" != conforming ]]; then
+                fail "the boundary above ${heading} in $path is not a blank line, a horizontal rule, and a blank line; a new entry is separated from the entry below it"
+            fi
+        done < <(boundary_shapes "$path")
+    done
+
+    # WHAT THE SCAN ACTUALLY READ. Every judgement above is made about a
+    # heading the scan emitted, so a scan that emitted nothing reports success
+    # in exactly the shape of one that read the whole record: no failure, and a
+    # count of zero that nothing compares against. A pattern that will not
+    # compile, or a classifier that stops matching headings, presents that way.
+    # The record's entry count is known independently here, so the scan is held
+    # to it rather than trusted.
+    record_entry_count="$(all_headings | grep -c . || true)"
+    if ((boundaries_examined != record_entry_count)); then
+        fail "the entry-boundary scan read $boundaries_examined of the record's $record_entry_count entries, so boundaries were judged over part of the record or none of it"
+    fi
+
+    # A census line naming an entry the record does not hold means the list and
+    # the record have parted company - the entry was renamed, or the list was
+    # written against a different record. Either way the pin is no longer
+    # holding anything.
+    while IFS= read -r line; do
+        [[ "$line" == '## '* ]] || continue
+        if [[ -z "${census_seen[$line]+set}" ]]; then
+            fail "the entry-boundary census names an entry the record does not hold: ${line}"
+        fi
+    done <"$boundary_census"
+
+    # The floor. The census records what was published, so it never shrinks;
+    # removing a line is how a repair is made to look like it was always the
+    # rule. Which branch was taken is reported either way, because a floor that
+    # had quietly stopped applying reads exactly like one that passed.
+    if all_headings | grep -Fxq -- "$boundary_census_floor_anchor"; then
+        if ((census_count < boundary_census_floor)); then
+            fail "the entry-boundary census holds $census_count entries, fewer than the $boundary_census_floor this record published without a separator; published entries are never repaired, so the list has been weakened rather than the record improving"
+        else
+            printf 'devlog_archive_guard: %d entry boundaries checked, %d pinned as published without a separator, against a census floor of %d\n' \
+                "$boundaries_checked" "$boundaries_pinned" "$boundary_census_floor"
+        fi
+    else
+        printf 'devlog_archive_guard: %d entry boundaries checked, %d pinned as published without a separator; the census floor does not apply here: %s is not in the record\n' \
+            "$boundaries_checked" "$boundaries_pinned" "$boundary_census_floor_anchor"
+    fi
+fi
+
 # --- Floors -----------------------------------------------------------------
 # Each of the comparisons above holds over a record with nothing in it. A live
 # file with no entry is not a record, and neither is one whose entries were all

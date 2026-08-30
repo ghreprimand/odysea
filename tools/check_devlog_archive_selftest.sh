@@ -57,7 +57,7 @@ reported=0
 # `set -e`, an edit that removes a case - and a short run whose every result
 # passed is indistinguishable from a complete one. Raise it when scenarios are
 # added; lowering it to make a run green is removing coverage.
-readonly expected_scenarios=59
+readonly expected_scenarios=72
 
 report() {
     local outcome="$1" scenario="$2"
@@ -129,6 +129,46 @@ refresh_manifest() {
         done < <(find "$root/docs/devlog" -name '*.md' -type f -printf '%f\n' |
             sort -r)
     } >"$root/docs/devlog/published-entries.txt"
+
+    refresh_boundary_census "$root"
+}
+
+# The headings in one file whose boundary does not conform, skipping the file's
+# first entry - which has no entry above it and is judged by the file-opening
+# rule instead.
+#
+# Written out here rather than taken from the guard, for the same reason the
+# manifest is: a self-test that derived the answer from the code under test
+# would agree with a wrong answer.
+boundary_census_lines() {
+    awk '
+        /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / {
+            seen++
+            if (seen > 1 && !(first == "" && second == "---" && third == "")) {
+                print $0
+            }
+        }
+        { third = second; second = first; first = $0 }
+    ' "$1"
+}
+
+# Regenerates the boundary census from whatever the files currently hold, in
+# the same reading order as the manifest. A scenario that wants a census
+# disagreeing with the record edits the file afterwards.
+refresh_boundary_census() {
+    local root="$1"
+
+    mkdir -p "$root/tools"
+    {
+        printf '# Published entries whose boundary does not conform.\n'
+        boundary_census_lines "$root/DEVLOG.md"
+        local name
+        while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            boundary_census_lines "$root/docs/devlog/$name"
+        done < <(find "$root/docs/devlog" -name '*.md' -type f -printf '%f\n' |
+            sort -r)
+    } >"$root/tools/devlog_boundary_census.txt"
 }
 
 # Builds a throwaway repository whose August is archived in two parts, with
@@ -1273,6 +1313,289 @@ refresh_manifest "$root"
 track_everything "$root"
 expect_rejected "a walk that compared no heading date at all fails rather than passing" \
     "$root" "no heading date was compared against a commit"
+
+# --- Entry boundaries -------------------------------------------------------
+# An entry is separated from the entry below it by a blank line, a horizontal
+# rule, and a blank line. The record predates that convention and is
+# inconsistent before it, so the boundaries that were published without a
+# separator are listed by heading and left as published.
+#
+# The list is read in both directions, and the second direction is the one that
+# needs proving. A boundary that is listed and now carries a separator is
+# published text repaired in place - which is what a merge resolution that
+# normalises whitespace around a replayed entry produces, silently and looking
+# like tidying. A guard only ever shown catching a missing separator would not
+# distinguish a census from an exemption.
+
+# The entry the census floor is conditioned on, written out here rather than
+# read from the guard, and the size the floor demands once it applies.
+readonly boundary_floor_anchor_heading='2026-07-27 -- Asynchronous shell model and navigation state'
+readonly boundary_floor_count=81
+
+# Breaks the boundary above the named heading: the blank line, rule, and blank
+# line become a single blank line, which is the commonest shape in the record.
+break_boundary() {
+    local path="$1" heading="$2"
+    python3 - "$path" "$heading" <<'BREAK'
+import sys
+
+path, heading = sys.argv[1], sys.argv[2]
+text = open(path).read()
+separated = "\n---\n\n## %s\n" % heading
+bare = "\n## %s\n" % heading
+if separated not in text:
+    raise SystemExit("fixture: no separated boundary above %s" % heading)
+open(path, "w").write(text.replace(separated, bare, 1))
+BREAK
+}
+
+# The inverse: gives the named heading the boundary the convention asks for.
+repair_boundary() {
+    local path="$1" heading="$2"
+    python3 - "$path" "$heading" <<'REPAIR'
+import sys
+
+path, heading = sys.argv[1], sys.argv[2]
+text = open(path).read()
+bare = "\n## %s\n" % heading
+separated = "\n---\n\n## %s\n" % heading
+if bare not in text:
+    raise SystemExit("fixture: no bare boundary above %s" % heading)
+open(path, "w").write(text.replace(bare, separated, 1))
+REPAIR
+}
+
+expect_accepted_boundaries() {
+    local scenario="$1" root="$2" expected="$3"
+    local output exit_status=0
+    output="$(run_guard "$root")" || exit_status=$?
+
+    if ((exit_status != 0)); then
+        report FAIL "$scenario: guard rejected a record it had to accept"
+        printf '  %s\n' "$output" >&2
+        return
+    fi
+    if [[ "$output" != *"$expected"* ]]; then
+        report FAIL "$scenario: guard did not report what it did about boundaries"
+        printf '  expected to contain: %s\n' "$expected" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    report PASS "$scenario"
+}
+
+# A boundary published without a separator stays as published. The rule governs
+# new entries; it does not demand that the record be rewritten to suit it.
+root="$(build_repository boundary_pinned_stays_bare)"
+break_boundary "$root/docs/devlog/2026-08-part1.md" "2026-08-01 -- First August entry"
+refresh_manifest "$root"
+track_everything "$root"
+expect_accepted_boundaries "a boundary published without a separator is left as published" \
+    "$root" "1 pinned as published without a separator"
+
+# The forward direction: a boundary that does not conform and is not listed.
+root="$(build_repository boundary_new_violation)"
+refresh_manifest "$root"
+break_boundary "$root/DEVLOG.md" "2026-08-08 -- Eighth August entry"
+track_everything "$root"
+expect_rejected "a new entry written without a separator above it" "$root" \
+    "the boundary above ## 2026-08-08 -- Eighth August entry in DEVLOG.md is not a blank line, a horizontal rule, and a blank line"
+
+# The direction that makes this a census rather than an exemption: a listed
+# boundary that has acquired a separator. Nothing else in the record notices -
+# the entry text is untouched, the manifest agrees, history agrees, and the
+# result looks tidier than what was published.
+root="$(build_repository boundary_silently_repaired)"
+break_boundary "$root/docs/devlog/2026-08-part1.md" "2026-08-01 -- First August entry"
+refresh_manifest "$root"
+repair_boundary "$root/docs/devlog/2026-08-part1.md" "2026-08-01 -- First August entry"
+track_everything "$root"
+expect_rejected "a published boundary repaired in place" "$root" \
+    "was published without a separator and now carries one"
+
+# A rule with the wrong spacing around it is not the convention. Three
+# boundaries in the shipped record are in exactly this state, and a check
+# asking only whether a rule is present would accept all three.
+root="$(build_repository boundary_rule_without_blank)"
+refresh_manifest "$root"
+python3 - "$root/DEVLOG.md" <<'CRAMP'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+heading = "2026-08-08 -- Eighth August entry"
+open(path, "w").write(
+    text.replace("\n---\n\n## %s\n" % heading, "---\n\n## %s\n" % heading, 1)
+)
+CRAMP
+track_everything "$root"
+expect_rejected "a horizontal rule with no blank line above it" "$root" \
+    "is not a blank line, a horizontal rule, and a blank line"
+
+# The census file itself. Without it nothing above was compared, and every
+# boundary in the record would read as conforming or as a fresh violation
+# depending only on the record's history.
+root="$(build_repository boundary_census_absent)"
+refresh_manifest "$root"
+rm -f "$root/tools/devlog_boundary_census.txt"
+track_everything "$root"
+expect_rejected "the census file is missing" "$root" \
+    "is missing, so no boundary was compared against what was published"
+
+# A census line naming an entry the record does not hold pins nothing.
+root="$(build_repository boundary_census_stale)"
+refresh_manifest "$root"
+printf '## 2026-07-02 -- An entry no file holds\n' \
+    >>"$root/tools/devlog_boundary_census.txt"
+track_everything "$root"
+expect_rejected "the census names an entry the record does not hold" "$root" \
+    "names an entry the record does not hold: ## 2026-07-02 -- An entry no file holds"
+
+# The first entry of a file has no entry above it, so what has to close above
+# it is the file's opening paragraphs. No census line can excuse that: a
+# file's opening is written when the file is created, which is always after
+# this rule.
+root="$(build_repository boundary_file_opening)"
+refresh_manifest "$root"
+python3 - "$root/docs/devlog/2026-07.md" <<'OPENING'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+open(path, "w").write(text.replace("\n---\n\n## ", "\n\n## ", 1))
+OPENING
+track_everything "$root"
+expect_rejected "a record file whose opening does not close with a rule" "$root" \
+    "does not close its opening paragraphs with a blank line, a horizontal rule, and a blank line"
+
+# A listed entry that has become the first entry of a file. Splitting the
+# record does that to whichever entry heads the new part, and the entry keeps
+# its census line because the heading is what the census keys on. It has no
+# entry boundary any more, so there is nothing to compare and nothing to fail.
+root="$(build_repository boundary_pinned_became_first)"
+refresh_manifest "$root"
+printf '## 2026-08-05 -- Fifth August entry\n' \
+    >>"$root/tools/devlog_boundary_census.txt"
+track_everything "$root"
+expect_accepted_boundaries "a listed entry that now heads a file is not compared" \
+    "$root" "entry boundaries checked"
+
+# --- The census floor -------------------------------------------------------
+# Builds a record whose July archive holds 82 entries with no separator between
+# any of them: 81 boundaries, every one of them published that way. That is the
+# size the shipped census carries, so the floor applies to this fixture exactly
+# as it applies to the record.
+build_floor_repository() {
+    local name="$1" repaired="$2"
+    local root="$sandbox_root/$name"
+
+    mkdir -p "$root/docs/devlog"
+
+    write_live_record "$root" docs/devlog/2026-07.md -- \
+        "$ordering_baseline_heading" \
+        "2026-08-09 -- Ninth August entry"
+
+    {
+        printf '# Devlog archive 2026-07\n\nArchived entries.\n\n---\n'
+        printf '\n## %s\n\nBody text.\n' "$boundary_floor_anchor_heading"
+        local index
+        for ((index = 2; index <= 82; index++)); do
+            if ((index == 82 && repaired == 1)); then
+                printf '\n---\n'
+            fi
+            printf '\n## 2026-07-27 -- July entry %d\n\nBody text.\n' "$index"
+        done
+    } >"$root/docs/devlog/2026-07.md"
+
+    refresh_manifest "$root"
+
+    git -C "$root" init --quiet -b main
+    git -C "$root" config core.hooksPath "$root/.git/absent-hooks"
+    printf '%s\n' "$root"
+}
+
+root="$(build_floor_repository boundary_floor_met 0)"
+track_everything "$root"
+expect_accepted_boundaries "a census at the floor is accepted and reports it" \
+    "$root" "81 pinned as published without a separator, against a census floor of 81"
+
+# The laundering the floor exists to stop, and the only shape of it that every
+# other check here passes: a published boundary is repaired AND its census line
+# removed in the same change, so the record and the census agree perfectly with
+# each other and disagree only with what was published.
+root="$(build_floor_repository boundary_floor_laundered 1)"
+sed -i '/^## 2026-07-27 -- July entry 82$/d' "$root/tools/devlog_boundary_census.txt"
+track_everything "$root"
+expect_rejected "a boundary repaired and its census line removed together" "$root" \
+    "fewer than the 81 this record published without a separator"
+
+# The other branch of that condition, which no scenario above reaches: a record
+# that does not go back as far as the anchor is not held to the floor, and the
+# run says which branch it took. A floor that had quietly stopped applying
+# reads exactly like one that passed.
+root="$(build_repository boundary_floor_not_applicable)"
+refresh_manifest "$root"
+track_everything "$root"
+expect_accepted_boundaries "a record without the anchor entry is not held to the floor" \
+    "$root" "the census floor does not apply here"
+
+# --- Instruments that stopped working ---------------------------------------
+# Every judgement above is made about a heading the scan emitted and a line the
+# census reader counted. Either one silently reading nothing produces no
+# failure and a count of zero, which is the shape of a clean record. Neither
+# state can be built from a fixture, so the guard itself is damaged and its
+# exit status and reason asserted. The copy is compared against the original
+# first: a patch that failed to apply would leave the working guard in place
+# and the scenario would report a pass for a mutation that never landed.
+expect_patched_guard_rejection() {
+    local scenario="$1" reason="$2" patch="$3" root="$4"
+
+    local tools_copy="$sandbox_root/$scenario-tools"
+    mkdir -p "$tools_copy"
+    cp "$guard" "$tools_copy/check_devlog_archive.sh"
+    cp "$script_directory/guard_corpus.sh" "$tools_copy/guard_corpus.sh"
+    sed -i "$patch" "$tools_copy/check_devlog_archive.sh"
+
+    if cmp -s "$guard" "$tools_copy/check_devlog_archive.sh"; then
+        report FAIL "$scenario: the patch did not change the guard, so nothing was measured"
+        return
+    fi
+
+    local output exit_status=0
+    output="$(cd "$root" && bash "$tools_copy/check_devlog_archive.sh" 2>&1)" ||
+        exit_status=$?
+
+    if ((exit_status == 0)); then
+        report FAIL "$scenario: a damaged guard reported success"
+        return
+    fi
+    if [[ "$output" != *"$reason"* ]]; then
+        report FAIL "$scenario: rejected for the wrong reason"
+        printf '  expected to contain: %s\n' "$reason" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    report PASS "$scenario"
+}
+
+root="$(build_repository boundary_scan_examined_nothing)"
+refresh_manifest "$root"
+track_everything "$root"
+expect_patched_guard_rejection boundary_scan_examined_nothing \
+    "the entry-boundary scan read 0 of the record's 9 entries" \
+    's|$0 ~ expression {|$0 ~ "no heading matches this" {|' \
+    "$root"
+
+# The census reader is broken rather than the scan: the list is still loaded,
+# so no boundary becomes a fresh violation and the count alone goes to zero.
+# The floor is what reports it, which is why this scenario uses the floor
+# fixture - and it is the reason the floor is a count rather than a comment.
+root="$(build_floor_repository boundary_census_counted_nothing 0)"
+track_everything "$root"
+expect_patched_guard_rejection boundary_census_counted_nothing \
+    "the entry-boundary census holds 0 entries" \
+    's|census_count=$((census_count + 1))|census_count=$((census_count + 0))|' \
+    "$root"
 
 if ((reported != expected_scenarios)); then
     echo "devlog_archive_guard_self_test: $reported scenario(s) reported a result, expected $expected_scenarios" >&2
