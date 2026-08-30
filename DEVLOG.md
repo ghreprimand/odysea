@@ -27,6 +27,33 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Quick preview owns its work until dismissal completes
+
+The focused entry now opens in one modal quick-preview surface from
+`Ctrl+Space` or the toolbar. Escape, the close control, and a press outside all
+dismiss it, cancel its current load, and return focus to the originating
+directory view without changing the current entry. Raster images are decoded
+to a bounded surface, plain text is read up to a stated one-mebibyte limit, and
+Markdown uses the shell's built-in document renderer. Formats that need a
+renderer the shell does not link state that gap instead of showing an empty
+preview.
+
+Every load runs off the interface thread under a generation and a cooperative
+cancellation flag. The model keeps each watcher owned until its worker
+acknowledges completion, while a replaced or dismissed generation can never
+publish stale content. The overlay uses the existing panel, well, ink, border,
+focus, and selection tokens. Strong, Balanced, and Minimal retain the bounded
+transition; Off, high contrast, and reduced motion remove its time without
+changing content luminance. The same opaque surface and painted image path stay
+interactive on the forced software renderer.
+
+Verified: focused content-loader, input-parity, and software-fallback tests;
+QML lint and formatting gates; release and ASan/UBSan batteries. A genuine
+compositor frame was not measured because no declared isolated compositor was
+available, and no test used a live session.
+
+---
+
 ## 2026-08-30 -- Accent repairs explain themselves and large listings stay bounded
 
 Accent selection now reports when its authored value cannot reach every rendered

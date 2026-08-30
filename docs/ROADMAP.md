@@ -71,6 +71,12 @@ graphical shell grows around it.
       beside the complete destination; failed moves are not journaled. Hold,
       resume, and stop are declared once and reach the keyboard, the canvas
       menu, the command palette, and the status strip.
+- [x] Quick preview overlay for raster images, plain text, and Markdown
+      documents. `Ctrl+Space` and the toolbar action summon it; Escape, the
+      close control, and a press outside dismiss it and restore focus to the
+      originating entry view. Loading is bounded, off-thread, generation-safe,
+      and cooperatively cancelled on dismissal. Document formats that require
+      an unlinked renderer report that capability gap explicitly.
 - [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
       Btrfs snapshot discovery.
 - [x] Built-in fuzzy find across the current tree. Matching and ranking are

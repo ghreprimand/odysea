@@ -284,6 +284,17 @@ ApplicationWindow {
         fuzzyFindOverlay.openFor(root.activeEntryModel.path, root.activeEntryModel.showHidden);
     }
 
+    function openQuickPreview() {
+        const row = root.activeEntryModel.currentIndex;
+        if (row < 0 || root.activeEntryModel.rowIsDirectory(row) || root.activeEntryModel.selectedCount !== 1 || !root.activeEntryModel.rowSelected(row)) {
+            return;
+        }
+        const sourceUrl = root.activeEntryModel.selectedFileUrls[0];
+        if (sourceUrl.length > 0) {
+            quickPreviewOverlay.openFor(sourceUrl);
+        }
+    }
+
     Timer {
         id: typeAheadTimer
 
@@ -353,6 +364,19 @@ ApplicationWindow {
         finderModel: fuzzyFindModel
         shellModel: root.activeShellModel
         theme: root.shellTheme
+    }
+
+    QuickPreviewModel {
+        id: quickPreviewModel
+    }
+
+    QuickPreviewOverlay {
+        id: quickPreviewOverlay
+
+        parent: root.contentItem
+        previewModel: quickPreviewModel
+        theme: root.shellTheme
+        onDismissed: root.focusCurrentView()
     }
 
     // Everything the presentation pipeline processes lives under one item:

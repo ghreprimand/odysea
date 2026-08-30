@@ -108,6 +108,11 @@ ToolBar {
             ActionButton {
                 theme: bar.theme
                 registry: bar.registry
+                actionId: "preview.open"
+            }
+            ActionButton {
+                theme: bar.theme
+                registry: bar.registry
                 actionId: "palette.open"
             }
             ActionButton {
@@ -208,6 +213,13 @@ ToolBar {
             theme: bar.theme
             registry: bar.registry
             actionId: "find.tree"
+            showLabel: !bar.compact
+        }
+        ActionButton {
+            objectName: "previewButton"
+            theme: bar.theme
+            registry: bar.registry
+            actionId: "preview.open"
             showLabel: !bar.compact
         }
         ActionButton {

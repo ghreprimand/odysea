@@ -65,6 +65,88 @@ Support.ShellTestCase {
         });
     }
 
+    function test_quickPreviewKeyboardSummonAndEscapeDismiss() {
+        const preview = child("quickPreviewOverlay");
+        const list = child("directoryList");
+        verify(!preview.opened);
+        fakeModel.selectRow(0, Qt.NoModifier);
+        list.forceActiveFocus();
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+
+        keySequence("Ctrl+Space");
+        tryVerify(function () {
+            return preview.opened;
+        });
+        tryVerify(function () {
+            return child("quickPreviewFocusSurface").activeFocus;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !preview.opened;
+        });
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+    }
+
+    function test_quickPreviewPointerSummonAndOutsideDismiss() {
+        const preview = child("quickPreviewOverlay");
+        const button = child("previewButton");
+        const list = child("directoryList");
+        verify(!preview.opened);
+        clickRow(0, Qt.LeftButton, Qt.NoModifier);
+
+        mouseClick(button);
+        tryVerify(function () {
+            return preview.opened;
+        });
+        tryVerify(function () {
+            return child("quickPreviewFocusSurface").activeFocus;
+        });
+        mouseClick(shellWindow.contentItem, 5, shellWindow.height - 5);
+        tryVerify(function () {
+            return !preview.opened;
+        });
+        tryVerify(function () {
+            return list.activeFocus;
+        });
+        compare(fakeModel.currentIndex, 0);
+    }
+
+    function test_quickPreviewReducedMotionAndEffectsOffRemoveTransitionTime() {
+        const preview = child("quickPreviewOverlay");
+        shellWindow.shellTheme.reducedMotion = false;
+        shellWindow.shellTheme.highContrast = false;
+        const motionProfiles = [ShellTheme.Strong, ShellTheme.Balanced, ShellTheme.Minimal];
+        for (let index = 0; index < motionProfiles.length; ++index) {
+            shellWindow.shellTheme.profile = motionProfiles[index];
+            verify(!preview.effectsOff);
+            verify(preview.transitionDurationMs > 0);
+        }
+        const panelColor = preview.semanticPanelColor.toString();
+
+        shellWindow.shellTheme.reducedMotion = true;
+        compare(preview.transitionDurationMs, 0);
+        compare(preview.semanticPanelColor.toString(), panelColor);
+
+        shellWindow.shellTheme.reducedMotion = false;
+        shellWindow.shellTheme.profile = ShellTheme.Off;
+        verify(preview.effectsOff);
+        compare(preview.transitionDurationMs, 0);
+        compare(preview.semanticPanelColor.toString(), panelColor);
+
+        shellWindow.shellTheme.profile = ShellTheme.Balanced;
+        shellWindow.shellTheme.highContrast = true;
+        verify(preview.effectsOff);
+        compare(preview.transitionDurationMs, 0);
+
+        shellWindow.shellTheme.highContrast = false;
+        shellWindow.shellTheme.profile = ShellTheme.Balanced;
+        shellWindow.shellTheme.reducedMotion = false;
+    }
+
     function test_dualPaneToggleMovedToFunctionKey() {
         compare(shellWindow.paneCount, 1);
         keySequence("F3");

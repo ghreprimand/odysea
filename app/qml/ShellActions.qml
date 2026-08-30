@@ -637,6 +637,20 @@ ActionRegistry {
         perform: () => actionSet.entryModel.requestTrash()
     }
     ShellAction {
+        actionId: "preview.open"
+        label: qsTr("Quick preview")
+        shortLabel: qsTr("Preview")
+        iconName: "preview"
+        enabled: actionSet.entryModel.currentIndex >= 0 && actionSet.entryModel.selectedCount === 1 && actionSet.entryModel.rowSelected(actionSet.entryModel.currentIndex) && !actionSet.entryModel.rowIsDirectory(actionSet.entryModel.currentIndex)
+        disabledReasonFor: () => actionSet.entryModel.currentIndex < 0 ? qsTr("No entry is focused") : (actionSet.entryModel.selectedCount !== 1 || !actionSet.entryModel.rowSelected(actionSet.entryModel.currentIndex)) ? qsTr("Select the focused entry to preview it") : qsTr("Folders do not have a quick preview")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Space"
+            }
+        ]
+        perform: () => actionSet.shell.openQuickPreview()
+    }
+    ShellAction {
         actionId: "palette.open"
         label: qsTr("Command palette")
         shortLabel: qsTr("Commands")

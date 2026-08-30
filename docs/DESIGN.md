@@ -313,6 +313,19 @@ The codebase separates a toolkit-agnostic core from the presentation layer:
   focus popup's platform behavior, pinned by the full-shell input-parity
   tests rather than duplicated in palette code. `Ctrl+Shift+P` opens the
   palette; the dual-pane toggle lives on `F3`.
+- **Quick preview.** `Ctrl+Space` and the toolbar's Preview action open one
+  modal view of the focused entry; Escape, its close control, and a press
+  outside dismiss it. Focus then returns to the same directory view and
+  current entry. Raster decoding and bounded text reads run on an owned worker
+  job, and dismissal requests cooperative cancellation while the model keeps
+  ownership until the job acknowledges it. Raster images, UTF-8 plain text,
+  and Markdown documents are supported. Formats that need a document renderer
+  not linked by the shell report that capability gap in the preview instead of
+  presenting an empty surface. The popup is an opaque semantic-token surface
+  above the presentation pipeline, so image content remains color-true on GPU
+  and software paths. Reduced motion removes its transition time without
+  changing panel or content luminance; Off and high contrast use the same
+  time-free fallback.
 - **One cancellation contract, not one per walk.** Directory listing and
   storage-usage accounting are both long walks a user can abandon mid-flight,
   and both need the same guarantees: a private worker thread, monotonic
@@ -982,6 +995,11 @@ effects, or a custom RHI/Vulkan pass) for the visual identity.
   interfaces free of toolkit types, which is what keeps the scheduling, the
   memory bound, and the cancellation behaviour verifiable without a display
   server.
+- Quick-preview raster decoding and bounded text reads run away from the UI
+  thread. Each open owns a generation and a cancellation flag; replacement or
+  dismissal invalidates the generation, asks the worker to stop, and keeps the
+  watcher owned until completion, so stale content cannot publish and an
+  abandoned job cannot outlive its model unnoticed.
 - The application decoder accepts a conservative set of web image formats and
   rejects oversized dimensions and decoded byte costs before allocating pixel
   buffers. Worker results return through a thread-safe image provider only

@@ -71,6 +71,18 @@ Item {
         theme: theme
     }
 
+    QuickPreviewModel {
+        id: previewModel
+    }
+
+    QuickPreviewOverlay {
+        id: quickPreview
+
+        parent: harness
+        previewModel: previewModel
+        theme: theme
+    }
+
     TestCase {
         id: testCase
 
@@ -140,6 +152,23 @@ Item {
             compare(frame.pixel(beacon.x + 40, beacon.y + 40), Qt.rgba(1, 1, 1, 1));
             wells.unregisterWell(beacon);
             compare(wells.wellCount, 0);
+        }
+
+        function test_quickPreviewSoftwareFallbackStaysVisibleAndInteractive() {
+            verify(layer.softwareBackend);
+            quickPreview.openFor("file:///preview-fixture/missing.txt");
+            tryVerify(function () {
+                return quickPreview.opened;
+            });
+            tryCompare(previewModel, "state", QuickPreviewModel.Error);
+            const message = findChild(quickPreview.contentItem, "quickPreviewMessage");
+            verify(message !== null);
+            verify(message.visible);
+            keyClick(Qt.Key_Escape);
+            tryVerify(function () {
+                return !quickPreview.opened;
+            });
+            tryCompare(previewModel, "state", QuickPreviewModel.Idle);
         }
 
         function test_materialAndMotionSurviveTheFallback() {

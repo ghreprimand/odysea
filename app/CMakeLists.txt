@@ -53,6 +53,10 @@ qt_add_qml_module(odysea_shell_qml
         src/fuzzy_find_model.hpp
         src/miller_columns_model.cpp
         src/miller_columns_model.hpp
+        src/preview_image_item.cpp
+        src/preview_image_item.hpp
+        src/quick_preview_model.cpp
+        src/quick_preview_model.hpp
         src/storage_usage_model.cpp
         src/storage_usage_model.hpp
         src/theme_controller.cpp
@@ -90,6 +94,7 @@ qt_add_qml_module(odysea_shell_qml
         qml/PathNavigator.qml
         qml/PaneFrame.qml
         qml/PresentationLayer.qml
+        qml/QuickPreviewOverlay.qml
         qml/ShellAction.qml
         qml/ShellActions.qml
         qml/ShellButton.qml
@@ -133,7 +138,7 @@ target_link_libraries(odysea_shell_qml
         odysea::core
         Qt6::Quick Qt6::QuickControls2
     PRIVATE
-        odysea_app_adapter odysea_warnings odysea_sanitizers)
+        odysea_app_adapter Qt6::Concurrent odysea_warnings odysea_sanitizers)
 
 target_link_libraries(odysea_app_adapter
     PUBLIC
@@ -316,6 +321,17 @@ target_link_libraries(odysea_qml_enum_registration_tests
         odysea_warnings odysea_sanitizers)
 
 add_test(NAME app_qml_enum_registration COMMAND odysea_qml_enum_registration_tests)
+
+qt_add_executable(odysea_quick_preview_model_tests
+    tests/tst_quick_preview_model.cpp)
+
+target_link_libraries(odysea_quick_preview_model_tests
+    PRIVATE
+        odysea_shell_qml odysea_shell_qmlplugin
+        Qt6::Concurrent Qt6::Gui Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_quick_preview_model COMMAND odysea_quick_preview_model_tests)
 
 # The rendered-shell tests run from an executable that links the shell module,
 # so `import OdySea` resolves exactly as it does in the application. The generic
