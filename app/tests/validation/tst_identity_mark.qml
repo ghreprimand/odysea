@@ -207,7 +207,7 @@ Item {
             verifySmallMark(mark, "high-contrast application mark", true, false);
         }
 
-        function test_geometrySurvivesProfilesAndAccentPresets() {
+        function test_geometrySurvivesProfilesAndAccentRoutingStaysDisconnected() {
             const path = mark.pathData;
             const ink = mark.ink.toString();
             const profiles = [ShellTheme.Off, ShellTheme.Minimal, ShellTheme.Balanced, ShellTheme.Strong, ShellTheme.Custom];
@@ -218,11 +218,27 @@ Item {
                     verifySmallMark(mark, "profile " + index, true, false);
                 }
             }
+
+            // This loop pins a controller-routing contract, not preset color
+            // data: every current and future model entry must remain
+            // disconnected from iconInk and therefore from the product mark.
             for (let index = 0; index < theme.accentPresets.length; ++index) {
                 theme.accentPresetIndex = index;
                 compare(mark.pathData, path);
                 compare(mark.ink.toString(), ink);
             }
+        }
+
+        function test_paletteAndHighContrastRestyleTheMark() {
+            const defaultInk = mark.ink.toString();
+            theme.paletteId = "odyssey";
+            tryCompare(mark, "ink", theme.iconInk);
+            verify(mark.ink.toString() !== defaultInk, "a palette change must reach the mark through iconInk");
+
+            const paletteInk = mark.ink.toString();
+            theme.highContrast = true;
+            tryCompare(mark, "ink", theme.text);
+            verify(mark.ink.toString() !== paletteInk, "high contrast must promote the mark to primary text ink");
         }
     }
 }

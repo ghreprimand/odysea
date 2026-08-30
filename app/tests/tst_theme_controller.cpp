@@ -19,6 +19,8 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <array>
+#include <limits>
 using odysea::app::themeAccentContrastSamples;
 using odysea::app::themeContrastFailures;
 using odysea::app::themeContrastRatio;
@@ -71,10 +73,14 @@ QList<BedVariant> ground_beds(const ThemeController& theme) {
 /// ChromeStrip, which paints the panel at the surface opacity over the
 /// window ground.
 QList<BedVariant> panel_beds(const ThemeController& theme) {
-    return {BedVariant{.name = QStringLiteral("panel"), .color = theme.panel()},
-            BedVariant{.name = QStringLiteral("panel strip"),
-                       .color = composite_over(theme.background(), theme.panel(),
-                                               theme.surfaceOpacity())}};
+    QList<BedVariant> beds{BedVariant{.name = QStringLiteral("panel"), .color = theme.panel()}};
+    constexpr std::array<double, 6> surfaceOpacities{0.0, 0.2, 0.4, 0.6, 0.8, 1.0};
+    for (const double opacity : surfaceOpacities) {
+        beds.append(
+            BedVariant{.name = QStringLiteral("panel strip at %1 opacity").arg(opacity, 0, 'f', 1),
+                       .color = composite_over(theme.background(), theme.panel(), opacity)});
+    }
+    return beds;
 }
 
 QList<BedVariant> selection_beds(const ThemeController& theme) {
@@ -209,6 +215,7 @@ class tst_ThemeController : public QObject {
     void navigation_settings_persist_across_instances();
     void reset_restores_and_persists_the_defaults();
     void text_lift_brightens_chromatic_inks_from_effective_state();
+    void default_icon_ink_pressed_bed_is_the_binding_margin();
     void high_contrast_roles_meet_measured_ratios();
 };
 
@@ -700,6 +707,39 @@ void tst_ThemeController::long_form_role_is_readable() {
     QCOMPARE(theme.longFormMeasure(), 1120);
 }
 
+void tst_ThemeController::default_icon_ink_pressed_bed_is_the_binding_margin() {
+    ThemeController theme;
+    theme.setProfile(ThemeController::Balanced);
+    theme.setHighContrast(false);
+
+    double tightestRatio = std::numeric_limits<double>::max();
+    QString tightestPalette;
+    QString tightestBed;
+    for (const QString& palette : theme.availablePalettes()) {
+        theme.setPaletteId(palette);
+        QList<BedVariant> beds = panel_beds(theme);
+        beds.append(hover_beds(theme));
+        beds.append(pressed_beds(theme));
+        for (const BedVariant& bed : beds) {
+            const double ratio = themeContrastRatio(theme.iconInk(), bed.color);
+            if (ratio < tightestRatio) {
+                tightestRatio = ratio;
+                tightestPalette = palette;
+                tightestBed = bed.name;
+            }
+        }
+    }
+
+    QCOMPARE(tightestPalette, QStringLiteral("odyssey"));
+    QCOMPARE(tightestBed, QStringLiteral("pressed bed"));
+    QVERIFY2(tightestRatio >= 2.10 && tightestRatio <= 2.11,
+             qPrintable(QStringLiteral("measured ratio: %1").arg(tightestRatio, 0, 'f', 6)));
+    QVERIFY2(
+        ((tightestRatio / 2.0) - 1.0) >= 0.05 && ((tightestRatio / 2.0) - 1.0) <= 0.055,
+        qPrintable(
+            QStringLiteral("measured margin: %1").arg((tightestRatio / 2.0) - 1.0, 0, 'f', 6)));
+}
+
 void tst_ThemeController::high_contrast_roles_meet_measured_ratios() {
     // Measured readability floors for the semantic roles, on the beds each
     // role actually renders on. High contrast is the accessibility promise:
@@ -931,11 +971,20 @@ void tst_ThemeController::high_contrast_roles_meet_measured_ratios() {
                  .highContrastFloor = 4.5},
     };
 
+    const QVariantList presets = ThemeController::accentPresets();
+    QVERIFY(!presets.isEmpty());
+
     QStringList failures;
     for (const QString& palette : theme.availablePalettes()) {
         theme.setPaletteId(palette);
-        failures.append(contrast_failures(theme, palette, pairs, false));
-        failures.append(contrast_failures(theme, palette, pairs, true));
+        for (int index = 0; index < presets.size(); ++index) {
+            theme.setAccentPresetIndex(index);
+            const QString context =
+                QStringLiteral("%1 / preset %2")
+                    .arg(palette, presets.at(index).toMap().value(QStringLiteral("id")).toString());
+            failures.append(contrast_failures(theme, context, pairs, false));
+            failures.append(contrast_failures(theme, context, pairs, true));
+        }
 
         // The high-contrast hairline promotion is itself a measured claim.
         theme.setHighContrast(true);

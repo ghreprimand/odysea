@@ -245,7 +245,9 @@ qt_add_executable(odysea_application_icon_tests
     tests/tst_application_icon.cpp)
 
 target_compile_definitions(odysea_application_icon_tests
-    PRIVATE ODYSEA_ICON_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
+    PRIVATE
+        ODYSEA_ICON_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
+        ODYSEA_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
 
 target_link_libraries(odysea_application_icon_tests
     PRIVATE

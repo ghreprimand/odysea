@@ -5,8 +5,11 @@
 // at 2x. Rasterizing the shipped SVG sources at the exact device sizes here
 // closes that gap without presenting a logical-layout grab as device-pixel
 // evidence.
+#include <QBuffer>
+#include <QFile>
 #include <QImage>
 #include <QImageReader>
+#include <QRegularExpression>
 #include <QTest>
 
 #include <algorithm>
@@ -37,6 +40,65 @@ PixelBounds drawnBounds(const QImage& image) {
         }
     }
     return bounds;
+}
+
+QByteArray readAsset(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    return file.readAll();
+}
+
+QImage renderSvg(const QByteArray& source, int deviceSize) {
+    QBuffer buffer;
+    buffer.setData(source);
+    if (!buffer.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    QImageReader reader(&buffer, "svg");
+    reader.setScaledSize(QSize(deviceSize, deviceSize));
+    return reader.read().convertToFormat(QImage::Format_ARGB32);
+}
+
+QByteArray withConsumerColor(QByteArray source, const QByteArray& color) {
+    const qsizetype root = source.indexOf("<svg ");
+    if (root < 0) {
+        return {};
+    }
+    source.insert(root + 5, "color=\"" + color + "\" ");
+    return source;
+}
+
+bool inkFollowsConsumer(const QByteArray& source, const QByteArray& color) {
+    const QImage image = renderSvg(withConsumerColor(source, color), 32);
+    if (image.isNull()) {
+        return false;
+    }
+
+    const QColor expected(QString::fromLatin1(color));
+    int compared = 0;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb pixel = image.pixel(x, y);
+            if (qAlpha(pixel) <= 24) {
+                continue;
+            }
+            const QColor actual = QColor::fromRgba(pixel);
+            if (std::abs(actual.red() - expected.red()) > 2 ||
+                std::abs(actual.green() - expected.green()) > 2 ||
+                std::abs(actual.blue() - expected.blue()) > 2) {
+                return false;
+            }
+            ++compared;
+        }
+    }
+    return compared > 24;
+}
+
+QString capture(const QByteArray& source, const QRegularExpression& expression) {
+    const QRegularExpressionMatch match = expression.match(QString::fromUtf8(source));
+    return match.hasMatch() ? match.captured(1) : QString();
 }
 
 } // namespace
@@ -79,26 +141,39 @@ class ApplicationIconTest : public QObject {
         }
     }
 
-    void symbolicAssetRendersAsOneNeutralInk() {
+    void symbolicAssetInkFollowsItsConsumer() {
         const QString path = QStringLiteral(ODYSEA_ICON_SOURCE_DIR "/odysea-symbolic.svg");
-        QImageReader reader(path);
-        reader.setScaledSize(QSize(32, 32));
-        const QImage image = reader.read().convertToFormat(QImage::Format_ARGB32);
-        QVERIFY2(!image.isNull(), qPrintable(reader.errorString()));
+        const QByteArray source = readAsset(path);
+        QVERIFY2(!source.isEmpty(), qPrintable(path));
+        QVERIFY(inkFollowsConsumer(source, QByteArrayLiteral("#ff0000")));
+        QVERIFY(inkFollowsConsumer(source, QByteArrayLiteral("#00ff00")));
 
-        int compared = 0;
-        for (int y = 0; y < image.height(); ++y) {
-            for (int x = 0; x < image.width(); ++x) {
-                const QRgb pixel = image.pixel(x, y);
-                if (qAlpha(pixel) <= 24) {
-                    continue;
-                }
-                QCOMPARE(qRed(pixel), qGreen(pixel));
-                QCOMPARE(qGreen(pixel), qBlue(pixel));
-                ++compared;
-            }
-        }
-        QVERIFY(compared > 24);
+        QByteArray literalInk = source;
+        QVERIFY(literalInk.replace("currentColor", "#404040") != source);
+        QVERIFY(!inkFollowsConsumer(literalInk, QByteArrayLiteral("#ff0000")));
+        QVERIFY(!inkFollowsConsumer(literalInk, QByteArrayLiteral("#00ff00")));
+    }
+
+    void identityGeometryMatchesEveryShippedSurface() {
+        const QByteArray qml = readAsset(QStringLiteral(ODYSEA_QML_SOURCE_DIR "/VectorIcon.qml"));
+        const QByteArray desktop = readAsset(QStringLiteral(ODYSEA_ICON_SOURCE_DIR "/odysea.svg"));
+        const QByteArray symbolic =
+            readAsset(QStringLiteral(ODYSEA_ICON_SOURCE_DIR "/odysea-symbolic.svg"));
+        QVERIFY(!qml.isEmpty());
+        QVERIFY(!desktop.isEmpty());
+        QVERIFY(!symbolic.isEmpty());
+
+        const QRegularExpression qmlIdentity(
+            QStringLiteral(R"re(case\s+"identity":\s*return\s+"([^"]+)")re"));
+        const QRegularExpression svgPath(QStringLiteral(R"re(<path\s+d="([^"]+)")re"));
+        const QString qmlPath = capture(qml, qmlIdentity);
+        const QString desktopPath = capture(desktop, svgPath);
+        const QString symbolicPath = capture(symbolic, svgPath);
+        QVERIFY(!qmlPath.isEmpty());
+        QVERIFY(!desktopPath.isEmpty());
+        QVERIFY(!symbolicPath.isEmpty());
+        QCOMPARE(desktopPath, qmlPath);
+        QCOMPARE(symbolicPath, qmlPath);
     }
 };
 

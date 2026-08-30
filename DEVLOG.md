@@ -75,6 +75,40 @@ parallel run.
 
 ---
 
+## 2026-08-29 -- Identity and palette claims match their measured contracts
+
+The symbolic application icon is now tested for the property its desktop role
+requires: its stroke follows consumer-supplied color. The raster gate injects
+red and green at the SVG root and requires the rendered ink to follow both. A
+literal-grey mutation must reject both consumers, so a neutral but fixed-color
+asset cannot pass. A source-level assertion also binds the desktop and symbolic
+SVG paths to the in-application vector path.
+
+The mark's accent traversal is explicitly a controller-routing invariant:
+accent selection cannot reach semantic icon ink. Separate assertions prove the
+two intended theme routes, with palette selection changing the mark and high
+contrast promoting it to primary text ink.
+
+The icon-ink cap is constrained by the default state, not high contrast. The
+navy family's pressed-control ratio is independently computed at 2.107:1 and
+measures 2.104:1 through the runtime color path, making it the shipped set's
+tightest margin above the 2.0 floor. High contrast replaces the capped role
+with primary text ink. The semantic matrix now traverses all five accent
+presets in both contrast states and samples panel-strip composition from zero
+through full surface opacity in 0.2 steps.
+
+Release registered 76 entries; 72 executed and passed, with four declared GPU
+or compositor capability entries skipped. ASan/UBSan registered the same 76,
+disabled static analysis by preset policy, and passed all 71 that executed,
+with the same four capability skips. Static analysis passed in the release
+preset with no diagnostics. The application smoke passed in both presets. The
+identity scene rendered at monitor scale 1x; the scaled-layout entry asserted a
+declared device-pixel ratio of 2 while explicitly declining empty child-item
+grabs, and the raster gate exercised the shipped SVGs at exact 1x and 2x device
+sizes.
+
+---
+
 ## 2026-08-29 -- Undo is one action across every shell surface
 
 The shell now declares Undo once. `Ctrl+Z`, the toolbar, the blank-canvas
