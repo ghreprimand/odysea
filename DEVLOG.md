@@ -26,6 +26,39 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Renderer fallback and accessibility sources are separately measured
+
+Window presentation capability is now published from the negotiated window
+format and the initialized scene-graph renderer, rather than inferred from the
+requested profile. The forced software entry selects `QT_QUICK_BACKEND=software`
+and requires Qt to report its software renderer before accepting the opaque
+window path. A mutation that allowed the software renderer to claim
+transparency failed both the renderer-boundary assertion and the initialized
+window assertion.
+
+Reduced motion and high contrast now zero every effective glow, bloom,
+scanline, vignette, and persistence level. The composed shell exposes the
+actual pipeline stages, bounded glow emitters, and list and grid persistence
+sources to a hardware-scene audit. Starting from visible Strong-profile sources,
+that audit requires each source to disappear under reduced motion, high
+contrast, and `Off`; the launcher turns a post-probe software fallback into a
+failure. The OpenGL entry declined by its declared capability in this run:
+there was no reachable display server, so no hardware-scene result is claimed.
+
+Large-directory validation now uses a deterministic 2,000-entry fixture and
+geometry-derived list and grid bounds instead of a wall-clock threshold. The
+list and grid cache mutations were built independently: the list realized all
+2,000 entries and failed its 136-row bound, while the grid realized 255 cells
+and failed its 140-cell bound. The restored checks passed at both declared
+logical scales.
+
+Verified: release build; `core_appearance` and the forced software capability
+entry; normal and doubled-scale software visual validation; formatting and QML
+checks. The declared RHI accessibility entry reported its unavailable display
+server capability, not a passing hardware result.
+
+---
+
 ## 2026-08-30 -- Where one entry stops is now written down and gated
 
 The development record separates an entry from the entry below it with a blank

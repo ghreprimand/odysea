@@ -129,6 +129,10 @@ int main(int argc, char** argv) {
     }
     qputenv("QT_QUICK_BACKEND", QByteArrayLiteral("rhi"));
     qputenv("QSG_RHI_BACKEND", QByteArrayLiteral("opengl"));
+    // The probe established a usable OpenGL context. If Qt still falls back
+    // to software while starting the suite, the selected GPU path was not
+    // exercised and any GPU-sensitive test must fail rather than self-skip.
+    qputenv("ODYSEA_REQUIRE_GPU_FRAMES", QByteArrayLiteral("1"));
     execv(ODYSEA_PRESENTATION_BINARY, argv);
     // Reached only when the exec itself failed.
     std::fputs("rhi-gate: FAIL -- exec of the presentation suite failed\n", stderr);

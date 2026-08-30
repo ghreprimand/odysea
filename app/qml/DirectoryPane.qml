@@ -116,6 +116,7 @@ FocusScope {
     DirectoryListView {
         id: directoryList
 
+        objectName: "directoryListView"
         anchors.fill: parent
         visible: !pane.gridMode && !pane.columnsMode
         shellModel: pane.shellModel
@@ -145,6 +146,7 @@ FocusScope {
     DirectoryGridView {
         id: directoryGrid
 
+        objectName: "directoryGridView"
         anchors.fill: parent
         visible: pane.gridMode && !pane.columnsMode
         shellModel: pane.shellModel

@@ -132,6 +132,7 @@ Item {
     EffectBlurPass {
         id: coreH
 
+        objectName: "presentationCoreH"
         anchors.fill: parent
         visible: layer.emissionActive && layer.coreIntensity > 0.001
         src: brightHide
@@ -186,6 +187,7 @@ Item {
     EffectBlurPass {
         id: wideH
 
+        objectName: "presentationWideH"
         anchors.fill: parent
         visible: layer.emissionActive && layer.wideIntensity > 0.001
         src: brightHide

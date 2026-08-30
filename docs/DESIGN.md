@@ -516,9 +516,9 @@ there is no apply step.
   it and the adjustments survive preset round-trips. The levels exist in two
   views with distinct consumers: the controls display and edit the *stored*
   preference, while the rendering pipeline consumes the *effective* levels —
-  the stored ones after the accessibility overrides. Reduced motion zeroes
-  effective persistence; high contrast zeroes the effective gains that
-  modulate legibility, pins effective text lift, and promotes the muted and
+  the stored ones after the accessibility overrides. Reduced motion and high
+  contrast zero the glow, bloom, scanline, vignette, and persistence gains;
+  high contrast also pins effective text lift and promotes the muted and
   hairline roles to stronger inks. Because the overrides act on the effective
   view only, an active override never makes an enabled control discard or
   misreport a write, and lifting the override renders the adjustments made
@@ -633,9 +633,9 @@ is unchanged.
   palette-side: chromatic inks multiply toward white, which both brightens
   them and puts them over the bloom threshold.
 - **Motion as one token.** Persistence drives a single motion duration the
-  views consume for the current-item ring's decay trail. Reduced motion
-  zeroes the effective persistence, so every consumer becomes instant
-  through the same path the renderer already trusts.
+  views consume for the current-item ring's decay trail. Reduced motion and
+  high contrast zero the effective persistence, so every consumer becomes
+  instant through the same path the renderer already trusts.
 - **Bounded context phosphor.** The active tab, the focused directory pane,
   and the current selected entry add one transparent accent emitter to the
   existing bright pass; the two existing blur chains supply any visible
@@ -678,17 +678,23 @@ shell scene, so its claims regress loudly instead of visually:
   pointer-focused directory view turns its pane frame stroke to the accent,
   and keyboard tab traversal cycles through the chrome without ever dropping
   focus.
-- **Reduced motion.** The override zeroes effective persistence and the
-  shared motion token while chrome geometry stays byte-stable, and the
-  stored preference the controls display is untouched.
+- **Reduced motion and high contrast.** Each override removes every composed
+  glow, bloom, scanline, vignette, and persistence source while retaining
+  palette-side material and crisp semantic outlines. The hardware-scene entry
+  begins with visible Strong-profile sources, inventories the emitting QML
+  stages, then requires that inventory to be empty for reduced motion, high
+  contrast, and `Off`; it requires OpenGL RHI so a software fallback cannot
+  stand in for that distinction. Chrome geometry stays byte-stable, and the
+  stored controls remain unchanged so leaving an override restores the chosen
+  profile rather than a rewritten preference.
 - **Effects off.** Selection and text legibility are palette properties
   measured without the pipeline, and the keyboard surfaces stay reachable —
   nothing depends on the effect layer for affordance.
-- **Virtualization and flat effect cost.** A directory large enough to
-  exercise virtualization realizes a viewport of delegates, not the
-  directory, in both views; the effect layer's structure and the
-  protected-well registry scale with the viewport at most, never with the
-  entry count.
+- **Virtualization and flat effect cost.** The deterministic 2,000-entry
+  fixture is at least ten times each view's geometry-derived work bound. Both
+  views realize a viewport of delegates, not the directory; the effect layer's
+  structure and protected-well registry scale with that viewport bound, never
+  with entry count or elapsed time.
 - **Device pixels.** Well-mask geometry is logical-coordinate math at every
   scale and is exercised by the software validation entries at their declared
   1x and 2x logical scales. The doubled entry asserts that Qt reports the
@@ -715,7 +721,10 @@ shell scene, so its claims regress loudly instead of visually:
 
 The high-contrast contrast matrix in the appearance tests and the software
 scene-graph fallback suite complete the matrix; the fallback keeps content,
-controls, and protected regions intact with the pipeline disengaged.
+controls, and protected regions intact with the pipeline disengaged. The
+fallback entry selects `QT_QUICK_BACKEND=software` and observes the initialized
+renderer interface before it accepts the opaque window path, so an ineffective
+renderer selector cannot be credited as coverage.
 These are independently measured axes: high contrast is not currently crossed
 with the layout-breakpoint, focus-traversal, effects-off, or large-directory
 virtualization cases. The four device-pixel frame cases skip by design inside
@@ -728,7 +737,8 @@ The frame comparisons run under GPU-path gates that cover distinct platform
 axes, each of which either exercises the comparisons or reports a visible skip
 — never a silent pass over work it did not perform:
 
-- **Offscreen OpenGL RHI** (`shell_presentation_rhi`, `shell_visual_validation_rhi`).
+- **Offscreen OpenGL RHI** (`shell_presentation_rhi`, `shell_visual_validation_rhi`,
+  `shell_visual_accessibility_rhi`).
   A launcher probes for a usable OpenGL context and, when one exists, runs the
   suite on a real OpenGL scene graph under the offscreen QPA platform. This
   exercises the shaders and readbacks on real hardware, but the offscreen
@@ -744,8 +754,8 @@ axes, each of which either exercises the comparisons or reports a visible skip
   skip into a failure where an offscreen context is expected; it is deliberately
   distinct from `ODYSEA_REQUIRE_COMPOSITOR`, so a pure-Wayland verifier with no
   X display can require the compositor gate while honestly skipping this one.
-  `shell_visual_validation_rhi` is the one entry that does not run its whole
-  suite: it passes `TestCase::function` arguments through to the suite, because
+  `shell_visual_validation_rhi` and `shell_visual_accessibility_rhi` each pass
+  a named `TestCase::function` through to the suite, because
   the validation scope also holds the broader visual cases, which do not belong
   on the GPU path. A filter is a second thing to keep in step, and both ways it
   can drift are silent — an added function left off the list runs nowhere here,

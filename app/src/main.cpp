@@ -8,13 +8,13 @@
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
-#include <QSGRendererInterface>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QUrl>
 #include <QVariant>
 
 #include "directory_list_model.hpp"
+#include "presentation_capabilities.hpp"
 #include "shell_loader.hpp"
 #include "thumbnail_image_provider.hpp"
 
@@ -83,22 +83,8 @@ int main(int argc, char* argv[]) {
 
     QObject* const rootObject = engine.rootObjects().constFirst();
     auto* const window = qobject_cast<QQuickWindow*>(rootObject);
-    const bool alphaBufferAvailable = window != nullptr && window->format().alphaBufferSize() > 0;
-    rootObject->setProperty("alphaBufferAvailable", alphaBufferAvailable);
     if (window != nullptr) {
-        // The renderer API is unavailable while Main.qml is being constructed.
-        // Publish it only once the scene graph exists, queued onto the shell's
-        // thread so QML never receives a render-thread property update.
-        QObject::connect(
-            window, &QQuickWindow::sceneGraphInitialized, rootObject, [rootObject, window]() {
-                const QSGRendererInterface::GraphicsApi api =
-                    window->rendererInterface()->graphicsApi();
-                const bool supportsWindowTransparency = api != QSGRendererInterface::Unknown &&
-                                                        api != QSGRendererInterface::Software &&
-                                                        api != QSGRendererInterface::Null;
-                rootObject->setProperty("rendererSupportsWindowTransparency",
-                                        supportsWindowTransparency);
-            });
+        odysea::app::publishWindowPresentationCapabilities(*window, *rootObject);
     }
     return app.exec();
 }

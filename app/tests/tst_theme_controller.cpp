@@ -445,7 +445,9 @@ void tst_ThemeController::accessibility_overrides_apply_immediately() {
     QVERIFY(theme.textLift() > 1.0);
     QCOMPARE(theme.textMuted(), theme.text());
     QVERIFY(theme.textMuted() != mutedBefore);
-    QVERIFY(theme.effectiveBloomCore() > 0.0);
+    QCOMPARE(theme.effectiveBloomCore(), 0.0);
+    QCOMPARE(theme.effectiveBloomWide(), 0.0);
+    QCOMPARE(theme.effectivePersistence(), 0.0);
 
     theme.setHighContrast(false);
     QCOMPARE(theme.textMuted(), mutedBefore);
@@ -454,7 +456,10 @@ void tst_ThemeController::accessibility_overrides_apply_immediately() {
     theme.setReducedMotion(true);
     QCOMPARE(theme.effectivePersistence(), 0.0);
     QVERIFY(theme.persistence() > 0.0);
-    QVERIFY(theme.effectiveBloomCore() > 0.0);
+    QCOMPARE(theme.effectiveBloomCore(), 0.0);
+    QCOMPARE(theme.effectiveBloomWide(), 0.0);
+    QCOMPARE(theme.effectiveScanline(), 0.0);
+    QCOMPARE(theme.effectiveVignette(), 0.0);
 }
 
 void tst_ThemeController::stored_levels_stay_editable_under_overrides() {

@@ -107,16 +107,17 @@ void test_accessibility_overrides_shape_the_effective_levels() {
     AppearanceSettings s;
     s.profile = EffectProfile::Strong;
     s.reduced_motion = true;
-    check(effective_effect_levels(s).persistence == 0.0, "reduced motion removes trailing decay");
-    check(effective_effect_levels(s).bloom_core ==
-              effect_profile_levels(EffectProfile::Strong).bloom_core,
-          "reduced motion leaves still effects alone");
+    const EffectLevels reduced = effective_effect_levels(s);
+    check(reduced.bloom_core == 0.0 && reduced.bloom_wide == 0.0 && reduced.scanline == 0.0 &&
+              reduced.vignette == 0.0 && reduced.persistence == 0.0,
+          "reduced motion removes every emissive and motion source");
 
     s.reduced_motion = false;
     s.high_contrast = true;
     const EffectLevels hc = effective_effect_levels(s);
-    check(hc.scanline == 0.0 && hc.vignette == 0.0,
-          "high contrast removes the gains that modulate legibility");
+    check(hc.bloom_core == 0.0 && hc.bloom_wide == 0.0 && hc.scanline == 0.0 &&
+              hc.vignette == 0.0 && hc.persistence == 0.0,
+          "high contrast removes every emissive and motion source");
     check(hc.text_lift == 1.0, "high contrast leaves text brightness unmodified");
 }
 

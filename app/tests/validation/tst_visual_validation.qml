@@ -25,6 +25,11 @@ Support.ShellTestCase {
     name: "VisualValidation"
 
     readonly property var chromeControls: ["applicationIdentityMark", "backButton", "forwardButton", "upButton", "refreshButton", "undoButton", "paneToggleButton", "listViewButton", "gridViewButton", "columnsViewButton", "treeSearchButton", "paletteButton", "appearanceButton", "filterField", "sortModeBox", "hiddenToggle", "selectAllButton", "copyButton", "moveButton", "renameButton", "trashButton", "newTabButton", "statusMessageText", "pathNavigator"]
+    // Large enough to put every viewport-derived bound at least tenfold below
+    // the fixture size. This is a reproducible work-volume contract, not a
+    // timing target: task scheduling cannot turn a larger directory into a
+    // pass by running it on a quieter machine.
+    readonly property int representativeLargeDirectoryEntries: 2000
 
     function theme() {
         return testCase.shellWindow.shellTheme;
@@ -565,35 +570,43 @@ Support.ShellTestCase {
         const wells = child("wellMaskLayer");
         const layerCostBefore = countDescendants(layer);
         const mirrorsBefore = wells.mirrorCreationCount;
-        const entryCount = 2000;
+        const entryCount = testCase.representativeLargeDirectoryEntries;
 
         populateRows(entryCount);
 
         // The list realizes a viewport of delegates, not the directory.
+        const list = child("directoryList");
+        const listViewportRows = Math.ceil(list.height / theme().rowHeight);
+        const listWorkBound = listViewportRows * 8 + 24;
+        verify(entryCount >= listWorkBound * 10, "the fixture must remain at least ten viewports beyond the list work bound");
         const realizedRows = countRealizedRows(entryCount);
         verify(realizedRows > 0);
-        verify(realizedRows < 200, "the list must virtualize " + entryCount + " entries, realized " + realizedRows);
+        verify(realizedRows <= listWorkBound, "the list must keep work at its viewport bound of " + listWorkBound + ", realized " + realizedRows);
 
         // Jumping to the far end stays a viewport-sized operation.
-        const list = child("directoryList");
         list.positionViewAtEnd();
         waitForRendering(testCase.shellWindow.contentItem);
-        verify(countRealizedRows(entryCount) < 200);
+        verify(countRealizedRows(entryCount) <= listWorkBound, "the list end jump must keep work at the viewport bound");
 
         // The grid virtualizes the same directory.
         testCase.shellWindow.gridMode = true;
-        tryCompare(child("directoryGrid"), "count", entryCount);
+        const grid = child("directoryGrid");
+        tryCompare(grid, "count", entryCount);
         waitForRendering(testCase.shellWindow.contentItem);
+        const gridColumns = Math.max(1, Math.floor(grid.width / theme().gridCellWidth));
+        const gridViewportRows = Math.ceil(grid.height / theme().gridCellHeight);
+        const gridWorkBound = gridColumns * (gridViewportRows + 1) * 5;
+        verify(entryCount >= gridWorkBound * 10, "the fixture must remain at least ten viewports beyond the grid work bound");
         const realizedCells = realizedGridCellCount(entryCount);
         verify(realizedCells > 0);
-        verify(realizedCells < 300, "the grid must virtualize " + entryCount + " entries, realized " + realizedCells);
+        verify(realizedCells <= gridWorkBound, "the grid must keep work at its viewport bound of " + gridWorkBound + ", realized " + realizedCells);
         testCase.shellWindow.gridMode = false;
 
         // The effect layer's structure is independent of entry count, and
         // the protected-well registry scales with realized thumbnails at
         // most — never with the directory.
         compare(countDescendants(layer), layerCostBefore);
-        verify(wells.mirrorCreationCount - mirrorsBefore <= 300, "well mirrors must track the viewport, not the directory");
+        verify(wells.mirrorCreationCount - mirrorsBefore <= gridWorkBound, "well mirrors must track the viewport, not the directory");
 
         populateRows(4);
     }

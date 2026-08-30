@@ -41,5 +41,6 @@
 battery_coverage_self_test	capability	python3, which parses the JUnit fixtures this self-test is written against
 shell_presentation_rhi	capability	an offscreen OpenGL context: a reachable display server and a driver that can create and make one current
 shell_visual_validation_rhi	capability	an offscreen OpenGL context: a reachable display server and a driver that can create and make one current
+shell_visual_accessibility_rhi	capability	an offscreen OpenGL context: a reachable display server and a driver that can create and make one current
 shell_presentation_compositor	refusal	renders an activating window, so it declines every compositor that was not started for the run and proved disposable after it
 shell_visual_validation_compositor_2x	refusal	renders an activating window at a genuine 2x surface, so it declines every compositor that was not started for the run and proved disposable after it

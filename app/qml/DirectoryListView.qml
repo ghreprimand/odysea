@@ -41,6 +41,9 @@ FocusScope {
     property bool glowEnabled: false
 
     readonly property int selectionGutterWidth: 28
+    /// Observable at the composed-shell boundary: a visible list can own the
+    /// current-row decay only while the shared motion token is nonzero.
+    readonly property bool persistenceSourceActive: visible && persistenceDurationMs > 0
     property alias contentY: directoryList.contentY
     property alias interactive: directoryList.interactive
     property alias count: directoryList.count

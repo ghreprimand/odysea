@@ -48,6 +48,9 @@ FocusScope {
     property WellMaskLayer wellLayer: null
 
     readonly property int selectionGutterWidth: 28
+    /// Observable at the composed-shell boundary: a visible grid can own the
+    /// current-item decay only while the shared motion token is nonzero.
+    readonly property bool persistenceSourceActive: visible && persistenceDurationMs > 0
 
     focus: visible
 

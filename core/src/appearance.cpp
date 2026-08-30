@@ -298,12 +298,18 @@ EffectLevels effective_effect_levels(const AppearanceSettings& settings) noexcep
     EffectLevels levels = settings.profile == EffectProfile::Custom
                               ? clamp_effect_levels(settings.custom)
                               : effect_profile_levels(settings.profile);
-    if (settings.reduced_motion) {
+    if (settings.reduced_motion || settings.high_contrast) {
+        // Accessibility overrides remove every animated or emissive source
+        // from the composed scene. Deep-field material remains palette-side,
+        // but glow, bloom, scanline, vignette, and persistence do not leave
+        // a second visual or motion path behind either override.
+        levels.bloom_core = 0.0;
+        levels.bloom_wide = 0.0;
+        levels.scanline = 0.0;
+        levels.vignette = 0.0;
         levels.persistence = 0.0;
     }
     if (settings.high_contrast) {
-        levels.scanline = 0.0;
-        levels.vignette = 0.0;
         levels.text_lift = 1.0;
     }
     return levels;

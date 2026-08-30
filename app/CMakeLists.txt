@@ -23,6 +23,8 @@ qt_add_library(odysea_app_adapter STATIC
     src/directory_watch_service.hpp
     src/filesystem_operation_job.cpp
     src/filesystem_operation_job.hpp
+    src/presentation_capabilities.cpp
+    src/presentation_capabilities.hpp
     src/shell_loader.cpp
     src/shell_loader.hpp
     src/thumbnail_backend.cpp
@@ -207,6 +209,21 @@ target_link_libraries(odysea_isolated_compositor_declaration_tests
 
 add_test(NAME app_isolated_compositor_declaration
     COMMAND odysea_isolated_compositor_declaration_tests)
+
+qt_add_executable(odysea_presentation_capabilities_tests
+    tests/tst_presentation_capabilities.cpp)
+
+target_link_libraries(odysea_presentation_capabilities_tests
+    PRIVATE
+        odysea_app_adapter
+        Qt6::Quick Qt6::Test
+        odysea_warnings odysea_sanitizers)
+
+add_test(NAME app_presentation_capabilities_fallback
+    COMMAND odysea_presentation_capabilities_tests)
+
+set_tests_properties(app_presentation_capabilities_fallback PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
 
 qt_add_executable(odysea_thumbnail_backend_tests
     tests/tst_thumbnail_backend.cpp)
@@ -633,6 +650,21 @@ add_test(NAME shell_visual_validation_rhi
         DevicePixelScaling::test_ringOutsideWellStaysProcessed)
 
 set_tests_properties(shell_visual_validation_rhi PROPERTIES
+    SKIP_RETURN_CODE 77
+    RESOURCE_LOCK gpu
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
+
+# This is the accessibility half of the real scene-graph validation. It starts
+# from a visible Strong-profile source set, then asserts that reduced motion,
+# high contrast, and Off remove every composed bloom, glow, scanline,
+# vignette, and persistence source. The launcher proves an OpenGL RHI path
+# first; a software fallback after that proof is a test failure, never an
+# unreported QuickTest skip.
+add_test(NAME shell_visual_accessibility_rhi
+    COMMAND odysea_validation_rhi_launcher
+        VisualAccessibility::test_composedAccessibilityOverridesRemoveEveryEffectSource)
+
+set_tests_properties(shell_visual_accessibility_rhi PROPERTIES
     SKIP_RETURN_CODE 77
     RESOURCE_LOCK gpu
     ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tools/lsan_suppressions.txt")
