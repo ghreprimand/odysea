@@ -30,7 +30,7 @@ checks_run=0
 # after running half its scenarios reads exactly like one that ran them all,
 # and a scenario is one careless edit away from being dropped. Compared at the
 # end against the number actually executed.
-readonly expected_checks=17
+readonly expected_checks=37
 
 report() {
     printf 'key_construction_guard_self_test: %s\n' "$1" >&2
@@ -139,7 +139,36 @@ expect "hand-spelled key in another member" "$root" 1 "in receiveScanBatch"
 
 # Scenario 3: the formula outside any member definition is rejected with its
 # own reason, so a free function or file-scope helper cannot host it.
+#
+# The helper is placed BELOW a member definition, which is the position that
+# matters. Above one, the enclosing name is empty because nothing has set it
+# yet, and the scenario passes whether or not the guard tracks where a member
+# ends. Below one, it passes only because it does: a guard that stops at the
+# definition line attributes the helper to the member above it and admits it.
+# Every source in this model happens to open with its anonymous namespace, so
+# the weaker position was the one the record could see.
 root="$(build_repository free_function)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_thumbnails.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::refreshThumbnails() {
+    thumbnailGeneration_++;
+}
+
+namespace {
+QString stableKey(const std::filesystem::path& source) {
+    return QString::fromStdString(source.lexically_normal().string());
+}
+} // namespace
+SOURCE
+track_repository "$root"
+expect "free function below a member definition" "$root" 1 "outside any member function"
+
+# Scenario 3b: the same helper above every member definition. Retained as its
+# own scenario so both positions stay pinned - the branch is reached two
+# different ways and a fix for one is not a fix for the other.
+root="$(build_repository free_function_above)"
 compliant_source >"$root/app/src/directory_list_model.cpp"
 cat <<'SOURCE' >"$root/app/src/directory_list_model_thumbnails.cpp"
 #include "directory_list_model.hpp"
@@ -149,9 +178,36 @@ QString stableKey(const std::filesystem::path& source) {
     return QString::fromStdString(source.lexically_normal().string());
 }
 } // namespace
+
+void DirectoryListModel::refreshThumbnails() {
+    thumbnailGeneration_++;
+}
 SOURCE
 track_repository "$root"
-expect "free function" "$root" 1 "outside any member function"
+expect "free function above every member definition" "$root" 1 "outside any member function"
+
+# Scenario 3c: the attribution itself, asserted on the count rather than only
+# on the exit status. A helper below a PERMITTED member does not merely get
+# admitted when the end of a member is not tracked - it is counted as a
+# permitted sighting, so the bypass raises the number the guard's own vacuity
+# floor reads. Rejecting it is not enough; it must not be counted.
+root="$(build_repository helper_below_permitted)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+QVariant DirectoryListModel::data(const QModelIndex& index, int role) const {
+    return QVariant();
+}
+
+namespace {
+QString stableKey(const odysea::core::Entry& entry) {
+    return QString::fromStdString(entry.path.string());
+}
+} // namespace
+SOURCE
+track_repository "$root"
+expect "helper below a permitted member" "$root" 1 "outside any member function"
 
 # Scenario 4: a file the index does not carry is not inspected, which is why
 # the guard enumerates through Git rather than the working tree. Recorded so
@@ -187,7 +243,12 @@ int DirectoryListModel::rowCount(const QModelIndex&) const {
 }
 SOURCE
 track_repository "$root"
-expect "no permitted normalization" "$root" 1 "may have been renamed"
+# Asserted on the reason belonging to THIS rule, not on the suffix both floors
+# share. The fixture holds no entry-path spelling either, so the entry-path
+# floor fires with the same trailing words and a scenario asserting only
+# "may have been renamed" passes on the other rule's message - which left this
+# floor deletable with the suite green.
+expect "no permitted normalization" "$root" 1 "no permitted normalization found"
 
 # Scenario 7: a renamed permitted function is rejected even though the file
 # still normalizes exactly once, which is the half of scenario 6 that a
@@ -288,7 +349,7 @@ void DirectoryListModel::applyPresentationSettings() {
 SOURCE
 track_repository "$root"
 expect "hand-spelled entry path in a reconciliation member" "$root" 1 \
-    "spells an entry's path as text in applyPresentationSettings"
+    "takes an entry's path as text or under another name in applyPresentationSettings"
 
 # Scenario 13: a second conversion from the same family is rejected too, so
 # the rule cannot be walked past by reaching for native() instead of
@@ -309,10 +370,15 @@ expect "entry path spelled through native()" "$root" 1 "in receiveScanBatch"
 
 # Scenario 14: an entry path spelled as text outside any member definition is
 # rejected with its own reason, so a file-scope helper cannot host it either.
+# Placed below a member definition for the reason scenario 3 gives.
 root="$(build_repository entry_path_free_function)"
 compliant_source >"$root/app/src/directory_list_model.cpp"
 cat <<'SOURCE' >"$root/app/src/directory_list_model_thumbnails.cpp"
 #include "directory_list_model.hpp"
+
+void DirectoryListModel::refreshThumbnails() {
+    thumbnailGeneration_++;
+}
 
 namespace {
 QString stableKey(const odysea::core::Entry& entry) {
@@ -355,8 +421,150 @@ void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
 }
 SOURCE
 track_repository "$root"
-expect "both rules violated in one member" "$root" 1 "spells an entry's path as text"
+expect "both rules violated in one member" "$root" 1 "takes an entry's path as text"
 expect "both rules violated in one member, normalization half" "$root" 1 "normalizes a path"
+
+# --- Every conversion the standard offers ------------------------------------
+# The guard once listed five conversion names and claimed in a comment that a
+# conversion outside the list would be reported by this self-test. Nothing
+# here enumerated anything, and eight more conversions already existed - so
+# the comment told the next reader not to look, which is worse than silence.
+#
+# The rule now matches by shape, and this is the enumeration the comment
+# promised. Every conversion member `std::filesystem::path` offers is planted
+# in turn and must be rejected. The generic forms matter as much as the native
+# ones: on this platform they are byte-identical, so each produces exactly the
+# counted key.
+readonly -a path_conversions=(
+    "string()"
+    "wstring()"
+    "u8string()"
+    "u16string()"
+    "u32string()"
+    "generic_string()"
+    "generic_wstring()"
+    "generic_u8string()"
+    "generic_u16string()"
+    "generic_u32string()"
+    "native()"
+    "c_str()"
+    "string<char>()"
+)
+
+# Compared against the number actually planted below, so a conversion dropped
+# from the list above shrinks the enumeration loudly rather than quietly.
+readonly expected_conversions=13
+conversions_planted=0
+
+for conversion in "${path_conversions[@]}"; do
+    root="$(build_repository "conversion_${conversions_planted}")"
+    compliant_source >"$root/app/src/directory_list_model.cpp"
+    {
+        printf '#include "directory_list_model.hpp"\n\n'
+        printf 'void DirectoryListModel::receiveScanBatch(std::uint64_t token) {\n'
+        printf '    const auto key = entry.path.%s;\n' "$conversion"
+        printf '    static_cast<void>(key);\n}\n'
+    } >"$root/app/src/directory_list_model_async.cpp"
+    track_repository "$root"
+    expect "entry path spelled through $conversion" "$root" 1 "in receiveScanBatch"
+    conversions_planted=$((conversions_planted + 1))
+done
+
+if ((conversions_planted != expected_conversions)); then
+    printf 'key_construction_guard_self_test: planted %d conversions, %d are declared\n' \
+        "$conversions_planted" "$expected_conversions" >&2
+    failures=$((failures + 1))
+fi
+
+# --- The alias branch --------------------------------------------------------
+# The conversion branch needs `.path.` adjacent. One idiomatic line separates
+# them and leaves the same key free to be built from the alias, at less cost
+# than the residual the guard already declares.
+root="$(build_repository alias_reference)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const std::filesystem::path& aliased = entry.path;
+    const QString key = QString::fromStdString(aliased.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path bound to a filesystem-path reference" "$root" 1 "in receiveScanBatch"
+
+root="$(build_repository alias_auto)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const auto& aliased = entry.path;
+    const QString key = QString::fromStdString(aliased.string());
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "entry path bound through auto" "$root" 1 "in receiveScanBatch"
+
+# The other direction, and the reason the alias branch is typed rather than
+# general. The tab state in these files carries its own `path` member of
+# interface string type; binding it is ordinary code with nothing to do with a
+# row key, and a rule matching any `= ....path;` would reject the shipped
+# sources on the day it landed.
+root="$(build_repository alias_interface_string)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+QString DirectoryListModel::tabLabel(int tabIndex) const {
+    const QString tabPath = panes_[0].tabs[static_cast<std::size_t>(tabIndex)].path;
+    return tabPath;
+}
+SOURCE
+track_repository "$root"
+expect "an interface-string tab path bound to a name" "$root" 0 "2 permitted normalizations"
+
+# --- Declared residuals ------------------------------------------------------
+# Each of these is something the guard does NOT catch, asserted as accepted so
+# the residual list in the guard cannot quietly stop describing the guard. A
+# residual that is written down is an instrument; one that is only believed is
+# a hole.
+
+# A path compares against another path with no string built anywhere. Named in
+# the guard's residual list, and held by the shape of the update rather than
+# by any spelling rule.
+root="$(build_repository residual_path_comparison)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    if (arriving.path == presented.path) {
+        return;
+    }
+}
+SOURCE
+track_repository "$root"
+expect "a path compared against a path" "$root" 0 "2 permitted normalizations"
+
+# The implicit conversion. `std::filesystem::path` converts to its native
+# string type with no conversion member named, so the counted key is produced
+# by a line that mentions no conversion at all. Catching it needs the
+# argument's type, which is not on the line.
+root="$(build_repository residual_implicit_conversion)"
+compliant_source >"$root/app/src/directory_list_model.cpp"
+cat <<'SOURCE' >"$root/app/src/directory_list_model_async.cpp"
+#include "directory_list_model.hpp"
+
+void DirectoryListModel::receiveScanBatch(std::uint64_t token) {
+    const QString key = QString::fromStdString(entry.path);
+    static_cast<void>(key);
+}
+SOURCE
+track_repository "$root"
+expect "an entry path converted implicitly" "$root" 0 "2 permitted normalizations"
 
 if ((checks_run != expected_checks)); then
     printf 'key_construction_guard_self_test: ran %d expectations, %d are declared\n' \

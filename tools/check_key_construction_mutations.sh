@@ -29,7 +29,7 @@ fi
 # How many mutations this file plants. Compared against the number actually
 # run, so a mutation dropped by an edit fails the gate instead of shrinking it
 # silently.
-readonly declared_mutations=7
+readonly declared_mutations=17
 
 workspace="$(mktemp -d)"
 trap 'rm -rf -- "$workspace"' EXIT
@@ -120,8 +120,8 @@ mutate "the entry-path rule is never applied" check_key_construction.sh \
 # 2. One conversion is dropped from the pattern's alternation. The rule still
 #    works for the spelling the corpus happens to use, and admits the others.
 mutate "native() is dropped from the entry-path pattern" check_key_construction.sh \
-    'string|native|c_str|u8string|generic_string' \
-    'string|c_str|u8string|generic_string' \
+    '\w*string\w*|native|c_str' \
+    '\w*string\w*|c_str' \
     "entry path spelled through native()"
 
 # 3. The permitted list for the second rule is widened until it permits the
@@ -171,9 +171,103 @@ mutate "a match outside any member is accepted" check_key_construction.sh \
 #    than are declared. Without this the other six mutations could all be
 #    caught by a suite that had quietly stopped running most of its cases.
 mutate "a self-test scenario is deleted" check_key_construction_selftest.sh \
-    'expect "entry path spelled through native()" "$root" 1 "in receiveScanBatch"' \
+    'expect "entry path in a free function" "$root" 1 "outside any member function"' \
     'true' \
-    "expectations, 17 are declared"
+    "expectations, 37 are declared"
+
+# --- The first rule, which had no battery at all ----------------------------
+# Every mutation above targets the entry-path rule, and the normalization rule
+# - the older of the two - had none. That asymmetry is how its vacuity floor
+# came to be deletable with the whole suite green: the scenario named for it
+# asserted only the words both floors share, so it passed on the other rule's
+# message. The four below give the first rule the same treatment as the
+# second, in the same order, so the asymmetry cannot be reintroduced by
+# writing one rule's battery and not the other's.
+
+# 8. The first rule stops being applied at all.
+mutate "the normalization rule is never applied" check_key_construction.sh \
+    '    seen=0
+    if ! seen="$(apply_rule "$path" "$normalization_pattern" "$normalization_subject" \
+        "${normalization_permitted[@]}")"; then
+        status=1
+    fi
+    normalization_sightings=$((normalization_sightings + seen))' \
+    '    normalization_sightings=$((normalization_sightings + 3))' \
+    "hand-spelled key in another member"
+
+# 9. Its violation status is discarded while its count is still collected.
+mutate "the normalization rule's status is swallowed" check_key_construction.sh \
+    '    seen=0
+    if ! seen="$(apply_rule "$path" "$normalization_pattern" "$normalization_subject" \
+        "${normalization_permitted[@]}")"; then
+        status=1
+    fi' \
+    '    seen="$(apply_rule "$path" "$normalization_pattern" "$normalization_subject" \
+        "${normalization_permitted[@]}" || true)"' \
+    "hand-spelled key in another member"
+
+# 10. Its permitted list is widened until it permits a reconciliation member.
+mutate "the normalization rule permits a reconciliation member" check_key_construction.sh \
+    'readonly -a normalization_permitted=(entryKey normalizedFilesystemPath)' \
+    'readonly -a normalization_permitted=(entryKey normalizedFilesystemPath receiveScanBatch)' \
+    "hand-spelled key in another member"
+
+# 11. Its vacuity floor goes. This is the one that was live: the scenario
+#     named for this floor asserted the suffix both floors share, so the
+#     entry-path floor fired on the same fixture with the same trailing words
+#     and the suite reported a pass for a check that no longer ran.
+mutate "the normalization vacuity floor is removed" check_key_construction.sh \
+    'if ((normalization_sightings == 0)); then' \
+    'if false; then' \
+    "no permitted normalization"
+
+# --- The rest of the guard --------------------------------------------------
+
+# 12. A member definition stops ending, so the name set at one survives to the
+#     end of the file and a helper below it inherits that member's name.
+mutate "a member definition never ends" check_key_construction.sh \
+    '        /^}/ { name = "" }
+' \
+    '' \
+    "helper below a permitted member"
+
+# 13. The alias branch goes, and one idiomatic line separates `.path` from the
+#     conversion again.
+mutate "the alias branch is dropped from the entry-path pattern" check_key_construction.sh \
+    '|(auto|std::filesystem::path)[^=;]*=[^=;]*\.path[[:space:]]*;' \
+    '' \
+    "entry path bound to a filesystem-path reference"
+
+# 14. The explicit template argument stops being tolerated, so the member
+#     template form of the same conversion walks past the rule.
+mutate "an explicit template argument defeats the entry-path pattern" check_key_construction.sh \
+    '[[:space:]]*(<[^>]*>)?[[:space:]]*\(\)' \
+    '\(\)' \
+    "entry path spelled through string<char>()"
+
+# 15. The floor on how many files were inspected goes, so a rename that leaves
+#     the guard reading nothing reads as compliance.
+mutate "the inspected-files floor is removed" check_key_construction.sh \
+    'if ((inspected_files == 0)); then' \
+    'if false; then' \
+    "no matching sources"
+
+# 16. Coverage stops following the include, so a source that reaches into the
+#     model under an unrelated name becomes invisible.
+mutate "the include-glob union is dropped" check_key_construction.sh \
+    "readonly include_glob='app/src/*'" \
+    "readonly include_glob='app/src/no_such_source*'" \
+    "unrelated name including the model header"
+
+# 17. The battery turned on the suite again, at the enumeration this time: a
+#     conversion is dropped from the self-test's own list. Without its count
+#     floor the enumeration would shrink silently, which is precisely how the
+#     guard came to enumerate five conversions while thirteen existed.
+mutate "a conversion is dropped from the self-test enumeration" check_key_construction_selftest.sh \
+    '    "generic_u16string()"
+' \
+    '' \
+    "planted 12 conversions, 13 are declared"
 
 if ((planted != declared_mutations)); then
     printf 'key_construction_mutation_guard: planted %d mutations, %d are declared\n' \

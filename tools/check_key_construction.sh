@@ -38,13 +38,36 @@ set -euo pipefail
 # them is a reconciliation site.
 #
 # WHAT THIS GUARD STILL DOES NOT DO, stated plainly because a rule about
-# spellings can only ever cover the spellings it names. A comparison written
-# against `std::filesystem::path` values directly builds no string at all, so
-# it is invisible to both rules and to the counter, and no static rule here
-# would find it. What holds that case is the shape of the update itself: the
-# reconciliation identifies rows through an index built once per update, and a
-# search per delivered entry is a visible change to that structure rather than
-# a spelling inside it.
+# spellings can only ever cover the spellings it names, and because a residual
+# that is written down is an instrument while one that is only believed is a
+# hole. Each of these is pinned by a self-test scenario that asserts the guard
+# ACCEPTS it, so the list cannot quietly stop describing the guard.
+#
+#   * A comparison written against `std::filesystem::path` values directly
+#     builds no string at all, so it is invisible to both rules and to the
+#     counter. What holds that case is the shape of the update itself: the
+#     reconciliation identifies rows through an index built once per update,
+#     and a search per delivered entry is a visible change to that structure
+#     rather than a spelling inside it.
+#
+#   * The implicit conversion. `std::filesystem::path` converts to its native
+#     string type without a cast, so `QString::fromStdString(entry.path)` and
+#     `const std::string key = entry.path;` both compile and both produce the
+#     counted key with no conversion member named anywhere. Catching it needs
+#     the argument's type, which is not in the line. Widening the rule to any
+#     mention of `.path` was tried and rejected: these files hold ordinary
+#     uses that hand a path to a launcher, a thumbnail key, and the counted
+#     builder itself, so every one of them would have to be permitted, and
+#     each permitted site is another place a hand-spelled key could sit.
+#
+#   * An alias whose declared type is spelled some third way. The alias branch
+#     recognizes `auto` and a filesystem path, which is what the idiom looks
+#     like; a typedef or an alias template would not be recognized.
+#
+#   * A conversion member whose name contains neither `string` nor `native`
+#     nor `c_str`. The shape covers every conversion the standard offers
+#     today, and the self-test enumerates all thirteen of them, but a shape is
+#     not a promise about a name nobody has written yet.
 #
 # Widening the normalization token set was considered and rejected. Adding
 # cleanPath, weakly_canonical, canonical, and absolute would drag in the
@@ -69,13 +92,34 @@ readonly normalization_pattern='lexically_normal'
 readonly -a normalization_permitted=(entryKey normalizedFilesystemPath)
 readonly normalization_subject='normalizes a path'
 
-# An entry's own path member spelled as text, in any of the conversions the
-# standard offers for it. Listed rather than reduced to a wildcard so that a
-# conversion added to a future standard is reported as unrecognized by this
-# guard's self-test rather than silently admitted.
-readonly entry_path_pattern='\.path\.(string|native|c_str|u8string|generic_string)\(\)'
+# An entry's own path member taken as text, or taken under another name.
+#
+# TWO BRANCHES, because the spelling is only half of it.
+#
+# The first is the conversion itself. It is matched by shape rather than by a
+# list of names: any member whose name contains `string`, plus `native` and
+# `c_str`, with an optional explicit template argument. An earlier version
+# enumerated five names and claimed a conversion outside the list would be
+# reported by this guard's self-test. No such check existed, and the standard
+# already offered eight more: `wstring`, `u16string`, `u32string`,
+# `generic_wstring`, `generic_u8string`, `generic_u16string`,
+# `generic_u32string`, and `string<char>()` written as the member template it
+# is. On this platform the generic forms are byte-identical to the native
+# ones, so each produced the counted key exactly. The shape covers all of
+# them, the self-test enumerates every one, and what shape cannot cover is
+# declared below rather than described as covered.
+#
+# The second is an alias. The conversion branch needs `.path.` adjacent, and
+# `const auto& p = entry.path;` erases that in one idiomatic line while
+# leaving `p.string()` free to build the same key. The branch therefore also
+# matches binding an entry's `path` member to a name whose declared type is
+# `auto` or a filesystem path. It is deliberately typed rather than general:
+# the tab state in these files carries its own `path` member of interface
+# string type, and binding that is ordinary code with nothing to do with a row
+# key.
+readonly entry_path_pattern='\.path\.(\w*string\w*|native|c_str)[[:space:]]*(<[^>]*>)?[[:space:]]*\(\)|(auto|std::filesystem::path)[^=;]*=[^=;]*\.path[[:space:]]*;'
 readonly -a entry_path_permitted=(data activate selectedPaths)
-readonly entry_path_subject="spells an entry's path as text"
+readonly entry_path_subject="takes an entry's path as text or under another name"
 
 # shellcheck source=tools/guard_corpus.sh
 source "$(dirname "${BASH_SOURCE[0]}")/guard_corpus.sh"
@@ -107,6 +151,17 @@ is_permitted_function() {
 # are recognized at column zero, which is where clang-format puts them, so an
 # occurrence inside a nested lambda still resolves to the member that contains
 # it.
+#
+# A definition ENDS at the next closing brace in column zero, and forgetting
+# that was a bypass rather than an inaccuracy. Without it the name set at a
+# member definition survived to the end of the file, so a free helper placed
+# BELOW a permitted member inherited that member's name and was admitted -
+# and, worse, counted as a permitted sighting, so the bypass made the guard's
+# own vacuity floor read healthier. Every source in this model opens with its
+# anonymous namespace today, which is the only reason nothing had landed there;
+# nothing required that ordering. A member's body closes in column zero, as
+# does an anonymous namespace, so one rule ends both and a match between two
+# definitions belongs to neither.
 enclosing_function() {
     local file="$1"
     local line="$2"
@@ -115,7 +170,9 @@ enclosing_function() {
         /^[A-Za-z_][A-Za-z0-9_:<>, ]*[ *&]DirectoryListModel::[A-Za-z_][A-Za-z0-9_]*\(/ {
             match($0, /DirectoryListModel::[A-Za-z_][A-Za-z0-9_]*\(/)
             name = substr($0, RSTART + length("DirectoryListModel::"), RLENGTH - length("DirectoryListModel::") - 1)
+            next
         }
+        /^}/ { name = "" }
         END { print name }
     ' "$file"
 }

@@ -26,6 +26,76 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- One spelling rule now covers the spellings around it
+
+Row keys in the directory model must be built in one place, because the count
+of them is what a large-directory gate reads. The rule that holds that had
+three ways past it and one instrument that had stopped working. All four were
+reproduced on the unmodified sources before anything was changed.
+
+A member definition had no end. The enclosing-member lookup set a name when it
+saw a definition at column zero and never cleared it, so a free helper placed
+below a permitted member inherited that member's name and was admitted. It was
+worse than admitted: it was counted as a permitted sighting, so the bypass
+raised the number the rule's own emptiness check reads and made the guard look
+healthier for holding a hand-spelled key. Every source in this model happens to
+open with its anonymous namespace, which is the only reason nothing had landed
+there, and nothing required that ordering. A member's body closes in column
+zero and so does an anonymous namespace, so one rule ends both and a match
+between two definitions now belongs to neither.
+
+An alias erased the pattern in one line. The conversion rule needed an entry's
+`path` member adjacent to the conversion, and `const auto& p = entry.path;`
+separates them while leaving the same key free to be built from the alias. The
+rule now also matches binding an entry's `path` to a name whose declared type
+is `auto` or a filesystem path. It is typed rather than general on purpose:
+the tab state in these files carries its own `path` member of interface string
+type, and a rule matching any such binding would have rejected the shipped
+sources on the day it landed. Both directions are pinned by scenarios.
+
+The conversion list was five names where the standard offers thirteen.
+`wstring`, `u16string`, `u32string`, the four generic forms, and `string<char>`
+written as the member template it is were all accepted, and on this platform
+the generic forms are byte-identical to the native ones, so each produced the
+counted key exactly. The rule now matches by shape rather than by a list.
+
+The comment above that list was the worst part of it. It said a conversion
+outside the list would be reported by the guard's self-test, and no such check
+existed — a sentence that tells the next reader not to look is worse than
+silence, and eight of the conversions it implied were covered were already in
+the standard when it was written. The enumeration it promised now exists: every
+conversion is planted in turn and must be rejected, under a count floor, so the
+list cannot shrink quietly the way the rule's did.
+
+What the guard still does not catch is now written down beside what it does,
+and each residual is pinned by a scenario asserting that the guard accepts it,
+so the list cannot stop describing the guard. A path compared against a path
+builds no string at all. An entry's path converts to its native string type
+with no conversion member named anywhere, so `QString::fromStdString(entry.path)`
+produces the counted key from a line that mentions no conversion; catching it
+needs the argument's type, which is not on the line, and widening the rule to
+any mention of the member was tried and rejected because these files hold
+ordinary uses that would each have had to be permitted. An alias whose type is
+spelled through a typedef is not recognized. A future conversion named after
+none of `string`, `native`, or `c_str` is covered by no shape.
+
+Separately, the check that the normalization rule has not gone dead could be
+deleted with the whole suite green. The scenario named for it asserted only the
+words the two emptiness checks share, and its fixture makes the other one fire
+with those same trailing words, so the scenario passed on the other rule's
+message. It now asserts the half that belongs to its own rule.
+
+That scenario survived because the mutation battery was asymmetric: all seven
+of its mutations targeted the newer rule and the older one had none. The
+battery now covers both rules the same way — never applied, status swallowed,
+permitted list widened, emptiness check removed — plus the end of a member
+definition, the alias branch, the template-argument form, the file floor, the
+include-following coverage, and the self-test's own conversion enumeration. It
+plants 17 mutations where it planted 7, and catches all 17 with no survivors.
+The self-test grows from 17 expectations to 37.
+
+---
+
 ## 2026-08-30 -- A replacement arrives before a column listing leaves
 
 Changing or collapsing the active column path no longer lets the shell's
