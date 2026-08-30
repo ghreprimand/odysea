@@ -53,6 +53,7 @@
 
 #include "odysea/core/directory_model.hpp"
 #include "odysea/core/file_operations.hpp"
+#include "odysea/core/transfer.hpp"
 #include "odysea/core/trash.hpp"
 
 #include <cstddef>
@@ -225,6 +226,15 @@ class OperationJournal {
                                              const std::filesystem::path& destination_directory,
                                              const OperationOptions& options);
 
+    /// The same copy, reported and controllable.
+    ///
+    /// A cancelled or failed transfer installs nothing, so nothing is
+    /// recorded: the history holds completed operations only, and there is no
+    /// state in which a reversal would undo part of one.
+    [[nodiscard]] OperationOutcome copy_into(const std::filesystem::path& source,
+                                             const std::filesystem::path& destination_directory,
+                                             const TransferOptions& transfer);
+
     /// Move `source` into `destination_directory` and record the result.
     ///
     /// Reversing a move returns the entry to the path it came from, under the
@@ -234,6 +244,12 @@ class OperationJournal {
     [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
                                              const std::filesystem::path& destination_directory,
                                              const OperationOptions& options);
+
+    /// The same move, reported and controllable. Records nothing when it does
+    /// not complete, for the reason given on the copy above.
+    [[nodiscard]] OperationOutcome move_into(const std::filesystem::path& source,
+                                             const std::filesystem::path& destination_directory,
+                                             const TransferOptions& transfer);
 
     /// Rename `source` to `new_name` and record the result.
     [[nodiscard]] OperationOutcome rename_entry(const std::filesystem::path& source,

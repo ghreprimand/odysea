@@ -24,6 +24,18 @@ Item {
         property var calls: []
         property int selectedCount: 0
         property bool operationBusy: false
+        property bool operationInterruptible: false
+        property bool operationPaused: false
+        property bool operationProgressKnown: false
+        property real operationProgress: 0
+        property string operationEntry: ""
+        property string operationEstimate: ""
+        function pauseOperation() {
+        }
+        function resumeOperation() {
+        }
+        function cancelOperation() {
+        }
         property bool canUndo: false
         property string undoDisabledReason: "No filesystem operation is available to undo."
         property bool showHidden: false
@@ -486,7 +498,7 @@ Item {
 
         function test_canvasSurfaceListsWorkspaceActions() {
             const ids = shellActions.actionsFor(shellActions.canvasContext("/synthetic/fixture")).map(action => action.actionId);
-            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,edit.undo,nav.up,storage.openUsage,tab.new");
+            compare(ids.join(","), "selection.all,view.toggleHidden,nav.refresh,edit.undo,operation.pause,operation.resume,nav.up,storage.openUsage,tab.new,operation.cancel");
             compare(shellActions.trigger("storage.openUsage", shellActions.canvasContext("/synthetic/fixture")), true);
             compare(fakeShell.calls.join(","), "openStorageUsage");
         }

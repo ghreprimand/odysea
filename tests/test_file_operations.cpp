@@ -582,7 +582,7 @@ void test_maximal_names_transfer_into_a_free_destination() {
     check(name.size() == longest_name(target_dir), "the fixture name is exactly at the limit");
 
     const fs::path copied = tree.file("source/" + name, "contents");
-    const OperationOutcome copy_outcome = copy_into(copied, target_dir, {});
+    const OperationOutcome copy_outcome = copy_into(copied, target_dir, OperationOptions{});
     check(copy_outcome.succeeded(), "a name at the length limit can be copied");
     check(odysea::test::read_text(target_dir / name) == "contents",
           "a copy of a maximal name arrives with its contents");
@@ -590,7 +590,7 @@ void test_maximal_names_transfer_into_a_free_destination() {
 
     const std::string moved_name = maximal_name(target_dir, ".dat");
     const fs::path moved = tree.file("source/" + moved_name, "moved");
-    const OperationOutcome move_outcome = move_into(moved, target_dir, {});
+    const OperationOutcome move_outcome = move_into(moved, target_dir, OperationOptions{});
     check(move_outcome.succeeded(), "a name at the length limit can be moved");
     check(odysea::test::read_text(target_dir / moved_name) == "moved",
           "a move of a maximal name arrives with its contents");
@@ -954,7 +954,7 @@ void test_copy_file() {
     const fs::path source = tree.file("source/note.txt", "contents");
     const fs::path target_dir = tree.directory("target");
 
-    const OperationOutcome outcome = copy_into(source, target_dir, {});
+    const OperationOutcome outcome = copy_into(source, target_dir, OperationOptions{});
     check(outcome.succeeded(), "copying a file into an empty directory should succeed");
     check(outcome.destination == target_dir / "note.txt", "copy keeps the source file name");
     check(fs::exists(source), "copy leaves the source in place");
@@ -967,7 +967,7 @@ void test_copy_directory_recursively() {
     const fs::path source = tree.root() / "source";
     const fs::path target_dir = tree.directory("target");
 
-    const OperationOutcome outcome = copy_into(source, target_dir, {});
+    const OperationOutcome outcome = copy_into(source, target_dir, OperationOptions{});
     check(outcome.succeeded(), "copying a directory should succeed");
     check(fs::exists(target_dir / "source/nested/deep.txt"), "directory copy is recursive");
 }
@@ -980,7 +980,8 @@ void test_copy_preserves_symlinks() {
     check(!ec, "fixture symlink should be creatable");
 
     const fs::path destination = tree.directory("target");
-    const OperationOutcome outcome = copy_into(tree.root() / "source", destination, {});
+    const OperationOutcome outcome =
+        copy_into(tree.root() / "source", destination, OperationOptions{});
     check(outcome.succeeded(), "copying a tree containing a symlink should succeed");
     check(fs::is_symlink(fs::symlink_status(destination / "source/link.txt")),
           "symlinks are copied as symlinks rather than followed");
@@ -992,7 +993,7 @@ void test_conflict_policies() {
     const fs::path target_dir = tree.directory("target");
     tree.file("target/note.txt", "old");
 
-    const OperationOutcome fail = copy_into(source, target_dir, {});
+    const OperationOutcome fail = copy_into(source, target_dir, OperationOptions{});
     check(fail.error == std::errc::file_exists, "the default policy refuses to clobber");
     check(odysea::test::read_text(target_dir / "note.txt") == "old",
           "a refused copy leaves the destination untouched");
@@ -1030,7 +1031,7 @@ void test_move_file() {
     const fs::path source = tree.file("source/note.txt", "contents");
     const fs::path target_dir = tree.directory("target");
 
-    const OperationOutcome outcome = move_into(source, target_dir, {});
+    const OperationOutcome outcome = move_into(source, target_dir, OperationOptions{});
     check(outcome.succeeded(), "moving a file should succeed");
     check(!fs::exists(source), "move removes the source");
     check(odysea::test::read_text(target_dir / "note.txt") == "contents",
@@ -1042,9 +1043,9 @@ void test_rejects_moving_a_directory_into_itself() {
     const fs::path source = tree.directory("source");
     const fs::path nested = tree.directory("source/nested");
 
-    check(copy_into(source, source, {}).error == std::errc::invalid_argument,
+    check(copy_into(source, source, OperationOptions{}).error == std::errc::invalid_argument,
           "a directory cannot be copied into itself");
-    check(move_into(source, nested, {}).error == std::errc::invalid_argument,
+    check(move_into(source, nested, OperationOptions{}).error == std::errc::invalid_argument,
           "a directory cannot be moved into its own descendant");
 }
 
@@ -1073,10 +1074,10 @@ void test_missing_inputs() {
     const odysea::test::TemporaryTree tree("missing");
     const fs::path target_dir = tree.directory("target");
 
-    check(copy_into(tree.root() / "absent", target_dir, {}).error ==
+    check(copy_into(tree.root() / "absent", target_dir, OperationOptions{}).error ==
               std::errc::no_such_file_or_directory,
           "copying a missing source reports a missing source");
-    check(move_into(tree.file("real.txt"), tree.root() / "absent_dir", {}).error ==
+    check(move_into(tree.file("real.txt"), tree.root() / "absent_dir", OperationOptions{}).error ==
               std::errc::not_a_directory,
           "a missing destination directory is reported");
 }

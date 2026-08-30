@@ -2,7 +2,10 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QStringList>
 #include <QtConcurrentRun>
+
+#include <chrono>
 
 #include <utility>
 
@@ -17,6 +20,38 @@ std::vector<std::filesystem::path> toPaths(const QStringList& paths) {
         converted.emplace_back(path.toStdString());
     }
     return converted;
+}
+
+/// A rate as a human-sized figure. The unit progress is counted in is bytes
+/// plus a charge per entry, so this is a rate of work and not strictly of
+/// bytes; the wording that surrounds it says "about" for that reason.
+QString formattedByteRate(double unitsPerSecond) {
+    static constexpr double step = 1024.0;
+    const QStringList units{QStringLiteral("B"), QStringLiteral("KiB"), QStringLiteral("MiB"),
+                            QStringLiteral("GiB"), QStringLiteral("TiB")};
+    double value = unitsPerSecond;
+    int unit = 0;
+    while (value >= step && unit + 1 < units.size()) {
+        value /= step;
+        ++unit;
+    }
+    return QStringLiteral("%1 %2").arg(value, 0, 'f', value < 10.0 ? 1 : 0).arg(units.at(unit));
+}
+
+/// A duration in the coarsest unit that still says something useful. The
+/// estimate behind it does not justify seconds once it runs to hours.
+QString formattedDuration(std::chrono::seconds remaining) {
+    const qint64 total = remaining.count();
+    if (total < 60) {
+        return QCoreApplication::translate("DirectoryListModel", "%n second(s)", nullptr,
+                                           static_cast<int>(total));
+    }
+    if (total < 3600) {
+        return QCoreApplication::translate("DirectoryListModel", "%n minute(s)", nullptr,
+                                           static_cast<int>(total / 60));
+    }
+    return QCoreApplication::translate("DirectoryListModel", "%n hour(s)", nullptr,
+                                       static_cast<int>(total / 3600));
 }
 
 QString operationName(FilesystemOperationKind kind) {
@@ -171,6 +206,8 @@ void DirectoryListModel::performCopy(const QString& destinationDirectory, int co
         .destinationDirectory = normalizedPath(destinationDirectory).toStdString(),
         .newName = {},
         .options = operationOptions(conflictMode),
+        .control = {},
+        .onProgress = {},
     };
     startOperation(std::move(request));
 }
@@ -182,6 +219,8 @@ void DirectoryListModel::performMove(const QString& destinationDirectory, int co
         .destinationDirectory = normalizedPath(destinationDirectory).toStdString(),
         .newName = {},
         .options = operationOptions(conflictMode),
+        .control = {},
+        .onProgress = {},
     };
     startOperation(std::move(request));
 }
@@ -262,6 +301,8 @@ void DirectoryListModel::performRename(const QString& newName, int conflictMode)
         .destinationDirectory = {},
         .newName = newName.toStdString(),
         .options = operationOptions(conflictMode),
+        .control = {},
+        .onProgress = {},
     };
     startOperation(std::move(request));
 }
@@ -273,6 +314,8 @@ void DirectoryListModel::performTrash() {
         .destinationDirectory = {},
         .newName = {},
         .options = operationOptions(ConflictFail),
+        .control = {},
+        .onProgress = {},
     };
     startOperation(std::move(request));
 }
@@ -304,14 +347,131 @@ void DirectoryListModel::startOperation(FilesystemOperationRequest request) {
     }
 
     setOperationErrorString({});
+    clearOperationProgress();
     setOperationBusy(true);
     watchRefreshPending_ = false;
     const QString name = operationName(request.kind);
     setStatusMessage(tr("%1 in progress…").arg(name));
+
+    // Only the operations that move data are worth holding or stopping. A
+    // rename and a trash are a single rename each: offering a pause button
+    // for them would promise a control that has nothing to act on.
+    if (request.kind == FilesystemOperationKind::Copy ||
+        request.kind == FilesystemOperationKind::Move) {
+        operationControl_ = std::make_shared<odysea::core::TransferControl>();
+        request.control = operationControl_;
+        request.onProgress = [this](const odysea::core::TransferProgress& progress) {
+            // Reports arrive on the worker thread. They are marshalled onto
+            // this object's thread through the same gate the scan and watch
+            // deliveries use, so a report cannot reach a model that has
+            // stopped accepting them.
+            if (!deliverCallbacks_.load(std::memory_order_acquire)) {
+                return;
+            }
+            QMetaObject::invokeMethod(
+                this,
+                [this, progress] {
+                    if (deliverCallbacks_.load(std::memory_order_acquire)) {
+                        applyOperationProgress(progress);
+                    }
+                },
+                Qt::QueuedConnection);
+        };
+        emit operationControlChanged();
+    }
+
     const std::shared_ptr<odysea::core::OperationJournal> journal = operationJournal_;
     operationWatcher_.setFuture(QtConcurrent::run([request = std::move(request), journal] {
         return executeFilesystemOperation(request, *journal);
     }));
+}
+
+void DirectoryListModel::applyOperationProgress(const odysea::core::TransferProgress& progress) {
+    operationProgressKnown_ = progress.completed_fraction_known();
+    operationProgress_ = progress.completed_fraction();
+    operationEntry_ = progress.current_entry.empty()
+                          ? QString{}
+                          : QString::fromStdString(progress.current_entry.filename().string());
+
+    // Both figures are estimates and are worded as estimates. A rate nobody
+    // has measured yet is reported as not measured rather than as zero, and a
+    // time remaining is offered only when there is both a rate and a total to
+    // divide by it.
+    if (!progress.estimate.throughput_known) {
+        operationEstimate_ = tr("Measuring…");
+    } else {
+        const double rate = progress.estimate.work_units_per_second;
+        const QString throughput = tr("about %1/s").arg(formattedByteRate(rate));
+        operationEstimate_ =
+            progress.estimate.remaining_known
+                ? tr("%1, roughly %2 left")
+                      .arg(throughput, formattedDuration(progress.estimate.remaining))
+                : throughput;
+    }
+    emit operationProgressChanged();
+}
+
+void DirectoryListModel::clearOperationProgress() {
+    operationControl_.reset();
+    operationProgressKnown_ = false;
+    operationProgress_ = 0.0;
+    operationEntry_.clear();
+    operationEstimate_.clear();
+    emit operationProgressChanged();
+    emit operationControlChanged();
+}
+
+void DirectoryListModel::pauseOperation() {
+    if (!operationControl_) {
+        setStatusMessage(tr("There is nothing running that can be held."));
+        return;
+    }
+    operationControl_->request_pause();
+    setStatusMessage(tr("Holding the operation…"));
+    emit operationControlChanged();
+}
+
+void DirectoryListModel::resumeOperation() {
+    if (!operationControl_) {
+        return;
+    }
+    operationControl_->resume();
+    setStatusMessage(tr("Resuming…"));
+    emit operationControlChanged();
+}
+
+void DirectoryListModel::cancelOperation() {
+    if (!operationControl_) {
+        setStatusMessage(tr("There is nothing running that can be stopped."));
+        return;
+    }
+    operationControl_->request_cancel();
+    setStatusMessage(tr("Stopping the operation…"));
+    emit operationControlChanged();
+}
+
+bool DirectoryListModel::operationProgressKnown() const noexcept {
+    return operationProgressKnown_;
+}
+
+double DirectoryListModel::operationProgress() const noexcept {
+    return operationProgress_;
+}
+
+QString DirectoryListModel::operationEntry() const {
+    return operationEntry_;
+}
+
+QString DirectoryListModel::operationEstimate() const {
+    return operationEstimate_;
+}
+
+bool DirectoryListModel::operationPaused() const noexcept {
+    return operationControl_ && operationControl_->pause_requested();
+}
+
+bool DirectoryListModel::operationInterruptible() const noexcept {
+    return operationBusy_ && static_cast<bool>(operationControl_);
 }
 
 void DirectoryListModel::startUndo() {

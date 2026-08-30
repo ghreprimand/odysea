@@ -16,6 +16,8 @@ add_library(odysea_core
     src/storage_usage.cpp
     src/thumbnail.cpp
     src/thumbnail_service.cpp
+    src/transfer.cpp
+    src/transfer_engine.cpp
     src/trash.cpp)
 
 target_include_directories(odysea_core

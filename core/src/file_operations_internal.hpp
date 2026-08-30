@@ -12,6 +12,7 @@
 #pragma once
 
 #include "odysea/core/file_operations.hpp"
+#include "odysea/core/transfer.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -57,6 +58,21 @@ void rename_with_filesystem(RenameKind kind, const std::filesystem::path& from,
 [[nodiscard]] OperationOutcome move_into_using(const std::filesystem::path& source,
                                                const std::filesystem::path& destination_directory,
                                                const OperationOptions& options,
+                                               const RenameStep& rename_step);
+
+/// The same two, with reporting and control supplied as well.
+///
+/// The plain forms above are these with an empty observer and no control, so
+/// there is one implementation of the recovery behaviour rather than two that
+/// have to be kept saying the same thing.
+[[nodiscard]] OperationOutcome copy_into_using(const std::filesystem::path& source,
+                                               const std::filesystem::path& destination_directory,
+                                               const TransferOptions& transfer,
+                                               const RenameStep& rename_step);
+
+[[nodiscard]] OperationOutcome move_into_using(const std::filesystem::path& source,
+                                               const std::filesystem::path& destination_directory,
+                                               const TransferOptions& transfer,
                                                const RenameStep& rename_step);
 
 /// rename_entry with the rename step supplied by the caller.

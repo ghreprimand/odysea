@@ -1,6 +1,7 @@
 #include "odysea/core/file_operations.hpp"
 
 #include "file_operations_internal.hpp"
+#include "transfer_engine.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -435,8 +436,13 @@ std::error_code install_over(const fs::path& prepared, const fs::path& destinati
     return {};
 }
 
-constexpr fs::copy_options recursive_copy =
-    fs::copy_options::recursive | fs::copy_options::copy_symlinks;
+/// The transfer options a caller who asked for none is given: the conflict
+/// policy they did supply, no observer, and no control.
+TransferOptions unwatched_transfer(const OperationOptions& options) {
+    TransferOptions transfer;
+    transfer.operation = options;
+    return transfer;
+}
 
 } // namespace
 
@@ -534,6 +540,14 @@ void rename_with_filesystem(RenameKind /*kind*/, const fs::path& from, const fs:
 
 OperationOutcome copy_into_using(const fs::path& source, const fs::path& destination_directory,
                                  const OperationOptions& options, const RenameStep& rename_step) {
+    return copy_into_using(source, destination_directory, unwatched_transfer(options), rename_step);
+}
+
+OperationOutcome copy_into_using(const fs::path& source, const fs::path& destination_directory,
+                                 const TransferOptions& transfer, const RenameStep& rename_step) {
+    const OperationOptions& options = transfer.operation;
+    TransferRun run(transfer, &transfer_steady_now);
+
     OperationOutcome outcome = prepare_transfer(source, destination_directory, options);
     if (!outcome.succeeded()) {
         return outcome;
@@ -557,9 +571,12 @@ OperationOutcome copy_into_using(const fs::path& source, const fs::path& destina
         return failure(staging_ec);
     }
 
-    std::error_code copy_ec;
-    fs::copy(source, staging, recursive_copy, copy_ec);
+    const std::error_code copy_ec = run_transfer(source, staging, run);
     if (copy_ec) {
+        // A cancellation arrives here as an ordinary failure and takes the
+        // ordinary recovery: the partial copy is discarded and the caller is
+        // told the operation was cancelled. Nothing reaches the destination,
+        // so there is no partial result for anything downstream to record.
         discard_working_entry(staging);
         return failure(copy_ec);
     }
@@ -569,11 +586,20 @@ OperationOutcome copy_into_using(const fs::path& source, const fs::path& destina
         discard_working_entry(staging);
         return failure(install_ec);
     }
+    run.report_now();
     return outcome;
 }
 
 OperationOutcome move_into_using(const fs::path& source, const fs::path& destination_directory,
                                  const OperationOptions& options, const RenameStep& rename_step) {
+    return move_into_using(source, destination_directory, unwatched_transfer(options), rename_step);
+}
+
+OperationOutcome move_into_using(const fs::path& source, const fs::path& destination_directory,
+                                 const TransferOptions& transfer, const RenameStep& rename_step) {
+    const OperationOptions& options = transfer.operation;
+    TransferRun run(transfer, &transfer_steady_now);
+
     OperationOutcome outcome = prepare_transfer(source, destination_directory, options);
     if (!outcome.succeeded()) {
         return outcome;
@@ -584,6 +610,12 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
         return outcome;
     }
 
+    // Asked before anything is touched, so a move cancelled the moment it was
+    // issued does nothing rather than completing because a rename is quick.
+    if (const std::error_code stopped = run.checkpoint()) {
+        return failure(stopped);
+    }
+
     // A rename moves the entry in one step when nothing is in the way, and
     // replaces one non-directory with another atomically when something is. Try
     // it before anything is disturbed: nothing has been removed if it fails.
@@ -592,6 +624,12 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
         std::error_code ec;
         rename_step(RenameKind::Relocate, source, outcome.destination, ec);
         if (!ec) {
+            // A rename moves no bytes, so there is nothing to report as it
+            // happens. The single report says the entry is where it was
+            // asked to go, which is all a watcher of this path can be told.
+            run.note_entry(source);
+            run.set_phase(TransferPhase::Transferring);
+            run.report_now();
             return outcome;
         }
         if (ec != std::errc::cross_device_link) {
@@ -619,9 +657,11 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
         // be put back untouched if a later step fails.
         source_relocated = true;
     } else if (relocate_ec == std::errc::cross_device_link) {
-        std::error_code copy_ec;
-        fs::copy(source, staging, recursive_copy, copy_ec);
+        const std::error_code copy_ec = run_transfer(source, staging, run);
         if (copy_ec) {
+            // Cancelled or failed part-way. The source has not been touched —
+            // a crossing move copies before it removes — so discarding the
+            // partial copy puts everything back exactly as it was.
             discard_working_entry(staging);
             return failure(copy_ec);
         }
@@ -638,12 +678,19 @@ OperationOutcome move_into_using(const fs::path& source, const fs::path& destina
 
     if (!source_relocated) {
         // The move was completed by copying, so the original is still in place.
+        //
+        // Deliberately past the last checkpoint. Once the copy is installed at
+        // the destination, the entry exists in two places, and stopping here
+        // would leave that as the result of a "cancelled" move. Removing the
+        // source is the step that makes the move a move, so it is not
+        // interruptible.
         std::error_code remove_ec;
         fs::remove_all(source, remove_ec);
         if (remove_ec) {
             return failure(remove_ec);
         }
     }
+    run.report_now();
     return outcome;
 }
 
@@ -722,6 +769,18 @@ OperationOutcome move_into(const fs::path& source, const fs::path& destination_d
 OperationOutcome rename_entry(const fs::path& source, std::string_view new_name,
                               const OperationOptions& options) {
     return detail::rename_entry_using(source, new_name, options, &detail::rename_with_filesystem);
+}
+
+OperationOutcome copy_into(const fs::path& source, const fs::path& destination_directory,
+                           const TransferOptions& options) {
+    return detail::copy_into_using(source, destination_directory, options,
+                                   &detail::rename_with_filesystem);
+}
+
+OperationOutcome move_into(const fs::path& source, const fs::path& destination_directory,
+                           const TransferOptions& options) {
+    return detail::move_into_using(source, destination_directory, options,
+                                   &detail::rename_with_filesystem);
 }
 
 } // namespace odysea::core

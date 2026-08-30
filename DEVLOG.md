@@ -26,6 +26,68 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Transfers that report, hold, and stop
+
+Copy and move now reproduce a tree entry by entry and chunk by chunk in
+Qt-free `core/` rather than in a single call into the standard library. That is
+what makes progress observable at all, and it is deliberately not bought by
+driving another program: the operation stays here, unit-testable and free of
+anything that has to be installed alongside it.
+
+A transfer reports bytes done, entries done, the entry in hand, and the totals
+it measured beforehand. Progress is counted in bytes plus a fixed charge per
+entry, measured at 16 KiB from copying 20,000 empty files against one large
+one, because a bar counting bytes alone sits at zero through a directory of
+small files and then jumps. Rate and time remaining are estimates and are
+typed as estimates: each carries its own known flag rather than a sentinel, the
+rate is averaged over a two-second sliding window and withheld until the window
+covers half a second, and no time remaining is offered without both a rate and
+measured totals. A tree too large to measure inside its budget is transferred
+with unknown totals, which is reported as unknown rather than filled in.
+
+Reporting is bounded in time, never in work. With the clock held still a
+transfer makes exactly the two reports it owes -- one per phase -- whether it
+moves fifty entries or two thousand. Measured against the same transfer with
+no observer, reporting costs 1.17 times as much on 4,000 entries, and the
+engine itself runs at 1.14 times the standard library's copy on 8,000 empty
+files and 0.87 times on bulk data. Both figures are held by tests: an exact
+count of reports, and a ratio of processor time between two runs of the same
+size back to back.
+
+Pause, resume, and cancel share one control, and what each leaves on disk is a
+tested guarantee rather than a consequence. A transfer parks between chunks,
+holding its descriptors and its working entry. A cancel wakes a parked
+transfer rather than queueing behind it, because nobody may be left to resume
+one. Cancellation is reported as an ordinary failure and takes the ordinary
+recovery: the working entry is discarded, so nothing reaches the destination
+and the source is untouched. A source removed while a transfer is parked, and
+a destination that stops accepting writes while it is parked, both end the
+same way. The one step that is deliberately past the last checkpoint is the
+removal of the source in a crossing move, because stopping there would leave
+the entry in two places and call it cancelled.
+
+The journal is the other half of that. A transfer that did not complete
+installs nothing, so nothing is recorded: the history holds completed
+operations only, and there is no state in which a reversal would undo part of
+one. A tree holding a socket, a device node, or a named pipe is refused rather
+than partly copied, so a copy is never reported as done while arriving
+incomplete.
+
+Hold, resume, and stop are declared once in the shared action registry, so the
+same three definitions reach `Ctrl+Shift+H`, `Ctrl+Shift+R`, `Ctrl+Shift+X`,
+the canvas menu, the command palette, and three buttons in the status strip
+beside a progress bar that reads indeterminate when the totals are unknown.
+
+Verified: 19 headless core cases covering the unit, the cadence, the
+estimates, cancellation at three points, pause and the three states reachable
+from it, the journal, and the cost. Release and ASan/UBSan batteries pass
+through the reconciling runner; formatting, QML formatting and linting, scoped
+static analysis, and the public-repository guard are green. Known gap: a
+same-filesystem move is a rename and reports once, because there are no bytes
+to report on.
+
+---
+
 ## 2026-08-30 -- A cost bound that measured the machine
 
 The large-directory gate held five bounds on what acquiring a listing may

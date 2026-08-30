@@ -148,13 +148,25 @@ void OperationJournal::clear() noexcept {
 OperationOutcome OperationJournal::copy_into(const fs::path& source,
                                              const fs::path& destination_directory,
                                              const OperationOptions& options) {
+    TransferOptions transfer;
+    transfer.operation = options;
+    return copy_into(source, destination_directory, transfer);
+}
+
+OperationOutcome OperationJournal::copy_into(const fs::path& source,
+                                             const fs::path& destination_directory,
+                                             const TransferOptions& transfer) {
+    const OperationOptions& options = transfer.operation;
     const EntryMetadata before = detail::read_entry_metadata(source);
     const OperationOutcome predicted =
         resolve_destination(destination_directory, source.filename().string(), options);
     const bool predicted_occupied = predicted.succeeded() && path_present(predicted.destination);
 
-    OperationOutcome outcome = core::copy_into(source, destination_directory, options);
+    OperationOutcome outcome = core::copy_into(source, destination_directory, transfer);
     if (!outcome.succeeded()) {
+        // Nothing was installed, so there is nothing to record. A cancelled
+        // or failed transfer leaves the history exactly as it found it,
+        // rather than adding an entry that would reverse half an operation.
         return outcome;
     }
 
@@ -200,13 +212,23 @@ OperationOutcome OperationJournal::copy_into(const fs::path& source,
 OperationOutcome OperationJournal::move_into(const fs::path& source,
                                              const fs::path& destination_directory,
                                              const OperationOptions& options) {
+    TransferOptions transfer;
+    transfer.operation = options;
+    return move_into(source, destination_directory, transfer);
+}
+
+OperationOutcome OperationJournal::move_into(const fs::path& source,
+                                             const fs::path& destination_directory,
+                                             const TransferOptions& transfer) {
+    const OperationOptions& options = transfer.operation;
     const EntryMetadata before = detail::read_entry_metadata(source);
     const OperationOutcome predicted =
         resolve_destination(destination_directory, source.filename().string(), options);
     const bool predicted_occupied = predicted.succeeded() && path_present(predicted.destination);
 
-    OperationOutcome outcome = core::move_into(source, destination_directory, options);
+    OperationOutcome outcome = core::move_into(source, destination_directory, transfer);
     if (!outcome.succeeded()) {
+        // As above: a move that did not complete records nothing.
         return outcome;
     }
 

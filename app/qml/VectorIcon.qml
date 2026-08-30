@@ -46,6 +46,10 @@ Item {
             return "M12 5 L12 19 M5 12 L19 12";
         case "close":
             return "M6 6 L18 18 M18 6 L6 18";
+        case "pause":
+            return "M9 5 L9 19 M15 5 L15 19";
+        case "play":
+            return "M8 5 L19 12 L8 19 Z";
         case "select-all":
             return "M4 8 L4 4 L8 4 M16 4 L20 4 L20 8 M20 16 L20 20 L16 20 M8 20 L4 20 L4 16 M8 12 L11 15 L17 9";
         case "copy":

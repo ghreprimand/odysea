@@ -40,16 +40,24 @@ FilesystemOperationResult executeFilesystemOperation(const FilesystemOperationRe
         return result;
     }
 
+    // Built once and shared by every source in the request, so pausing or
+    // cancelling acts on the whole request rather than on whichever entry
+    // happened to be in flight.
+    odysea::core::TransferOptions transfer;
+    transfer.operation = request.options;
+    transfer.control = request.control;
+    transfer.on_progress = request.onProgress;
+
     for (const std::filesystem::path& source : request.sources) {
         FilesystemOperationItem item{.source = source, .destination = {}, .error = {}};
         if (request.kind == FilesystemOperationKind::Copy) {
             const odysea::core::OperationOutcome outcome =
-                journal.copy_into(source, request.destinationDirectory, request.options);
+                journal.copy_into(source, request.destinationDirectory, transfer);
             item.destination = outcome.destination;
             item.error = outcome.error;
         } else if (request.kind == FilesystemOperationKind::Move) {
             const odysea::core::OperationOutcome outcome =
-                journal.move_into(source, request.destinationDirectory, request.options);
+                journal.move_into(source, request.destinationDirectory, transfer);
             item.destination = outcome.destination;
             item.error = outcome.error;
         } else if (request.kind == FilesystemOperationKind::Rename) {

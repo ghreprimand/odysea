@@ -213,6 +213,56 @@ ActionRegistry {
         ]
         perform: () => actionSet.entryModel.performUndo()
     }
+    // The running transfer's own controls. Declared here like every other
+    // action, so the same three definitions reach the keyboard, the context
+    // menu, and the palette: a transfer that can only be stopped with the
+    // mouse is a transfer that cannot be stopped by someone not using one.
+    ShellAction {
+        actionId: "operation.pause"
+        label: qsTr("Hold this operation")
+        shortLabel: qsTr("Hold")
+        iconName: "pause"
+        surfaces: ["canvas"]
+        enabled: actionSet.entryModel.operationInterruptible && !actionSet.entryModel.operationPaused
+        disabledReasonFor: () => actionSet.entryModel.operationInterruptible ? qsTr("The operation is already held") : qsTr("Nothing is running that can be held")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+H"
+            }
+        ]
+        perform: () => actionSet.entryModel.pauseOperation()
+    }
+    ShellAction {
+        actionId: "operation.resume"
+        label: qsTr("Resume this operation")
+        shortLabel: qsTr("Resume")
+        iconName: "play"
+        surfaces: ["canvas"]
+        enabled: actionSet.entryModel.operationInterruptible && actionSet.entryModel.operationPaused
+        disabledReasonFor: () => actionSet.entryModel.operationInterruptible ? qsTr("The operation is already running") : qsTr("Nothing is held")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+R"
+            }
+        ]
+        perform: () => actionSet.entryModel.resumeOperation()
+    }
+    ShellAction {
+        actionId: "operation.cancel"
+        label: qsTr("Stop this operation")
+        shortLabel: qsTr("Stop")
+        iconName: "close"
+        surfaces: ["canvas"]
+        destructive: true
+        enabled: actionSet.entryModel.operationInterruptible
+        disabledReasonFor: () => qsTr("Nothing is running that can be stopped")
+        shortcuts: [
+            {
+                "sequence": "Ctrl+Shift+X"
+            }
+        ]
+        perform: () => actionSet.entryModel.cancelOperation()
+    }
     ShellAction {
         actionId: "nav.up"
         label: qsTr("Up one level")

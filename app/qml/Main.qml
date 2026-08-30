@@ -440,6 +440,7 @@ ApplicationWindow {
             StatusBar {
                 Layout.fillWidth: true
                 shellModel: root.activeEntryModel
+                registry: root.actions
                 activePane: root.activePaneIndex
                 paneCount: root.paneCount
                 theme: root.shellTheme

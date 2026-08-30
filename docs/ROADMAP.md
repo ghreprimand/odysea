@@ -58,6 +58,13 @@ graphical shell grows around it.
       the command palette. Its availability and disabled reason follow the
       adapter's current journal state, and it remains unavailable while a
       filesystem operation is active.
+- [x] Progress, throughput, estimated time remaining, pause, resume, and
+      cancel for in-process copies and moves. The byte loop stays in Qt-free
+      `core/`; reporting is bounded in time rather than in work; rate and time
+      remaining are typed as estimates and withheld until measured. A
+      cancelled or interrupted transfer installs nothing and records nothing.
+      Hold, resume, and stop are declared once and reach the keyboard, the
+      canvas menu, the command palette, and the status strip.
 - [ ] Capability-gated filesystem tools for mounts, quotas, subvolumes, and
       Btrfs snapshot discovery.
 - [x] Built-in fuzzy find across the current tree. Matching and ranking are

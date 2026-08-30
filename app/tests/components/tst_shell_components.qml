@@ -37,6 +37,18 @@ Item {
         property int selectedCount: 0
         property bool busy: false
         property bool operationBusy: false
+        property bool operationInterruptible: false
+        property bool operationPaused: false
+        property bool operationProgressKnown: false
+        property real operationProgress: 0
+        property string operationEntry: ""
+        property string operationEstimate: ""
+        function pauseOperation() {
+        }
+        function resumeOperation() {
+        }
+        function cancelOperation() {
+        }
         property bool canUndo: false
         property string undoDisabledReason: "No filesystem operation is available to undo."
         property string operationErrorString: ""

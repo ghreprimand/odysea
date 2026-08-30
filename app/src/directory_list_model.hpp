@@ -62,6 +62,19 @@ class DirectoryListModel : public QAbstractListModel {
         QString operationErrorString READ operationErrorString NOTIFY operationErrorStringChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoStateChanged)
     Q_PROPERTY(QString undoDisabledReason READ undoDisabledReason NOTIFY undoStateChanged)
+    // The running operation's own state. Progress is a fraction between 0 and
+    // 1 and is meaningless unless operationProgressKnown is true: a transfer
+    // too large to measure quickly reports what it has done without ever
+    // knowing what that is a share of, and a surface must show that rather
+    // than a bar that has invented a position.
+    Q_PROPERTY(
+        bool operationProgressKnown READ operationProgressKnown NOTIFY operationProgressChanged)
+    Q_PROPERTY(double operationProgress READ operationProgress NOTIFY operationProgressChanged)
+    Q_PROPERTY(QString operationEntry READ operationEntry NOTIFY operationProgressChanged)
+    Q_PROPERTY(QString operationEstimate READ operationEstimate NOTIFY operationProgressChanged)
+    Q_PROPERTY(bool operationPaused READ operationPaused NOTIFY operationControlChanged)
+    Q_PROPERTY(
+        bool operationInterruptible READ operationInterruptible NOTIFY operationControlChanged)
 
   public:
     enum Roles {
@@ -123,6 +136,12 @@ class DirectoryListModel : public QAbstractListModel {
     [[nodiscard]] QString operationErrorString() const;
     [[nodiscard]] bool canUndo() const noexcept;
     [[nodiscard]] QString undoDisabledReason() const;
+    [[nodiscard]] bool operationProgressKnown() const noexcept;
+    [[nodiscard]] double operationProgress() const noexcept;
+    [[nodiscard]] QString operationEntry() const;
+    [[nodiscard]] QString operationEstimate() const;
+    [[nodiscard]] bool operationPaused() const noexcept;
+    [[nodiscard]] bool operationInterruptible() const noexcept;
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void goBack();
@@ -173,6 +192,15 @@ class DirectoryListModel : public QAbstractListModel {
     Q_INVOKABLE void performTrash();
     Q_INVOKABLE void performUndo();
 
+    /// Hold the running operation at its next checkpoint. Nothing happens
+    /// when no operation is running or the running one moves no data.
+    Q_INVOKABLE void pauseOperation();
+    /// Release a held operation.
+    Q_INVOKABLE void resumeOperation();
+    /// Stop the running operation. A cancelled transfer installs nothing, so
+    /// the destination is left as it was found.
+    Q_INVOKABLE void cancelOperation();
+
   signals:
     void pathChanged();
     void busyChanged();
@@ -189,6 +217,8 @@ class DirectoryListModel : public QAbstractListModel {
     void statusMessageChanged();
     void operationBusyChanged();
     void operationErrorStringChanged();
+    void operationProgressChanged();
+    void operationControlChanged();
     void undoStateChanged();
     void openRequested(const QString& path);
     void filesystemOperationRequested(const QString& operation, const QStringList& paths);
@@ -298,6 +328,11 @@ class DirectoryListModel : public QAbstractListModel {
     void notifySelectionRoles();
     void requestOperation(const QString& operation);
     void startOperation(FilesystemOperationRequest request);
+    /// Apply one report from the running operation. Called on this object's
+    /// own thread through a queued delivery, never on the worker's.
+    void applyOperationProgress(const odysea::core::TransferProgress& progress);
+    /// Forget the running operation's control and its last report.
+    void clearOperationProgress();
     void startUndo();
     void finishOperation(FilesystemOperationResult result);
     void refreshUndoState();
@@ -406,6 +441,14 @@ class DirectoryListModel : public QAbstractListModel {
     int paneCount_ = 1;
     bool busy_ = false;
     bool operationBusy_ = false;
+    // The running operation's control and its latest report. The control is
+    // shared with the thread doing the work; everything else here is written
+    // only on this object's own thread, from a queued delivery.
+    std::shared_ptr<odysea::core::TransferControl> operationControl_;
+    bool operationProgressKnown_ = false;
+    double operationProgress_ = 0.0;
+    QString operationEntry_;
+    QString operationEstimate_;
     bool canUndo_ = false;
     QString undoDisabledReason_ = QStringLiteral("No filesystem operation is available to undo.");
     bool showHidden_ = false;

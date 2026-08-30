@@ -32,6 +32,18 @@ TestCase {
         property int paneCount: 1
         property int activePane: 0
         property bool operationBusy: false
+        property bool operationInterruptible: false
+        property bool operationPaused: false
+        property bool operationProgressKnown: false
+        property real operationProgress: 0
+        property string operationEntry: ""
+        property string operationEstimate: ""
+        function pauseOperation() {
+        }
+        function resumeOperation() {
+        }
+        function cancelOperation() {
+        }
         property string operationErrorString: ""
         property bool canUndo: false
         property string undoDisabledReason: "No filesystem operation is available to undo."
