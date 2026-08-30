@@ -313,8 +313,6 @@ EffectLevels effective_effect_levels(const AppearanceSettings& settings) noexcep
         levels.scanline = 0.0;
         levels.vignette = 0.0;
         levels.persistence = 0.0;
-    }
-    if (settings.high_contrast) {
         levels.text_lift = 1.0;
     }
     return levels;

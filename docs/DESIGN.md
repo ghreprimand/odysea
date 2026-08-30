@@ -466,8 +466,11 @@ there is no apply step.
   and bright-pass emission live while profile and accessibility overrides
   retain their established authority. Directory, file, symlink, error,
   warning, and success inks stay in the semantic palette matrix. The raw
-  preset color is an authored hue input, not a displayed-token contract:
-  `ShellTheme.accent` is resolved against the active family's render sites
+  preset color is an authored hue input, not a displayed-token contract.
+  Each family's own default accent is different: it must already clear every
+  render site as its authored sRGB value, so selecting the family never
+  silently substitutes a repaired palette constant. `ShellTheme.accent`
+  resolves alternate preset hues against the active family's render sites
   after profile and accessibility lift, and previews or future swatches bind
   that resolved token. A dynamic invariant keeps every current preset from
   changing file-type and status roles; a separately exact roster test makes a
@@ -523,9 +526,9 @@ there is no apply step.
   it and the adjustments survive preset round-trips. The levels exist in two
   views with distinct consumers: the controls display and edit the *stored*
   preference, while the rendering pipeline consumes the *effective* levels —
-  the stored ones after the accessibility overrides. Reduced motion and high
-  contrast zero the glow, bloom, scanline, vignette, and persistence gains;
-  high contrast also pins effective text lift and promotes the muted and
+  the stored ones after the accessibility overrides. Reduced motion zeros
+  persistence only; high contrast zeros the glow, bloom, scanline, vignette,
+  and persistence gains, pins effective text lift, and promotes the muted and
   hairline roles to stronger inks. Because the overrides act on the effective
   view only, an active override never makes an enabled control discard or
   misreport a write, and lifting the override renders the adjustments made

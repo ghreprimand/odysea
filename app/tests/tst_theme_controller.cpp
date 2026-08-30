@@ -192,6 +192,7 @@ class tst_ThemeController : public QObject {
     void accent_presets_resolve_live_and_keep_stable_ids();
     void accent_presets_preserve_file_type_and_status_roles();
     void shipped_accent_presets_clear_render_site_contrast_matrix();
+    void curated_default_accents_are_render_ready();
     void near_black_authored_accent_is_normalized_before_shell_use();
     void profile_presets_steer_effect_levels();
     void slider_writes_switch_to_custom_and_are_remembered();
@@ -350,6 +351,30 @@ void tst_ThemeController::shipped_accent_presets_clear_render_site_contrast_matr
 
     QVERIFY2(failures.isEmpty(), qPrintable(QStringLiteral("accent contrast floors not met:\n") +
                                             failures.join(QStringLiteral("\n"))));
+}
+
+void tst_ThemeController::curated_default_accents_are_render_ready() {
+    ThemeController theme;
+    theme.setProfile(ThemeController::Off);
+    theme.setHighContrast(false);
+    theme.setAccentPresetId(odysea::app::defaultAccentPresetId());
+
+    QStringList failures;
+    for (const QString& paletteId : theme.availablePalettes()) {
+        theme.setPaletteId(paletteId);
+        const odysea::app::ShellPalette& palette = odysea::app::shellPalette(paletteId);
+        const QList<ThemeContrastSample> samples =
+            themeAccentContrastSamples(palette.accent, theme.background(), theme.selectionBed(),
+                                       theme.hover(), theme.pressed(), theme.panel());
+        for (const QString& failure : themeContrastFailures(samples)) {
+            failures.append(QStringLiteral("%1 / %2").arg(paletteId, failure));
+        }
+        QCOMPARE(theme.accent().rgba(), palette.accent.rgba());
+    }
+
+    QVERIFY2(failures.isEmpty(),
+             qPrintable(QStringLiteral("curated accent requires contrast repair:\n") +
+                        failures.join(QStringLiteral("\n"))));
 }
 
 void tst_ThemeController::near_black_authored_accent_is_normalized_before_shell_use() {

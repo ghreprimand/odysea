@@ -57,7 +57,7 @@ reported=0
 # `set -e`, an edit that removes a case - and a short run whose every result
 # passed is indistinguishable from a complete one. Raise it when scenarios are
 # added; lowering it to make a run green is removing coverage.
-readonly expected_scenarios=72
+readonly expected_scenarios=75
 
 report() {
     local outcome="$1" scenario="$2"
@@ -243,7 +243,7 @@ run_guard() {
 }
 
 expect_accepted_reporting() {
-    local scenario="$1" root="$2" history_report="$3"
+    local scenario="$1" root="$2" history_report="$3" recombination_report="${4:-}"
     local output exit_status=0
     output="$(run_guard "$root")" || exit_status=$?
 
@@ -266,6 +266,12 @@ expect_accepted_reporting() {
     if [[ "$output" != *"$history_report"* ]]; then
         report FAIL "$scenario: guard did not report what it did about published history"
         printf '  expected to contain: %s\n' "$history_report" >&2
+        printf '  actual: %s\n' "$output" >&2
+        return
+    fi
+    if [[ -n "$recombination_report" && "$output" != *"$recombination_report"* ]]; then
+        report FAIL "$scenario: guard did not report its split recombination"
+        printf '  expected to contain: %s\n' "$recombination_report" >&2
         printf '  actual: %s\n' "$output" >&2
         return
     fi
@@ -559,7 +565,8 @@ root="$(build_repository moved_verbatim)"
 publish "$root" "Publish the record"
 move_eighth_into_part2 "$root"
 expect_accepted_reporting "a published entry moved into a part verbatim" \
-    "$root" "9 entries published in main, 9 compared against their published text"
+    "$root" "9 entries published in main, 9 compared against their published text" \
+    "9 entry(s) recombined from main without loss or body changes"
 
 # The difference a move actually produces: the entry gains or loses the blank
 # line and rule that separated it from what followed it. That is layout, and
@@ -586,7 +593,23 @@ move_eighth_into_part2 "$root"
 sed -i '/^## 2026-08-08 -- Eighth August entry$/,+2s/^Body text\.$/Body text, revised./' \
     "$root/docs/devlog/2026-08-part2.md"
 expect_rejected "a moved entry whose text was changed under its heading" "$root" \
-    "a published entry has been rewritten under an unchanged heading: ## 2026-08-08 -- Eighth August entry"
+    "the recombined record changes an entry body: ## 2026-08-08 -- Eighth August entry"
+
+# An omitted move destination is the loss a split invites: the live file no
+# longer holds the entry, the new part is well formed, and the refreshed
+# manifest agrees with both. Recombination must still name the missing body.
+root="$(build_repository moved_and_dropped)"
+publish "$root" "Publish the record"
+write_live_record "$root" \
+    docs/devlog/2026-08-part2.md \
+    docs/devlog/2026-08-part1.md \
+    docs/devlog/2026-07.md \
+    -- \
+    "$ordering_baseline_heading" \
+    "2026-08-09 -- Ninth August entry"
+refresh_manifest "$root"
+expect_rejected "an entry removed from the live record without reaching its part" "$root" \
+    "the recombined record is missing a baseline entry: ## 2026-08-08 -- Eighth August entry"
 
 # --- Repairing a record that was published conflicted -----------------------
 # The record really was published with nine unresolved conflict markers in it,
@@ -1595,6 +1618,36 @@ track_everything "$root"
 expect_patched_guard_rejection boundary_census_counted_nothing \
     "the entry-boundary census holds 0 entries" \
     's|census_count=$((census_count + 1))|census_count=$((census_count + 0))|' \
+    "$root"
+
+# The recombination loop has a second historical comparator behind it. Break
+# the loop itself on each split failure, and the older published-pair check
+# must still refuse the changed or absent entry by its own reason. The direct
+# scenarios above establish the recombination reason; these mutations prove
+# that deleting its loop cannot turn either damaged split into a green run.
+root="$(build_repository recombination_body_loop_removed)"
+publish "$root" "Publish the record"
+move_eighth_into_part2 "$root"
+sed -i '/^## 2026-08-08 -- Eighth August entry$/,+2s/^Body text\.$/Body text, revised./' \
+    "$root/docs/devlog/2026-08-part2.md"
+expect_patched_guard_rejection recombination_body_loop_removed \
+    "a published entry has been rewritten under an unchanged heading: ## 2026-08-08 -- Eighth August entry" \
+    's|position <= baseline_count|position <= 0|' \
+    "$root"
+
+root="$(build_repository recombination_missing_loop_removed)"
+publish "$root" "Publish the record"
+write_live_record "$root" \
+    docs/devlog/2026-08-part2.md \
+    docs/devlog/2026-08-part1.md \
+    docs/devlog/2026-07.md \
+    -- \
+    "$ordering_baseline_heading" \
+    "2026-08-09 -- Ninth August entry"
+refresh_manifest "$root"
+expect_patched_guard_rejection recombination_missing_loop_removed \
+    "a published entry is present nowhere in the record: ## 2026-08-08 -- Eighth August entry" \
+    's|position <= baseline_count|position <= 0|' \
     "$root"
 
 if ((reported != expected_scenarios)); then

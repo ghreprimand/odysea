@@ -729,6 +729,98 @@ if guard_corpus_is_git; then
     done
 fi
 
+# --- A split recombines the published record exactly ------------------------
+# A part split moves whole entries from the live file into a newly-created
+# archive part. The structural rules above prove that both ends still look like
+# records; they do not say that the two collections contain the same entries.
+# Compare the old collection against the recombined collection under test, so a
+# move cannot lose or alter an entry while preserving a healthy-looking live
+# file, archive part, and manifest.
+#
+# `entry_pairs` is the normalizer for both revisions. Its only layout allowance
+# is trailing blank lines and a horizontal rule, which are the separator that
+# migrates when an entry becomes the last item of one file or the first item of
+# another. The boundary census below still judges the physical boundary at
+# each file opening and between entries. The two checks therefore agree: a
+# legitimate separator migration is ignored here and measured there, while an
+# entry-body edit is rejected here before a changed census could disguise it.
+recombined_pairs_at_revision() {
+    local revision="$1" blob
+    while IFS= read -r blob; do
+        git cat-file blob "$blob" | entry_pairs
+    done < <(history_record_blobs "$revision")
+}
+
+recombined_current_pairs() {
+    local path
+    for path in "$live_record" "${ordered_archives[@]:+${ordered_archives[@]}}"; do
+        [[ -f "$path" ]] && entry_pairs "$path"
+    done
+}
+
+if [[ -z "$baseline_ref" ]]; then
+    printf 'devlog_archive_guard: split recombination is UNCHECKED: no baseline revision resolves\n'
+else
+    recombined_baseline=0
+    while IFS=$'\t' read -r kind first second; do
+        case "$kind" in
+        COUNT)
+            recombined_baseline="$first"
+            ;;
+        FAIL) fail "$first" ;;
+        esac
+    done < <(
+        awk '
+            function split_pair(pair,   position) {
+                position = index(pair, "\t")
+                heading = substr(pair, 1, position - 1)
+                body = substr(pair, position + 1)
+            }
+            /^baseline\t/ {
+                split_pair(substr($0, length("baseline\t") + 1))
+                if (heading in baseline) {
+                    printf "FAIL\tthe baseline record names an entry more than once while recombining: %s\n", heading
+                } else {
+                    baseline[heading] = body
+                    order[++baseline_count] = heading
+                }
+                next
+            }
+            /^current\t/ {
+                split_pair(substr($0, length("current\t") + 1))
+                if (heading in current) {
+                    printf "FAIL\tthe recombined record names an entry more than once: %s\n", heading
+                } else {
+                    current[heading] = body
+                    current_count++
+                }
+                next
+            }
+            END {
+                for (position = 1; position <= baseline_count; position++) {
+                    heading = order[position]
+                    if (!(heading in current)) {
+                        printf "FAIL\tthe recombined record is missing a baseline entry: %s\n", heading
+                    } else if (baseline[heading] != current[heading]) {
+                        printf "FAIL\tthe recombined record changes an entry body: %s\n", heading
+                    }
+                }
+                printf "COUNT\t%d\t%d\n", baseline_count, current_count
+            }
+        ' < <(
+            recombined_pairs_at_revision "$baseline_ref" | sed 's/^/baseline\t/'
+            recombined_current_pairs | sed 's/^/current\t/'
+        )
+    )
+
+    if ((recombined_baseline == 0)); then
+        fail "the split-recombination baseline $baseline_ref contains no entry, so no move was compared"
+    else
+        printf 'devlog_archive_guard: %d entry(s) recombined from %s without loss or body changes\n' \
+            "$recombined_baseline" "$baseline_ref"
+    fi
+fi
+
 if [[ -z "$baseline_ref" ]]; then
     # WHEN A SKIP IS ALLOWED, AND WHEN IT IS A FAILURE. Reporting the bound
     # unchecked is honest, and an honest skip still reads in the summary

@@ -155,8 +155,8 @@ struct AppearanceSettings {
 /// Resolves the active profile (presets for the fixed profiles, the clamped
 /// stored levels for `Custom`) and then applies the accessibility overrides:
 /// reduced motion forces `persistence` to zero, and high contrast forces
-/// `scanline` and `vignette` to zero and `text_lift` to one so nothing
-/// modulates text legibility.
+/// bloom, scanline, vignette, and persistence to zero and `text_lift` to one
+/// so no emission or temporal treatment modulates text legibility.
 [[nodiscard]] EffectLevels effective_effect_levels(const AppearanceSettings& settings) noexcept;
 
 /// Names for the enumerated fields as persisted, e.g. "balanced".

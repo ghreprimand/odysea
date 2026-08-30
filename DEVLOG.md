@@ -26,6 +26,35 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-30 -- Record moves reassemble exactly and family accents remain literal
+
+The archive guard now recombines the live record and every archive part from
+the published baseline before it accepts a split. Each baseline entry must
+remain present with its body unchanged in the current collection. The shared
+entry normalizer ignores only the trailing separator that legitimately moves
+with an entry between files; the boundary census continues to judge the
+physical separators in each file. The self-test covers a verbatim part split,
+an altered entry body, and an entry that leaves the live file without reaching
+its part.
+
+Each family’s default accent now clears every rendered accent surface as its
+authored sRGB value. A light-family source accent that required contrast repair
+was minimally adjusted at the palette definition, and the complete family set
+is now held by a test that checks the authored color, the rendered token, and
+every window, selected, hovered, pressed, and panel surface. The other shipped
+families cleared without a source change. Alternate accent presets remain
+normalized at the token boundary because their hue is intentionally shared
+across families.
+
+The high-contrast effect override is now one branch: it disables all emissive
+and temporal levels and restores the unmodified text lift, while reduced
+motion still disables persistence only.
+
+Verified: archive guard and its 75-scenario self-test; focused appearance and
+theme-controller tests.
+
+---
+
 ## 2026-08-30 -- Cancellation reaches trees with no file contents
 
 Cooperative cancellation now has discriminating coverage at both traversal
