@@ -25,6 +25,56 @@ order, and the archive gate compares it against what the files actually hold.
 
 ---
 
+## 2026-08-29 -- A gate that has finished is not one that cannot be identified
+
+The isolated-compositor harness records every child it starts by pid and start
+time, so teardown and the later reaper can tell that number apart from a reuse
+of it. The start time is read straight after the child is started, and an empty
+reading meant one thing: refuse the run. That is right for a child still
+running and wrong for one that has already finished. A gate that exits in a few
+milliseconds can be reaped by the harness's own shell before the reading
+happens, which removes its process record; the compositor had come up, the gate
+had run, and the status it exited with was still recoverable, yet the run was
+reported as a failure.
+
+Measured beside a four-way parallel run of the project's own tests: 2 refusals
+in 800 runs of a fast-exiting gate, and 5 in 400 under the sanitizer build,
+against none in 60 runs on an idle machine. The harness's answer depended on
+what else the machine was doing, which is the one property a gate must not
+have, because it teaches every reader of a summary to re-run rather than to
+look.
+
+An unreadable start time now settles into three answers rather than two. Read
+and recorded, as before. Alive and unidentifiable, which still refuses, still
+stops the child, and still leaves nothing behind. Or already finished, which
+records nothing, because there is no process left to stop, and reports the
+status the gate exited with. Liveness is asked of the kernel rather than of the
+process-record source, so a source that has stopped answering cannot make a
+running child look finished. The wait bounds a settle and never a comparison: a
+child on its way out is briefly both signalable and unreadable, and answering on
+the first reading would put that window back into the result.
+
+Both answers are covered by one self-test scenario, and it does not wait for a
+race to happen. The compositor is recorded before its socket exists, so the
+scenario holds the socket back, replaces the process-record source in between
+with one that answers for the compositor alone, and only then releases it. The
+gate is the single thing the harness cannot read. A gate that exits immediately
+must be a completed run; a gate that keeps running must be refused by name,
+stopped, and leave no run directory. Six deletions of the new distinction were
+planted one at a time and diffed to prove each landed: all six fail the suite,
+including a faithful revert to the single reading.
+
+Verified: the self-test at 21 scenarios, 19.4s; 800 runs of a fast-exiting gate
+inside a parallel run of the full tests with no refusal, against 2 in the same
+800 before the change; release and sanitizer builds warning-clean with the
+tests green. The suite now states in its own header that its result does not
+depend on how many tests run beside it, and records the margin of the one
+wall-clock budget a passing run still has: the stub advertises its socket in
+0.10s against a budget of 10s, measured both serially and inside a four-way
+parallel run.
+
+---
+
 ## 2026-08-29 -- Undo is one action across every shell surface
 
 The shell now declares Undo once. `Ctrl+Z`, the toolbar, the blank-canvas

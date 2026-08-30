@@ -125,6 +125,11 @@ readonly proc_root="${ODYSEA_GATE_PROC_ROOT:-/proc}"
 # SIGTERM, then 3.0s for SIGKILL before it is reported as having survived one.
 readonly term_wait_ticks=20
 readonly kill_wait_ticks=30
+# How long a child whose start time cannot be read is given to answer whether it
+# is alive or gone, in tenths of a second. See settle_starttime: this bounds a
+# settle, not a comparison, and only a child that is both alive and unreadable
+# spends it.
+readonly record_settle_ticks=20
 
 log() { printf 'isolated-compositor-gate: %s\n' "$*" >&2; }
 
@@ -355,6 +360,53 @@ require_starttime() {
         return 1
     fi
     return 0
+}
+
+# Settles what an unreadable start time means for a child that was started a
+# moment ago, as three answers rather than the two require_starttime gives:
+#
+#   0  the start time was read; it is printed on stdout and the child is
+#      identified for teardown as usual
+#   1  the child is alive and cannot be identified, which is the case
+#      require_starttime exists for: nothing may be recorded for it and nothing
+#      may signal it, so the run does not proceed
+#   2  the child has already terminated, so there is no process to tear down
+#      and no record is needed for one
+#
+# The third answer is the one the earlier code did not have, and folding it into
+# the first cost real runs. A child that exits in a few milliseconds can be
+# reaped by this shell before the read happens -- the reap is asynchronous, and
+# a command substitution is one of the places it lands -- and once a child is
+# reaped its /proc entry is gone. The run had already succeeded at that point:
+# the compositor came up, the gate ran, and its status is still recoverable,
+# because a shell keeps the status of a background child it has reaped until it
+# is waited for. Refusing there reports a failure for a run that worked, and it
+# does so more often the busier the machine is, which makes the outcome depend
+# on what else happened to be running.
+#
+# Liveness is asked of the kernel, not of proc_root, so a /proc that has stopped
+# answering cannot make a live child look terminated -- the answer that would
+# turn this into a way to walk away from a process still running.
+#
+# The wait bounds a settle and never a comparison: a child on its way out passes
+# through a window where the kernel still answers kill -0 while its /proc entry
+# has already stopped being readable, and answering on the first reading would
+# put that window back into the result. The loop ends as soon as either question
+# is answered, so a child that is already gone costs one reading and a child
+# that is alive and identifiable costs none.
+settle_starttime() {
+    local pid="$1" waited=0 current=""
+    while :; do
+        current="$(starttime_of "$pid")"
+        if [[ -n "$current" ]]; then
+            printf '%s' "$current"
+            return 0
+        fi
+        kill -0 "$pid" 2>/dev/null || return 2
+        ((waited < record_settle_ticks)) || return 1
+        sleep 0.1
+        ((waited += 1))
+    done
 }
 
 # Signals a process group by its leader pid, but only when that pid still names
@@ -772,20 +824,36 @@ env -u DISPLAY -u XAUTHORITY \
     ODYSEA_ISOLATED_COMPOSITOR_NONCE="$nonce" \
     ODYSEA_ISOLATED_COMPOSITOR_RUNDIR="$private_runtime" \
     setsid "$@" {lock_fd}>&- {liveness_fd}>&- &
-gate_pid="$!"
-gate_starttime="$(starttime_of "$gate_pid")"
-if ! require_starttime "$gate_starttime" "gate" "$gate_pid"; then
+gate_wait_pid="$!"
+# Recorded for teardown from the moment it exists, so a signal arriving during
+# the settle below finds a run that names its own child rather than one that
+# does not.
+gate_pid="$gate_wait_pid"
+gate_record_state=0
+gate_starttime="$(settle_starttime "$gate_wait_pid")" || gate_record_state=$?
+if ((gate_record_state == 1)); then
+    require_starttime "" "gate" "$gate_wait_pid" || true
     # Same reasoning as the compositor above: signalled directly because the pid
     # is still this shell's own child and cannot yet have been reused, and
     # stopped rather than left, because it was about to be handed a compositor.
-    kill -KILL "-$gate_pid" 2>/dev/null || kill -KILL "$gate_pid" 2>/dev/null || true
+    kill -KILL "-$gate_wait_pid" 2>/dev/null || kill -KILL "$gate_wait_pid" 2>/dev/null || true
     gate_pid=""
     exit "$harness_failure_status"
 fi
-printf '%s %s\n' "$gate_pid" "$gate_starttime" >"$private_runtime/gate.pid"
+if ((gate_record_state == 2)); then
+    # The gate finished before its start time could be read. Nothing is recorded
+    # for it because there is nothing left to stop, and the status it exited
+    # with is still the answer this harness reports: it is asked for below.
+    log "the gate (pid $gate_wait_pid) finished before it could be recorded; there is no"
+    log "process to tear down and its exit status is still this run's result"
+    gate_pid=""
+    gate_starttime=""
+else
+    printf '%s %s\n' "$gate_pid" "$gate_starttime" >"$private_runtime/gate.pid"
+fi
 
 set +e
-wait "$gate_pid"
+wait "$gate_wait_pid"
 gate_status=$?
 set -e
 

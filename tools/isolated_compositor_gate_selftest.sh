@@ -24,6 +24,22 @@
 # its own run from an abandoned one.
 #
 # It starts no compositor of its own and touches nothing outside its sandbox.
+#
+# THE RESULT DOES NOT DEPEND ON HOW MANY TESTS RUN BESIDE IT. That is a property
+# worth stating, because it did not hold: one scenario reported a failure only
+# when the suite was scheduled inside a parallel battery, which teaches everyone
+# reading the summary to re-run rather than to look, and that is how a real
+# failure in the same file gets waved through. What was scheduling-sensitive was
+# the harness reading a child's start time, not any budget here; it is settled
+# against the child's liveness now rather than against a clock, and scenario 17
+# checks both of its answers directly.
+#
+# The one wall-clock budget left in a passing run is the harness's wait for the
+# compositor socket, and it is not close: the stub advertises in 0.10s against a
+# 10s budget, measured both serially and inside a four-way parallel battery, so
+# the wait would have to take a hundred times longer before the result changed.
+# Every other wait here ends on an observable event -- a marker file, a process
+# ending, a lock being released -- and reports by name if it does not happen.
 set -euo pipefail
 
 readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,7 +89,7 @@ trap cleanup_sandbox EXIT
 # truncated run of this file did, reporting the first nine scenarios and a
 # summary saying all of them passed. The count below is the floor that makes
 # that impossible to mistake for a result.
-readonly expected_scenario_count=20
+readonly expected_scenario_count=21
 
 failures=0
 reported=0
@@ -245,6 +261,44 @@ s.listen(1)
 time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
 STUB
 chmod +x "$stub_compositor_ignores_term"
+
+# Waits for a release file inside its own runtime directory before binding its
+# socket. That makes the order of two otherwise independent events fixed: the
+# harness has recorded the compositor by the time the socket appears, so a
+# scenario can change what the harness is able to read in between and know
+# exactly which read it changed.
+readonly stub_compositor_waits_to_bind="$sandbox/stub_compositor_waits_to_bind.sh"
+cat >"$stub_compositor_waits_to_bind" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+while [[ ! -e "$XDG_RUNTIME_DIR/go" ]]; do sleep 0.02; done
+exec python3 -c 'import socket, sys, time
+sock = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(sock)
+s.listen(1)
+time.sleep(10 ** 9)' "$XDG_RUNTIME_DIR/wayland-1"
+STUB
+chmod +x "$stub_compositor_waits_to_bind"
+
+# Records its own pid and then blocks. exec keeps the pid, so the number in the
+# file is the one the harness started and a scenario can ask what happened to
+# it.
+#
+# It ends by itself rather than running until something stops it. A harness that
+# mistook this gate for one that had already finished would wait for it, and a
+# gate that never ends turns that mistake into a suite that hangs until a
+# timeout kills it -- which says far less than a scenario failing by name. The
+# wait is bounded so the wrong answer is reported rather than merely survived;
+# the right answer stops it long before, so the bound costs a passing run
+# nothing.
+readonly gate_records_pid="$sandbox/gate_records_pid.sh"
+cat >"$gate_records_pid" <<'GATE'
+#!/usr/bin/env bash
+printf '%s' "$$" >"$1"
+exec sleep 30
+GATE
+chmod +x "$gate_records_pid"
 
 # Creates a REGULAR FILE where the socket belongs, and nothing else. A readiness
 # check that looks for a name rather than for a socket accepts this and hands a
@@ -1238,6 +1292,151 @@ scenario_unreadable_starttime_refuses() {
     fi
 }
 
+# Opens a hole in what the harness can read, positioned so that it covers the
+# gate and nothing else. The compositor is recorded before its socket exists, so
+# waiting for that record and only then replacing the process-record root gives
+# a root that answers for the compositor -- from a snapshot of its real entry,
+# so the recorded start time still matches -- and answers for nothing else. The
+# release file is written last, so the compositor cannot advertise its socket,
+# and the harness cannot reach the gate, until the hole is open.
+#
+# Nothing here is timed against the machine: each step waits for the step before
+# it to have happened.
+open_gate_record_hole() {
+    local link="$1" fake="$2" done_marker="$3"
+    local dir="" pid="" rest="" waited=0
+    while ((waited < 500)); do
+        dir="$(single_run_dir 2>/dev/null)" || dir=""
+        if [[ -n "$dir" && -f "$dir/compositor.pid" ]]; then
+            pid=""
+            rest=""
+            read -r pid rest <"$dir/compositor.pid" || true
+            if [[ "${pid:-}" =~ ^[0-9]+$ ]]; then
+                mkdir -p "$fake/$pid"
+                cat "/proc/$pid/stat" >"$fake/$pid/stat" 2>/dev/null || true
+                ln -sfn "$fake" "$link"
+                : >"$done_marker"
+                : >"$dir/go"
+                return 0
+            fi
+        fi
+        sleep 0.02
+        ((waited += 1))
+    done
+    return 1
+}
+
+# --- Scenario 17: a gate that has finished is not an unidentifiable one ------
+# The harness reads a child's start time straight after starting it, and an
+# empty reading used to mean one thing: refuse, because a pid that cannot be
+# identified must never be signalled and a run that cannot be torn down must not
+# start. That is right for a child that is still running and wrong for one that
+# has already finished, and the two were indistinguishable.
+#
+# The difference is not academic. A gate that exits in a few milliseconds can be
+# reaped by the harness's own shell before the reading happens, which removes
+# its /proc entry; the run had already done everything it exists to do, and was
+# reported as a failure. Measured against a parallel test battery it happened in
+# 5 of 400 runs, and never once on an idle machine, so the harness's answer
+# depended on what else the machine was doing.
+#
+# Both directions are checked here, because the fix is a distinction rather than
+# a relaxation: a finished gate is a completed run, and a gate that is alive and
+# cannot be identified is still refused, still stopped, and still leaves nothing
+# behind.
+scenario_finished_gate_is_not_unidentifiable() {
+    new_state gate_finished
+    local link="$sandbox/proc_link_finished" fake="$sandbox/fake_proc_finished"
+    local opened="$sandbox/hole_opened_finished"
+    local envfile="$sandbox/env_gate_finished.txt" log="$sandbox/log_gate_finished.txt"
+    rm -rf -- "$fake" "$link" "$opened" "$envfile"
+    mkdir -p "$fake"
+    ln -sfn /proc "$link"
+
+    open_gate_record_hole "$link" "$fake" "$opened" &
+    local opener_pid=$!
+    local status=0
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor_waits_to_bind" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        ODYSEA_GATE_PROC_ROOT="$link" \
+        bash "$harness" "$gate_record" "$envfile" 0 2>"$log" || status=$?
+    wait "$opener_pid" || true
+
+    local ok=1
+    if [[ ! -e "$opened" ]]; then
+        report FAIL "finished gate: the record hole was never opened, so nothing was measured"
+        return
+    fi
+    if ((status != 0)); then
+        report FAIL "finished gate: a gate that had already exited 0 was reported as a failed run (got $status)"
+        ok=0
+    fi
+    if [[ ! -e "$envfile" ]]; then
+        report FAIL "finished gate: the gate never ran"
+        ok=0
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "finished gate: the run directory was kept for a process that had already ended"
+        ok=0
+    fi
+    if ! lock_is_free; then
+        report FAIL "finished gate: the cross-run lock was left held"
+        ok=0
+    fi
+
+    # The other direction, through the same hole: a gate that is still running
+    # cannot be identified, so it is refused and stopped rather than run.
+    new_state gate_alive
+    local link2="$sandbox/proc_link_alive" fake2="$sandbox/fake_proc_alive"
+    local opened2="$sandbox/hole_opened_alive" gate_pid_file="$sandbox/gate_alive.pid"
+    local log2="$sandbox/log_gate_alive.txt"
+    rm -rf -- "$fake2" "$link2" "$opened2" "$gate_pid_file"
+    mkdir -p "$fake2"
+    ln -sfn /proc "$link2"
+
+    open_gate_record_hole "$link2" "$fake2" "$opened2" &
+    opener_pid=$!
+    local status2=0
+    ODYSEA_GATE_STATE_DIR="$active_state" \
+        ODYSEA_GATE_COMPOSITOR_CMD="$stub_compositor_waits_to_bind" \
+        ODYSEA_GATE_READY_TIMEOUT=10 \
+        ODYSEA_GATE_PROC_ROOT="$link2" \
+        bash "$harness" "$gate_records_pid" "$gate_pid_file" 2>"$log2" || status2=$?
+    wait "$opener_pid" || true
+
+    if [[ ! -e "$opened2" ]]; then
+        report FAIL "unidentifiable gate: the record hole was never opened, so nothing was measured"
+        return
+    fi
+    if ((status2 == 0)); then
+        report FAIL "unidentifiable gate: a gate that could not be identified was reported as a clean run"
+        ok=0
+    fi
+    if ! grep -q "could not read the start time of the gate" "$log2"; then
+        report FAIL "unidentifiable gate: the refusal did not name the gate as what could not be read"
+        ok=0
+    fi
+    local running_gate=""
+    if [[ -f "$gate_pid_file" ]]; then
+        read -r running_gate <"$gate_pid_file" || true
+    fi
+    if [[ "${running_gate:-}" =~ ^[0-9]+$ ]]; then
+        if ! wait_pid_dead "$running_gate" 10; then
+            report FAIL "unidentifiable gate: the gate it refused to record was left running"
+            kill_group_hard "$running_gate"
+            ok=0
+        fi
+    fi
+    if (($(count_run_dirs) != 0)); then
+        report FAIL "unidentifiable gate: a refused run left a private directory behind"
+        ok=0
+    fi
+    if ((ok)); then
+        report PASS "a gate that has finished is a completed run; one that is alive and unidentifiable is still refused"
+    fi
+}
+
 # --- Scenario 15: the reaper spares a pid that was reused --------------------
 # The reaper signals a NEGATIVE pid, which is a whole process group. Between
 # that and an unrelated group in the live session there is one thing: the
@@ -1380,6 +1579,7 @@ scenario_gate_escalated_to_kill
 scenario_reaper_escalates_to_kill
 scenario_unverified_reap_is_refused
 scenario_unreadable_starttime_refuses
+scenario_finished_gate_is_not_unidentifiable
 scenario_reaper_spares_a_reused_pid
 scenario_compositor_gets_no_ambient_display
 scenario_readiness_requires_a_socket
