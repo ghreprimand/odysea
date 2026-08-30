@@ -176,6 +176,41 @@ each moved heading with the commit that originally published it.
 
 ---
 
+## 2026-08-29 -- Seven ground hues extend the Odyssey palette family
+
+The live palette roster grows from seven to fourteen with one additional dark
+family per ground-hue group: `odyssey-midnight`, `odyssey-harvest`,
+`odyssey-lagoon`, `odyssey-plasma`, `odyssey-borealis`, `odyssey-crimson`, and
+`odyssey-fuchsia`. The roster order and every stable identifier are asserted,
+so adding, removing, renaming, or reordering a shipped family requires an
+explicit test change.
+
+Each new family retains its canonical ground, deep ground, frame, match, focus,
+warning, and success values. Secondary ink follows the established foreground
+and inactive-ink blend. Application-only wells, panels, primary and faint inks,
+file-type inks, metadata, and selection beds are tuned on the surfaces that
+paint them; selection beds remain independent application colors rather than a
+terminal selection role.
+
+All seven candidates clear the complete render-site matrix. Blue- and
+magenta-weighted inactive inks lose too much luminance under the icon emission
+cap, so their toolbar roles move toward neutral while retaining the family
+hue. The new capped inks stay above the navy family's accepted 2.104:1
+pressed-bed margin, leaving that default-state pair as the shipped binding
+case. The fuchsia file mark clears its separate 3.0:1 non-text floor, and the
+harvest high-contrast danger ink receives the smallest lift that clears its
+selected-row text floor. No candidate needed to be removed or recolored beyond
+these role-local adjustments.
+
+Verification: release registered 76 entries; 72 executed and passed, with four
+declared GPU or compositor capability entries skipped. ASan/UBSan registered
+the same 76, disabled static analysis by preset policy, and passed all 71 that
+executed, with the same four capability skips. Static analysis passed in the
+release preset with no diagnostics. The application smoke passed in both
+presets.
+
+---
+
 ## 2026-08-29 -- A gate that has finished is not one that cannot be identified
 
 The isolated-compositor harness records every child it starts by pid and start

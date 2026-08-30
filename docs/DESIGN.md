@@ -444,11 +444,17 @@ there is no apply step.
 - **Semantic roles, not terminal conventions.** Colors are named for what a
   file manager renders: window ground, panels, wells, hairlines, entry text,
   metadata columns, directory and symlink inks, selection bed and ink, focus,
-  match, and status inks. Six curated families ship, `odyssey-default` first;
-  each family's values are derived so every ink clears its contrast floor on
-  the surfaces it renders over, directory ink stays measurably chromatic, and
-  the selection bed remains distinct from the ground. An unknown family
-  identifier resolves to the default rather than rendering nothing.
+  match, and status inks. Fourteen curated families ship,
+  `odyssey-default` first. The set spans midnight blue, amber, teal, violet,
+  green, red, and magenta grounds alongside the existing neutral and light
+  choices. Each family's structural ground, frame, match, focus, warning, and
+  success roles retain the named family's canonical values. Application-only
+  wells, panels, reading inks, file-type inks, and selection beds are tuned on
+  their real render sites; a selection bed never inherits a terminal selection
+  role. Every ink clears its role-specific contrast floor on the surfaces it
+  renders over, directory ink stays measurably chromatic, and the selection bed
+  remains distinct from the ground. An unknown family identifier resolves to
+  the default rather than rendering nothing.
 - **Accent presets preserve meaning.** Tideglass, Beacon, Ember, Orchid, and
   Verdant select one stable accent identifier whose display name is separate
   from persisted state. The accent drives active chrome, focus, rubber-band,

@@ -228,7 +228,16 @@ void tst_ThemeController::defaults_are_the_shipped_configuration() {
     QCOMPARE(theme.uiScale(), 1.0);
     QVERIFY(!theme.lightPalette());
     QCOMPARE(theme.availablePalettes().first(), QStringLiteral("odyssey-default"));
-    QCOMPARE(theme.availablePalettes().size(), 7);
+    QCOMPARE(theme.availablePalettes().size(), 14);
+    QCOMPARE(theme.availablePalettes(),
+             QStringList({QStringLiteral("odyssey-default"), QStringLiteral("odyssey"),
+                          QStringLiteral("odyssey-midnight"), QStringLiteral("odyssey-harvest"),
+                          QStringLiteral("odyssey-lagoon"), QStringLiteral("odyssey-plasma"),
+                          QStringLiteral("odyssey-borealis"), QStringLiteral("odyssey-crimson"),
+                          QStringLiteral("odyssey-fuchsia"), QStringLiteral("odyssey-amber"),
+                          QStringLiteral("odyssey-graphite"), QStringLiteral("odyssey-aurora"),
+                          QStringLiteral("odyssey-parchment-light"),
+                          QStringLiteral("odyssey-slate-light")}));
     QCOMPARE(theme.accentPresetId(), QStringLiteral("tideglass"));
     QCOMPARE(theme.accentPresets().first().toMap().value(QStringLiteral("name")).toString(),
              QStringLiteral("Tideglass"));
